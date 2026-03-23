@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>SmartPuck Workspace | Liquid Mercury Light</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-high": "#f0f0f3",
+                        "secondary": "#4a4a4f",
+                        "on-background": "#121214",
+                        "surface": "#ffffff",
+                        "background": "#ffffff",
+                        "outline": "#8a8a8f",
+                        "primary": "#000000"
+                    },
+                    fontFamily: {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .liquid-mercury-soft {
+                background: linear-gradient(135deg, #e0e5ec 0%, #ffffff 50%, #e0e5ec 100%);
+                position: relative;
+                overflow: hidden;
+            }
+            .liquid-mercury-soft::after {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: linear-gradient(135deg, rgba(255,255,255,0.7) 0%, rgba(220,225,235,0.4) 100%);
+                mix-blend-mode: overlay;
+                pointer-events: none;
+            }
+            .chrome-shimmer-border {
+                border: 1px solid rgba(180, 185, 200, 0.3);
+                position: relative;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 2px 10px rgba(0,0,0,0.02);
+            }
+            .chrome-shimmer-border::before {
+                content: '';
+                position: absolute;
+                inset: -1px;
+                padding: 1px;
+                border-radius: inherit;
+                background: linear-gradient(135deg, #ffffff, #d1d5db, #ffffff);
+                -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+                mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+                -webkit-mask-composite: xor;
+                mask-composite: exclude;
+                pointer-events: none;
+                opacity: 0.6;
+            }
+            .glass-morphic-silver {
+                background: rgba(255, 255, 255, 0.6);
+                backdrop-filter: blur(25px);
+                border: 1px solid rgba(255, 255, 255, 0.8);
+                box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
+            }
+            .mercury-text-soft {
+                background: linear-gradient(135deg, #222 20%, #888 50%, #222 80%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-size: 200% auto;
+            }
+            .nav-item.active {
+                background-color: white;
+                color: black;
+                border: 1px solid rgba(180, 185, 200, 0.3);
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 2px 10px rgba(0,0,0,0.02);
+            }
+            .nav-item.active .material-symbols-outlined {
+                opacity: 0.7;
+            }
+            .tab-item.active {
+                color: black;
+                border-bottom-width: 2px;
+                border-bottom-color: black;
+            }
+        }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 10px; }
+        
+        .view-section, .tab-section { display: none; }
+        .view-section.active, .tab-section.active { display: flex; }
+    </style>
+</head>
+
+<body class="bg-[#ffffff] text-on-background font-body overflow-hidden">
+    <!-- Sidebar -->
+    <aside
+        class="fixed left-0 top-0 h-full w-72 flex flex-col border-r border-gray-100 bg-[#fbfbfd]/80 backdrop-blur-md z-40 pt-6 pb-3">
+        <!-- Brand + New Recording -->
+        <div class="px-6 mb-5 flex-shrink-0">
+            <div class="flex items-center gap-3 mb-5">
+                <div class="w-11 h-11 rounded-full border border-gray-200 overflow-hidden bg-white shadow-sm p-0.5">
+                    <img alt="User profile" class="w-full h-full rounded-full object-cover"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJuatkcd1RLmNsTN3bX6Pyqol1fasflm8UqdJmMLuIvlIOrvBNXwGBLoegvEy9QmaZkMyxHHwxQ8awORBANQTGEvVlVZOAW9_iu8q5Dektgr1gYI6zkHgN8MsrkFF6iEz6a1q8ScguRmz_jFkPSg5Gcly5QqbuubawnMWIee6UNUHQwywUGjRDlSliISb28ZJxYJZ09IL7svuOjo4S84VDLF1_KSHSFWFbtKnbRE9kAUZR-iOegSVneDSNHr3k3P9E4ILsA0O-UnkH" />
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-black font-headline tracking-tight">SmartPuck</h1>
+                    <p class="font-headline uppercase tracking-widest text-[9px] font-bold text-gray-400">Companion AI
+                    </p>
+                </div>
+            </div>
+            <button onclick="showNewRecording()"
+                class="w-full py-3 px-4 rounded-full liquid-mercury-soft text-black font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md overflow-hidden hover:brightness-105 border border-white/20">
+                <span class="relative z-10 flex items-center gap-2 drop-shadow-sm text-sm">
+                    <span class="material-symbols-outlined text-sm">add</span> New Recording
+                </span>
+            </button>
+        </div>
+
+        <!-- Folder label + New Folder button -->
+        <div class="px-6 flex items-center justify-between mb-1 flex-shrink-0">
+            <span class="font-headline uppercase tracking-[0.2em] text-[9px] font-bold text-gray-400">My Folders</span>
+            <button onclick="addFolder()"
+                class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-black rounded-full hover:bg-gray-100 transition-all"
+                title="New Folder">
+                <span class="material-symbols-outlined text-base">create_new_folder</span>
+            </button>
+        </div>
+
+        <!-- Scrollable folder list -->
+        <nav id="folder-nav" class="flex-1 overflow-y-auto px-3 space-y-0.5 py-2">
+            <!-- Folder: Q3 Strategy (open by default) -->
+            <div class="folder-group">
+                <button onclick="toggleFolder('folder-q3')"
+                    class="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-gray-700 hover:text-black hover:bg-white/60 transition-all group">
+                    <span
+                        class="material-symbols-outlined text-base text-gray-400 group-hover:text-black transition-colors">folder</span>
+                    <span class="font-headline uppercase tracking-[0.1em] text-[11px] font-bold flex-1 text-left">Q3
+                        Strategy</span>
+                    <span id="chevron-folder-q3"
+                        class="material-symbols-outlined text-sm text-gray-300 transition-transform duration-200">expand_more</span>
+                </button>
+                <div id="folder-q3" class="pl-4 space-y-0.5 overflow-hidden"
+                    style="max-height:300px;transition:max-height 0.25s ease;">
+                    <a href="#" id="meeting-q3-strategy"
+                        onclick="openMeeting('Q3 Strategy Meeting', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">Q3 Strategy Meeting</span>
+                        <span class="text-[9px] text-gray-300 font-headline">45m</span>
+                    </a>
+                    <a href="#" id="meeting-emea" onclick="openMeeting('EMEA Expansion Call', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">EMEA Expansion Call</span>
+                        <span class="text-[9px] text-gray-300 font-headline">1h 2m</span>
+                    </a>
+                    <a href="#" id="meeting-berlin" onclick="openMeeting('Berlin Hub Briefing', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">Berlin Hub Briefing</span>
+                        <span class="text-[9px] text-gray-300 font-headline">28m</span>
+                    </a>
+                    <button onclick="askAboutFolder('Q3 Strategy')"
+                        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-black hover:bg-white/70 transition-all group border border-dashed border-gray-200 hover:border-gray-400 mt-1">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-black">auto_awesome</span>
+                        <span class="text-[10px] font-bold uppercase tracking-widest">Ask about folder</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Folder: Google Meetings (collapsed) -->
+            <div class="folder-group">
+                <button onclick="toggleFolder('folder-google')"
+                    class="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-gray-700 hover:text-black hover:bg-white/60 transition-all group">
+                    <span
+                        class="material-symbols-outlined text-base text-gray-400 group-hover:text-black transition-colors">folder</span>
+                    <span class="font-headline uppercase tracking-[0.1em] text-[11px] font-bold flex-1 text-left">Google
+                        Meetings</span>
+                    <span id="chevron-folder-google"
+                        class="material-symbols-outlined text-sm text-gray-300 transition-transform duration-200"
+                        style="transform:rotate(-90deg);">expand_more</span>
+                </button>
+                <div id="folder-google" class="pl-4 space-y-0.5 overflow-hidden"
+                    style="max-height:0;transition:max-height 0.25s ease;">
+                    <a href="#" id="meeting-google-sync"
+                        onclick="openMeeting('Product Sync — Google', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">Product Sync — Google</span>
+                        <span class="text-[9px] text-gray-300 font-headline">30m</span>
+                    </a>
+                    <a href="#" id="meeting-ads" onclick="openMeeting('Ads Review Weekly', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">Ads Review Weekly</span>
+                        <span class="text-[9px] text-gray-300 font-headline">55m</span>
+                    </a>
+                    <button onclick="askAboutFolder('Google Meetings')"
+                        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-black hover:bg-white/70 transition-all group border border-dashed border-gray-200 hover:border-gray-400 mt-1">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-black">auto_awesome</span>
+                        <span class="text-[10px] font-bold uppercase tracking-widest">Ask about folder</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Folder: NUU Internal (collapsed) -->
+            <div class="folder-group">
+                <button onclick="toggleFolder('folder-nuu')"
+                    class="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-gray-700 hover:text-black hover:bg-white/60 transition-all group">
+                    <span
+                        class="material-symbols-outlined text-base text-gray-400 group-hover:text-black transition-colors">folder</span>
+                    <span class="font-headline uppercase tracking-[0.1em] text-[11px] font-bold flex-1 text-left">NUU
+                        Internal</span>
+                    <span id="chevron-folder-nuu"
+                        class="material-symbols-outlined text-sm text-gray-300 transition-transform duration-200"
+                        style="transform:rotate(-90deg);">expand_more</span>
+                </button>
+                <div id="folder-nuu" class="pl-4 space-y-0.5 overflow-hidden"
+                    style="max-height:0;transition:max-height 0.25s ease;">
+                    <a href="#" id="meeting-nuu-allhands" onclick="openMeeting('NUU All-Hands Jan', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">NUU All-Hands Jan</span>
+                        <span class="text-[9px] text-gray-300 font-headline">1h 20m</span>
+                    </a>
+                    <a href="#" id="meeting-eng-sprint" onclick="openMeeting('Eng Sprint Review', this);return false;"
+                        class="meeting-link flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-black hover:bg-white/70 transition-all group">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-gray-500">mic</span>
+                        <span class="text-[11px] font-medium flex-1 truncate">Eng Sprint Review</span>
+                        <span class="text-[9px] text-gray-300 font-headline">40m</span>
+                    </a>
+                    <button onclick="askAboutFolder('NUU Internal')"
+                        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-black hover:bg-white/70 transition-all group border border-dashed border-gray-200 hover:border-gray-400 mt-1">
+                        <span
+                            class="material-symbols-outlined text-sm text-gray-300 group-hover:text-black">auto_awesome</span>
+                        <span class="text-[10px] font-bold uppercase tracking-widest">Ask about folder</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Bottom pinned nav -->
+        <div class="flex-shrink-0 border-t border-gray-100 pt-2 px-3 space-y-0.5">
+            <a href="#" onclick="switchView('archives');return false;"
+                class="nav-item flex items-center gap-3 px-4 py-2.5 text-gray-400 hover:text-black hover:bg-white/50 rounded-full transition-all"
+                data-view="archives">
+                <span class="material-symbols-outlined text-lg">inventory_2</span>
+                <span class="font-headline uppercase tracking-[0.12em] text-xs font-bold">Archives</span>
+            </a>
+            <a href="#" onclick="switchView('lecture-series');return false;"
+                class="nav-item flex items-center gap-3 px-4 py-2.5 text-gray-400 hover:text-black hover:bg-white/50 rounded-full transition-all"
+                data-view="lecture-series">
+                <span class="material-symbols-outlined text-lg">school</span>
+                <span class="font-headline uppercase tracking-[0.12em] text-xs font-bold">Lecture Series</span>
+            </a>
+            <a href="#" onclick="switchView('help');return false;"
+                class="nav-item flex items-center gap-3 px-4 py-2.5 text-gray-400 hover:text-black transition-all rounded-full"
+                data-view="help">
+                <span class="material-symbols-outlined text-lg">help_outline</span>
+                <span class="font-headline uppercase tracking-[0.1em] text-xs font-bold">Help</span>
+            </a>
+            <a href="#" onclick="switchView('settings');return false;"
+                class="nav-item flex items-center gap-3 px-4 py-2.5 text-gray-400 hover:text-black transition-all rounded-full"
+                data-view="settings">
+                <span class="material-symbols-outlined text-lg">settings</span>
+                <span class="font-headline uppercase tracking-[0.1em] text-xs font-bold">Settings</span>
+            </a>
+        </div>
+    </aside>
+
+    <main class="ml-72 h-screen flex flex-col bg-white">
+        <!-- Header -->
+        <header
+            class="flex-shrink-0 z-40 flex justify-between items-center px-10 h-20 bg-white/70 backdrop-blur-2xl border-b border-gray-100">
+            <div class="flex items-center gap-10">
+                <!-- Main Header Tabs (Only visible in Recent Sessions for this placeholder) -->
+                <nav id="header-tabs" class="hidden md:flex items-center gap-8">
+                    <a href="#" onclick="switchTab('dashboard')"
+                        class="tab-item active text-gray-400 hover:text-black pb-1 font-headline font-bold text-sm tracking-tight transition-colors"
+                        data-tab="dashboard">Dashboard</a>
+                    <a href="#" onclick="switchTab('transcripts')"
+                        class="tab-item text-gray-400 hover:text-black pb-1 font-headline font-bold text-sm tracking-tight transition-colors"
+                        data-tab="transcripts">Transcripts</a>
+                    <a href="#" onclick="switchTab('analytics')"
+                        class="tab-item text-gray-400 hover:text-black pb-1 font-headline font-bold text-sm tracking-tight transition-colors"
+                        data-tab="analytics">Analytics</a>
+                </nav>
+            </div>
+            <div class="flex items-center gap-5">
+                <button
+                    class="px-6 py-2 rounded-full chrome-shimmer-border bg-white text-black text-[11px] font-bold font-headline uppercase tracking-widest hover:bg-gray-50 transition-all active:scale-95">
+                    Export Chrome
+                </button>
+                <div class="flex gap-1">
+                    <button
+                        class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-black hover:bg-gray-50 rounded-full transition-all">
+                        <span class="material-symbols-outlined">share</span>
+                    </button>
+                    <button
+                        class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-black hover:bg-gray-50 rounded-full transition-all">
+                        <span class="material-symbols-outlined">more_vert</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-hidden relative">
+
+            <!-- VIEW: RECENT SESSIONS -->
+            <div id="view-recent-sessions" class="view-section active w-full h-full flex">
+
+                <!-- TAB: DASHBOARD -->
+                <div id="tab-dashboard" class="tab-section active w-full h-full flex relative">
+                    <section class="flex-1 flex flex-col relative bg-white border-r border-gray-50 overflow-hidden">
+                        <div id="chat-messages"
+                            class="flex-1 overflow-y-auto p-12 max-w-4xl mx-auto w-full space-y-12 pb-40">
+                            <!-- Chat Bubble -->
+                            <div class="flex gap-8 group">
+                                <div
+                                    class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                                    <span class="material-symbols-outlined text-black text-xl"
+                                        style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                                </div>
+                                <div class="space-y-5 pt-1">
+                                    <p class="text-gray-900 leading-relaxed text-lg">
+                                        I've processed the last 45 minutes of the <span
+                                            class="font-bold underline decoration-gray-200 underline-offset-4">Q3
+                                            Strategy</span> session. You were discussing market expansion into the EMEA
+                                        region.
+                                    </p>
+                                    <p class="text-gray-600 leading-relaxed">
+                                        Key mentions included localized pricing models and the necessity of a
+                                        Berlin-based operations hub. Would you like me to synthesize the risk factors
+                                        mentioned by Sarah?
+                                    </p>
+                                    <div class="flex gap-3">
+                                        <button
+                                            class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Synthesize
+                                            Risks</button>
+                                        <button
+                                            class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Draft
+                                            Hub Proposal</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- User Bubble -->
+                            <div class="flex justify-end">
+                                <div
+                                    class="bg-gray-50/80 px-8 py-6 rounded-[2rem] max-w-xl text-gray-800 border border-gray-100/50 shadow-sm relative">
+                                    <p class="text-base leading-relaxed">Summarize the consensus on the Berlin hub
+                                        timeline. Who was the primary advocate for the Oct 1st launch?</p>
+                                </div>
+                            </div>
+                            <!-- Chat Bubble -->
+                            <div class="flex gap-8 group">
+                                <div
+                                    class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                                    <span class="material-symbols-outlined text-black text-xl"
+                                        style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                                </div>
+                                <div class="space-y-5 pt-1">
+                                    <p class="text-gray-900 leading-relaxed">
+                                        The consensus was a <span class="font-bold">staggered rollout</span> starting in
+                                        Q4. Marcus was the primary advocate for the Oct 1st date, citing competitive
+                                        pressure, though legal suggested a mid-November buffer.
+                                    </p>
+                                    <div
+                                        class="p-5 rounded-2xl bg-gray-50 border border-gray-100 flex items-center gap-4 hover:bg-gray-100/80 transition-colors cursor-pointer cursor-text select-text">
+                                        <span class="material-symbols-outlined text-black opacity-40">verified</span>
+                                        <span
+                                            class="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Citation:
+                                            Timestamp 00:34:22 in "Expansion Planning" clip.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Input Area -->
+                        <div class="absolute bottom-6 left-0 right-0 px-8 flex justify-center pointer-events-none">
+                            <div class="w-full max-w-3xl pointer-events-auto">
+                                <div
+                                    class="relative flex items-center bg-white rounded-[1.5rem] p-2.5 chrome-shimmer-border shadow-2xl focus-within:shadow-xl transition-all">
+                                    <button class="p-3 text-gray-400 hover:text-black transition-colors">
+                                        <span class="material-symbols-outlined">attach_file</span>
+                                    </button>
+                                    <input
+                                        class="flex-1 bg-transparent border-none focus:ring-0 outline-none text-gray-900 placeholder:text-gray-400 font-medium px-4 py-3"
+                                        placeholder="Ask SmartPuck about this session..." type="text" />
+                                    <button
+                                        class="w-12 h-12 rounded-2xl liquid-mercury-soft flex items-center justify-center text-black shadow-lg hover:brightness-105 active:scale-95 transition-all overflow-hidden border border-white/40">
+                                        <span class="material-symbols-outlined relative z-10"
+                                            style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Dashboard Right Sidebar -->
+                    <aside class="w-[420px] bg-[#f8f9fa] flex flex-col overflow-hidden">
+                        <div class="flex-1 overflow-y-auto p-10 flex flex-col gap-8 pb-32">
+                            <div class="space-y-2">
+                                <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">Session
+                                    Intelligence</h3>
+                                <h2 class="font-headline text-4xl font-light mercury-text-soft">Pinned Insights</h2>
+                            </div>
+                            <div id="pinned-insights" class="space-y-8 flex-1">
+                                <!-- Decisions -->
+                                <div class="glass-morphic-silver rounded-[2.5rem] p-8 space-y-5 chrome-shimmer-border">
+                                    <div class="flex items-center gap-3 text-black">
+                                        <span class="material-symbols-outlined text-lg opacity-60">gavel</span>
+                                        <span class="text-[11px] font-bold uppercase tracking-widest font-headline">Key
+                                            Decisions</span>
+                                    </div>
+                                    <ul class="space-y-4">
+                                        <li class="flex gap-4 text-sm text-gray-700 leading-relaxed items-start">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-gray-300 mt-2"></span>
+                                            <span>Approved <span class="font-bold text-black">$2.4M seed</span> for
+                                                Berlin Hub operations.</span>
+                                        </li>
+                                        <li class="flex gap-4 text-sm text-gray-700 leading-relaxed items-start">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-gray-300 mt-2"></span>
+                                            <span>Delayed APAC expansion to 2025.</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <!-- Visual Assets -->
+                                <div class="glass-morphic-silver rounded-[2.5rem] p-8 space-y-6 chrome-shimmer-border">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-3 text-black">
+                                            <span
+                                                class="material-symbols-outlined text-lg opacity-60">photo_library</span>
+                                            <span
+                                                class="text-[11px] font-bold uppercase tracking-widest font-headline">Visual
+                                                Assets</span>
+                                        </div>
+                                        <button
+                                            class="text-[10px] text-gray-400 hover:text-black font-bold uppercase tracking-[0.2em] transition-colors">View
+                                            All</button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div
+                                            class="aspect-square rounded-2xl bg-white overflow-hidden border border-gray-100 relative group cursor-pointer shadow-sm">
+                                            <img alt="Whiteboard snapshot"
+                                                class="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkwg8tnQ6bSYVip6E8vIB5DVOXkY_BHYekJLugOOZscHoSO06v6DVaRj0WyQAUunvm85ivdCD5XCnLxsLyWCJO0wTvZczzPDTOOEF3EUr1oGjBcgfEqo1DrxsAtTAi5j0iH-4CxKc971Wo_e7jko49-XtmaWQDX8_qytbubQ4fAJkruG0CAYzmedTYdRNnUJvqOKHv2097XGyisePuksKD_wAytIj9B7QNB7n1NhVgeXEzBx-5-tsHcuvdWQkp2VhekMYNMkH9CgTG" />
+                                            <div
+                                                class="absolute bottom-2 left-2 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg text-[9px] font-bold uppercase tracking-tighter shadow-sm border border-gray-100">
+                                                Fig 1.1</div>
+                                        </div>
+                                        <div
+                                            class="aspect-square rounded-2xl bg-white overflow-hidden border border-gray-100 relative group cursor-pointer shadow-sm">
+                                            <img alt="Meeting whiteboard"
+                                                class="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQviKkwzJh8dTQLmcQFgCANIAVfdTsSdoMdo1j7GUW60FbEfaSMFEWxuYs8cUmW1_GEgo3PzWzPMnu-r4njuLZBA2gM110q3cIOLstggpumNMQIyoYDI8Yv54NSZ_upTyJajiM3QnfCNa3U9X2rEr5y1hVQuWtN7sTt3BLVd7DdMKVZ9pChstvy7cotBTBPqQ19gD4ox0-DhL41M1wiB2yMgJcfKwxGiNoUr4w-WoKWwuUgwJHcEsNQlfOAAO6uRQXVUuSbArmRnNp" />
+                                            <div
+                                                class="absolute bottom-2 left-2 px-2.5 py-1 bg-white/90 backdrop-blur-md rounded-lg text-[9px] font-bold uppercase tracking-tighter shadow-sm border border-gray-100">
+                                                Fig 1.2</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Action Items -->
+                                <div class="glass-morphic-silver rounded-[2.5rem] p-8 chrome-shimmer-border">
+                                    <div class="flex items-center gap-3 text-black mb-6">
+                                        <span class="material-symbols-outlined text-lg opacity-60">task_alt</span>
+                                        <span
+                                            class="text-[11px] font-bold uppercase tracking-widest font-headline">Action
+                                            Items</span>
+                                    </div>
+                                    <div class="space-y-3">
+                                        <div
+                                            class="flex items-start gap-4 p-4 rounded-2xl hover:bg-white/40 transition-all cursor-pointer group border border-transparent hover:border-gray-200">
+                                            <div
+                                                class="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 group-hover:border-black transition-colors flex-shrink-0">
+                                            </div>
+                                            <div>
+                                                <p class="text-sm font-semibold text-black leading-snug">Draft EMEA hire
+                                                    roadmap</p>
+                                                <p
+                                                    class="text-[9px] text-gray-400 mt-1 font-bold uppercase tracking-widest">
+                                                    @Marcus</p>
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="flex items-start gap-4 p-4 rounded-2xl hover:bg-white/40 transition-all cursor-pointer group border border-transparent hover:border-gray-200">
+                                            <div
+                                                class="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 group-hover:border-black transition-colors flex-shrink-0">
+                                            </div>
+                                            <div>
+                                                <p class="text-sm font-semibold text-black leading-snug">Review tax
+                                                    implications (Berlin)</p>
+                                                <p
+                                                    class="text-[9px] text-gray-400 mt-1 font-bold uppercase tracking-widest">
+                                                    @Legal</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Bottom Logo -->
+                                <div
+                                    class="relative h-28 w-full rounded-[2rem] overflow-hidden shadow-inner border border-white/80 group">
+                                    <div
+                                        class="absolute inset-0 liquid-mercury-soft opacity-30 group-hover:opacity-50 transition-opacity">
+                                    </div>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <span
+                                            class="font-headline font-black italic text-3xl mercury-text-soft tracking-[-0.08em] opacity-40">MERCURY</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+
+                <!-- TAB: TRANSCRIPTS -->
+                <div id="tab-transcripts" class="tab-section w-full h-full flex flex-col p-12 overflow-y-auto pb-32">
+                    <div class="max-w-3xl mx-auto w-full space-y-8">
+                        <div class="flex items-center justify-between mb-8">
+                            <h3 class="text-xl font-headline font-bold">Session Transcript</h3>
+                            <button
+                                class="text-sm font-bold text-gray-500 hover:text-black transition-colors flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">search</span> Search
+                            </button>
+                        </div>
+
+                        <div class="space-y-6">
+                            <!-- Speaker 1 -->
+                            <div class="flex gap-6 group">
+                                <div
+                                    class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-sm flex-shrink-0 text-gray-500">
+                                    M</div>
+                                <div>
+                                    <div class="flex items-baseline gap-3 mb-1">
+                                        <span class="font-bold text-sm">Marcus</span>
+                                        <span class="text-xs text-gray-400 font-headline">00:00:15</span>
+                                    </div>
+                                    <p
+                                        class="text-gray-800 leading-relaxed group-hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-text">
+                                        Alright team, let's get started. The main agenda today is finalizing our
+                                        timeline for the EMEA expansion. I know there are some concerns about moving too
+                                        fast, but we have competitive pressure. I'm advocating for an Oct 1st launch for
+                                        the Berlin hub.
+                                    </p>
+                                </div>
+                            </div>
+                            <!-- Speaker 2 -->
+                            <div class="flex gap-6 group">
+                                <div
+                                    class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-sm flex-shrink-0 text-gray-500">
+                                    S</div>
+                                <div>
+                                    <div class="flex items-baseline gap-3 mb-1">
+                                        <span class="font-bold text-sm">Sarah (Legal)</span>
+                                        <span class="text-xs text-gray-400 font-headline">00:01:22</span>
+                                    </div>
+                                    <p
+                                        class="text-gray-800 leading-relaxed group-hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-text">
+                                        Marcus, I hear you, but the tax implications for the new entity in Germany are
+                                        still under review. We need a buffer. I strongly suggest pushing the operational
+                                        launch to mid-November to ensure compliance.
+                                    </p>
+                                </div>
+                            </div>
+                            <!-- Speaker 1 -->
+                            <div class="flex gap-6 group">
+                                <div
+                                    class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-sm flex-shrink-0 text-gray-500">
+                                    M</div>
+                                <div>
+                                    <div class="flex items-baseline gap-3 mb-1">
+                                        <span class="font-bold text-sm">Marcus</span>
+                                        <span class="text-xs text-gray-400 font-headline">00:02:40</span>
+                                    </div>
+                                    <p
+                                        class="text-gray-800 leading-relaxed group-hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-text">
+                                        Okay, let's look at a staggered rollout. What if we drop the $2.4M seed now to
+                                        secure the real estate and do soft-ops in October, and formal operations in
+                                        November?
+                                    </p>
+                                </div>
+                            </div>
+                            <!-- Speaker 2 -->
+                            <div class="flex gap-6 group">
+                                <div
+                                    class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-sm flex-shrink-0 text-gray-500">
+                                    S</div>
+                                <div>
+                                    <div class="flex items-baseline gap-3 mb-1">
+                                        <span class="font-bold text-sm">Sarah (Legal)</span>
+                                        <span class="text-xs text-gray-400 font-headline">00:03:10</span>
+                                    </div>
+                                    <p
+                                        class="text-gray-800 leading-relaxed group-hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-text">
+                                        That could work. I will draft up the EMEA hire roadmap and we will review the
+                                        tax implications for the staggered approach. Also, I think we should delay the
+                                        APAC expansion down the line, maybe 2025.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: ANALYTICS -->
+                <div id="tab-analytics" class="tab-section w-full h-full flex flex-col p-12 overflow-y-auto pb-32">
+                    <div class="max-w-5xl mx-auto w-full space-y-10">
+                        <div class="space-y-2">
+                            <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">Meeting Analytics
+                            </h3>
+                            <h2 class="font-headline text-3xl font-bold tracking-tight">Q3 Strategy Performance</h2>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <!-- Metric 1 -->
+                            <div class="chrome-shimmer-border rounded-3xl p-6 bg-white flex flex-col gap-4 shadow-sm">
+                                <div class="flex items-center gap-2 text-gray-500">
+                                    <span class="material-symbols-outlined text-sm">timer</span>
+                                    <span class="text-[11px] font-bold uppercase tracking-widest">Duration</span>
+                                </div>
+                                <div class="text-4xl font-headline font-light mercury-text-soft">45m <span
+                                        class="text-xl text-gray-400">12s</span></div>
+                            </div>
+                            <!-- Metric 2 -->
+                            <div class="chrome-shimmer-border rounded-3xl p-6 bg-white flex flex-col gap-4 shadow-sm">
+                                <div class="flex items-center gap-2 text-gray-500">
+                                    <span class="material-symbols-outlined text-sm">group</span>
+                                    <span class="text-[11px] font-bold uppercase tracking-widest">Speakers</span>
+                                </div>
+                                <div class="text-4xl font-headline font-light mercury-text-soft">4</div>
+                                <div class="text-xs text-gray-500 font-medium">Marcus (60%), Sarah (30%)</div>
+                            </div>
+                            <!-- Metric 3 -->
+                            <div class="chrome-shimmer-border rounded-3xl p-6 bg-white flex flex-col gap-4 shadow-sm">
+                                <div class="flex items-center gap-2 text-gray-500">
+                                    <span class="material-symbols-outlined text-sm">sentiment_satisfied</span>
+                                    <span class="text-[11px] font-bold uppercase tracking-widest">Sentiment</span>
+                                </div>
+                                <div class="text-4xl font-headline font-light mercury-text-soft">Constructive</div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="chrome-shimmer-border rounded-[2.5rem] bg-gray-50 p-10 mt-8 min-h-[300px] flex items-center justify-center relative overflow-hidden">
+                            <div class="text-center space-y-4 relative z-10 w-full">
+                                <div class="h-48 w-full flex items-end justify-between gap-2 px-10">
+                                    <!-- Placeholder Bar Chart -->
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[20%] hover:bg-black transition-colors">
+                                    </div>
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[40%] hover:bg-black transition-colors">
+                                    </div>
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[30%] hover:bg-black transition-colors">
+                                    </div>
+                                    <div class="w-1/12 bg-black rounded-t-lg h-[80%] shadow-lg"></div>
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[60%] hover:bg-black transition-colors">
+                                    </div>
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[90%] hover:bg-black transition-colors">
+                                    </div>
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[50%] hover:bg-black transition-colors">
+                                    </div>
+                                    <div
+                                        class="w-1/12 bg-gray-200 rounded-t-lg h-[30%] hover:bg-black transition-colors">
+                                    </div>
+                                </div>
+                                <p class="text-[11px] font-bold uppercase tracking-widest text-gray-400 mt-4">Engagement
+                                    Timeline</p>
+                            </div>
+                            <div
+                                class="absolute inset-0 bg-gradient-to-t from-gray-50/50 to-transparent pointer-events-none">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- VIEW: ARCHIVES -->
+            <div id="view-archives" class="view-section w-full h-full flex flex-col p-12 overflow-y-auto pb-32">
+                <div class="max-w-5xl mx-auto w-full space-y-10">
+                    <div class="flex justify-between items-end">
+                        <div class="space-y-2">
+                            <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">Knowledge Base
+                            </h3>
+                            <h2 class="font-headline text-4xl font-bold tracking-tight">Archives</h2>
+                        </div>
+                        <div
+                            class="relative items-center bg-white rounded-full px-4 py-2 chrome-shimmer-border shadow-sm flex min-w-[300px]">
+                            <span class="material-symbols-outlined text-gray-400 mr-2">search</span>
+                            <input
+                                class="flex-1 bg-transparent border-none focus:ring-0 outline-none text-sm placeholder:text-gray-400"
+                                placeholder="Search archives..." type="text" />
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <!-- Archive Item -->
+                        <div
+                            class="group flex items-center justify-between p-6 bg-white border border-gray-100 rounded-3xl hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                            <div class="flex items-center gap-6">
+                                <div
+                                    class="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:text-black group-hover:bg-gray-100 transition-colors">
+                                    <span class="material-symbols-outlined">folder</span>
+                                </div>
+                                <div>
+                                    <h4
+                                        class="font-bold text-lg text-gray-900 group-hover:text-black transition-colors">
+                                        Q2 Earnings Prep</h4>
+                                    <p class="text-sm text-gray-500 mt-1">Last accessed 3 months ago • 4 sessions</p>
+                                </div>
+                            </div>
+                            <button
+                                class="w-10 h-10 rounded-full flex items-center justify-center text-gray-300 hover:text-black hover:bg-gray-50 transition-colors">
+                                <span class="material-symbols-outlined">arrow_forward</span>
+                            </button>
+                        </div>
+                        <!-- Archive Item -->
+                        <div
+                            class="group flex items-center justify-between p-6 bg-white border border-gray-100 rounded-3xl hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                            <div class="flex items-center gap-6">
+                                <div
+                                    class="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:text-black group-hover:bg-gray-100 transition-colors">
+                                    <span class="material-symbols-outlined">description</span>
+                                </div>
+                                <div>
+                                    <h4
+                                        class="font-bold text-lg text-gray-900 group-hover:text-black transition-colors">
+                                        Product Dev Lifecycle v1</h4>
+                                    <p class="text-sm text-gray-500 mt-1">Archived Oct 2023 • 12 transcripts</p>
+                                </div>
+                            </div>
+                            <button
+                                class="w-10 h-10 rounded-full flex items-center justify-center text-gray-300 hover:text-black hover:bg-gray-50 transition-colors">
+                                <span class="material-symbols-outlined">arrow_forward</span>
+                            </button>
+                        </div>
+                        <!-- Archive Item -->
+                        <div
+                            class="group flex items-center justify-between p-6 bg-white border border-gray-100 rounded-3xl hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                            <div class="flex items-center gap-6">
+                                <div
+                                    class="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:text-black group-hover:bg-gray-100 transition-colors">
+                                    <span class="material-symbols-outlined">folder</span>
+                                </div>
+                                <div>
+                                    <h4
+                                        class="font-bold text-lg text-gray-900 group-hover:text-black transition-colors">
+                                        2022 Marketing Retreat</h4>
+                                    <p class="text-sm text-gray-500 mt-1">Archived Jan 2023 • 2 sessions files</p>
+                                </div>
+                            </div>
+                            <button
+                                class="w-10 h-10 rounded-full flex items-center justify-center text-gray-300 hover:text-black hover:bg-gray-50 transition-colors">
+                                <span class="material-symbols-outlined">arrow_forward</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: LECTURE SERIES -->
+            <div id="view-lecture-series"
+                class="view-section w-full h-full flex flex-col p-12 overflow-y-auto pb-32 bg-[#fafafc]">
+                <div class="max-w-6xl mx-auto w-full space-y-10">
+                    <div class="space-y-3">
+                        <div
+                            class="inline-flex items-center px-3 py-1 bg-black text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
+                            Educational</div>
+                        <h2 class="font-headline text-4xl font-bold tracking-tight">Lecture Series</h2>
+                        <p class="text-gray-500 max-w-xl text-sm leading-relaxed">Recorded webinars, knowledge-sharing
+                            sessions, and educational content automatically synthesized by SmartPuck.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <!-- Card 1 -->
+                        <div
+                            class="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm hover:shadow-xl transition-shadow cursor-pointer group flex flex-col h-full">
+                            <div class="aspect-video bg-gray-100 rounded-2xl overflow-hidden mb-6 relative">
+                                <div
+                                    class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors z-10">
+                                </div>
+                                <div class="absolute inset-0 flex items-center justify-center z-20">
+                                    <div
+                                        class="w-12 h-12 rounded-full bg-white/90 backdrop-blur shadow-lg flex items-center justify-center text-black opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all">
+                                        <span class="material-symbols-outlined ml-1">play_arrow</span>
+                                    </div>
+                                </div>
+                                <img src="https://images.unsplash.com/photo-1544531586-fde5298cdd40?auto=format&fit=crop&q=80&w=800&h=450"
+                                    class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                                    alt="Lecture thumbnail">
+                            </div>
+                            <div class="flex items-center gap-2 mb-3">
+                                <span
+                                    class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-md text-[9px] font-bold uppercase tracking-wider">Leadership</span>
+                                <span class="text-xs text-gray-400 font-medium font-headline">45 MIN</span>
+                            </div>
+                            <h4 class="font-bold text-lg mb-2 group-hover:text-blue-600 transition-colors">Navigating
+                                Market Shifts</h4>
+                            <p class="text-sm text-gray-500 flex-1">Guest lecture on dynamic pricing models during
+                                economic downturns.</p>
+                        </div>
+                        <!-- Card 2 -->
+                        <div
+                            class="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm hover:shadow-xl transition-shadow cursor-pointer group flex flex-col h-full">
+                            <div class="aspect-video bg-gray-100 rounded-2xl overflow-hidden mb-6 relative">
+                                <div
+                                    class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors z-10">
+                                </div>
+                                <div class="absolute inset-0 flex items-center justify-center z-20">
+                                    <div
+                                        class="w-12 h-12 rounded-full bg-white/90 backdrop-blur shadow-lg flex items-center justify-center text-black opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all">
+                                        <span class="material-symbols-outlined ml-1">play_arrow</span>
+                                    </div>
+                                </div>
+                                <img src="https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=800&h=450"
+                                    class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                                    alt="Lecture thumbnail">
+                            </div>
+                            <div class="flex items-center gap-2 mb-3">
+                                <span
+                                    class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-md text-[9px] font-bold uppercase tracking-wider">Design</span>
+                                <span class="text-xs text-gray-400 font-medium font-headline">1H 15M</span>
+                            </div>
+                            <h4 class="font-bold text-lg mb-2 group-hover:text-blue-600 transition-colors">Design
+                                Systems v2</h4>
+                            <p class="text-sm text-gray-500 flex-1">Workshop on migrating our legacy CSS into the new
+                                Figma design system.</p>
+                        </div>
+                        <!-- Card 3 -->
+                        <div
+                            class="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm hover:shadow-xl transition-shadow cursor-pointer group flex flex-col h-full">
+                            <div class="aspect-video bg-gray-100 rounded-2xl overflow-hidden mb-6 relative">
+                                <div
+                                    class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors z-10">
+                                </div>
+                                <div class="absolute inset-0 flex items-center justify-center z-20">
+                                    <div
+                                        class="w-12 h-12 rounded-full bg-white/90 backdrop-blur shadow-lg flex items-center justify-center text-black opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all">
+                                        <span class="material-symbols-outlined ml-1">play_arrow</span>
+                                    </div>
+                                </div>
+                                <img src="https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&q=80&w=800&h=450"
+                                    class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                                    alt="Lecture thumbnail">
+                            </div>
+                            <div class="flex items-center gap-2 mb-3">
+                                <span
+                                    class="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-md text-[9px] font-bold uppercase tracking-wider">Engineering</span>
+                                <span class="text-xs text-gray-400 font-medium font-headline">50 MIN</span>
+                            </div>
+                            <h4 class="font-bold text-lg mb-2 group-hover:text-blue-600 transition-colors">Microservices
+                                at Scale</h4>
+                            <p class="text-sm text-gray-500 flex-1">Deep dive into deploying Kubernetes clusters for
+                                parallel processing.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: HELP -->
+            <div id="view-help" class="view-section w-full h-full flex flex-col p-12 overflow-y-auto pb-32">
+                <div class="max-w-3xl mx-auto w-full space-y-10">
+                    <div class="text-center space-y-4 mb-12">
+                        <div
+                            class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto text-gray-500 mb-4">
+                            <span class="material-symbols-outlined text-3xl">help_center</span>
+                        </div>
+                        <h2 class="font-headline text-4xl font-bold tracking-tight">How can we help?</h2>
+                        <div class="relative max-w-xl mx-auto mt-6">
+                            <span
+                                class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+                            <input
+                                class="w-full bg-gray-50 border border-gray-200 rounded-full py-4 pl-12 pr-6 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                                placeholder="Search knowledge base or ask a question..." type="text" />
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-6">Frequently Asked
+                            Questions</h3>
+
+                        <div
+                            class="border border-gray-100 rounded-2xl p-6 bg-white hover:shadow-md transition-shadow cursor-pointer">
+                            <h4 class="font-bold text-lg flex justify-between items-center">
+                                How does SmartPuck synthesize insights?
+                                <span class="material-symbols-outlined text-gray-400">add</span>
+                            </h4>
+                        </div>
+                        <div
+                            class="border border-gray-100 rounded-2xl p-6 bg-white hover:shadow-md transition-shadow cursor-pointer focus-within:ring-2 focus-within:ring-black">
+                            <h4 class="font-bold text-lg flex justify-between items-center mb-4">
+                                Can I export transcripts to Notion?
+                                <span class="material-symbols-outlined text-gray-400">remove</span>
+                            </h4>
+                            <p class="text-gray-600 leading-relaxed text-sm">
+                                Yes. You can export any transcript or summary directly to Notion, Google Docs, or
+                                download it as a PDF. Click the "Export" button in the top right header of any session.
+                            </p>
+                        </div>
+                        <div
+                            class="border border-gray-100 rounded-2xl p-6 bg-white hover:shadow-md transition-shadow cursor-pointer">
+                            <h4 class="font-bold text-lg flex justify-between items-center">
+                                Where are my archives stored?
+                                <span class="material-symbols-outlined text-gray-400">add</span>
+                            </h4>
+                        </div>
+                    </div>
+
+                    <div class="mt-12 p-8 bg-gray-50 rounded-[2.5rem] text-center border border-gray-100">
+                        <h4 class="font-bold text-lg mb-2">Still need support?</h4>
+                        <p class="text-gray-500 mb-6 text-sm">Our engineering team is available 24/7 to assist with
+                            critical workspace issues.</p>
+                        <button
+                            class="px-6 py-3 rounded-full bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors">Contact
+                            Support</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: SETTINGS -->
+            <div id="view-settings" class="view-section w-full h-full flex flex-col p-12 overflow-y-auto pb-32">
+                <div class="max-w-4xl mx-auto w-full space-y-12">
+                    <div class="flex flex-col md:flex-row gap-12">
+                        <!-- Settings Sidebar Tabs -->
+                        <div class="w-full md:w-64 flex flex-col gap-2">
+                            <button
+                                class="text-left px-4 py-3 rounded-xl bg-gray-100 font-bold text-sm text-black transition-colors">Account
+                                Profile</button>
+                            <button
+                                class="text-left px-4 py-3 rounded-xl hover:bg-gray-50 text-gray-500 font-medium text-sm transition-colors">Notifications</button>
+                            <button
+                                class="text-left px-4 py-3 rounded-xl hover:bg-gray-50 text-gray-500 font-medium text-sm transition-colors">Integrations</button>
+                            <button
+                                class="text-left px-4 py-3 rounded-xl hover:bg-gray-50 text-gray-500 font-medium text-sm transition-colors">Billing
+                                & Plans</button>
+                            <button
+                                class="text-left px-4 py-3 rounded-xl hover:bg-gray-50 text-gray-500 font-medium text-sm transition-colors">Security</button>
+                        </div>
+
+                        <!-- Settings Form Area -->
+                        <div class="flex-1 space-y-10">
+                            <!-- Profile Picture -->
+                            <div class="space-y-4">
+                                <h4 class="font-bold text-lg border-b border-gray-100 pb-2">Profile Avatar</h4>
+                                <div class="flex items-center gap-6">
+                                    <div
+                                        class="w-20 h-20 rounded-full border border-gray-200 overflow-hidden bg-white shadow-sm p-1">
+                                        <img alt="User profile" class="w-full h-full rounded-full object-cover"
+                                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJuatkcd1RLmNsTN3bX6Pyqol1fasflm8UqdJmMLuIvlIOrvBNXwGBLoegvEy9QmaZkMyxHHwxQ8awORBANQTGEvVlVZOAW9_iu8q5Dektgr1gYI6zkHgN8MsrkFF6iEz6a1q8ScguRmz_jFkPSg5Gcly5QqbuubawnMWIee6UNUHQwywUGjRDlSliISb28ZJxYJZ09IL7svuOjo4S84VDLF1_KSHSFWFbtKnbRE9kAUZR-iOegSVneDSNHr3k3P9E4ILsA0O-UnkH" />
+                                    </div>
+                                    <div class="flex gap-3">
+                                        <button
+                                            class="px-5 py-2.5 rounded-full bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Upload
+                                            New</button>
+                                        <button
+                                            class="px-5 py-2.5 rounded-full text-gray-400 hover:text-black text-xs font-bold uppercase tracking-wider transition-all">Remove</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- User Info -->
+                            <div class="space-y-5">
+                                <div class="grid grid-cols-2 gap-6">
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold uppercase tracking-widest text-gray-500">First
+                                            Name</label>
+                                        <input type="text" value="Jane"
+                                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-medium text-gray-900">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold uppercase tracking-widest text-gray-500">Last
+                                            Name</label>
+                                        <input type="text" value="Doe"
+                                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-medium text-gray-900">
+                                    </div>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-xs font-bold uppercase tracking-widest text-gray-500">Email
+                                        Address</label>
+                                    <input type="email" value="jane.doe@smartpuck.ai"
+                                        class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all font-medium text-gray-900">
+                                </div>
+                            </div>
+
+                            <!-- Preferences -->
+                            <div class="space-y-4">
+                                <h4 class="font-bold text-lg border-b border-gray-100 pb-2">Workspace Preferences</h4>
+
+                                <div
+                                    class="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white">
+                                    <div>
+                                        <p class="font-bold text-sm">Theme Appearance</p>
+                                        <p class="text-xs text-gray-500 mt-1">Select your workspace visual mode.</p>
+                                    </div>
+                                    <select
+                                        class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none">
+                                        <option>Liquid Mercury Light</option>
+                                        <option>Obsidian Dark</option>
+                                        <option>System Default</option>
+                                    </select>
+                                </div>
+
+                                <div
+                                    class="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white">
+                                    <div>
+                                        <p class="font-bold text-sm">Auto-generate Action Items</p>
+                                        <p class="text-xs text-gray-500 mt-1">SmartPuck automatically lists tasks after
+                                            sessions end.</p>
+                                    </div>
+                                    <div class="w-12 h-6 bg-black rounded-full relative cursor-pointer">
+                                        <div class="absolute right-1 top-1 w-4 h-4 rounded-full bg-white shadow-sm">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="pt-6 flex justify-end gap-4">
+                                <button
+                                    class="px-6 py-3 rounded-full text-gray-500 hover:text-black font-bold text-xs uppercase tracking-widest transition-colors">Cancel</button>
+                                <button
+                                    class="px-6 py-3 rounded-full bg-black text-white hover:bg-gray-800 font-bold text-xs uppercase tracking-widest transition-colors shadow-lg">Save
+                                    Changes</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: NEW RECORDING -->
+            <div id="view-new-recording" class="view-section w-full h-full flex-col items-center justify-center bg-[#f8f9fa] relative overflow-hidden">
+
+                <!-- Connect State -->
+                <div id="nr-connect" class="flex flex-col items-center justify-center w-full h-full px-12 gap-10">
+                    <!-- Orb -->
+                    <div class="relative flex items-center justify-center">
+                        <div class="w-52 h-52 rounded-full" style="background:radial-gradient(circle at 38% 35%, #ffffff 0%, #e8e8e8 40%, #c8c8c8 70%, #a0a0a0 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.18), inset 4px 4px 16px rgba(255,255,255,0.9), 0 24px 64px rgba(0,0,0,0.12);"></div>
+                    </div>
+                    <div class="text-center space-y-2">
+                        <h2 class="font-headline text-4xl font-bold tracking-tight">Connect SmartPuck</h2>
+                        <p class="text-gray-400 font-headline text-[11px] uppercase tracking-[0.25em] font-bold">Place puck on charging base to begin</p>
+                    </div>
+                    <div class="flex flex-col items-center gap-4 w-full max-w-sm">
+                        <button onclick="startSyncing()" class="w-full py-4 rounded-full bg-black text-white font-bold text-sm uppercase tracking-widest hover:bg-gray-800 active:scale-95 transition-all shadow-xl flex items-center justify-center gap-3">
+                            <span class="material-symbols-outlined text-lg">bluetooth</span>
+                            Connect via Bluetooth
+                        </button>
+                        <div class="flex items-center gap-4 w-full">
+                            <div class="flex-1 h-px bg-gray-200"></div>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400">or</span>
+                            <div class="flex-1 h-px bg-gray-200"></div>
+                        </div>
+                        <label class="w-full py-4 rounded-full border-2 border-dashed border-gray-300 hover:border-gray-500 text-gray-500 hover:text-black font-bold text-sm uppercase tracking-widest flex items-center justify-center gap-3 cursor-pointer transition-all">
+                            <span class="material-symbols-outlined text-lg">upload_file</span>
+                            Upload Recording File
+                            <input type="file" class="hidden" accept=".mp3,.mp4,.wav,.m4a" />
+                        </label>
+                    </div>
+                    <button onclick="closeNewRecording()" class="text-gray-400 hover:text-black text-xs font-bold uppercase tracking-widest transition-colors">Cancel</button>
+                </div>
+
+                <!-- Syncing State -->
+                <div id="nr-syncing" class="hidden flex-col items-center justify-center w-full h-full px-12 gap-10">
+                    <div class="relative flex items-center justify-center">
+                        <div class="absolute w-64 h-64 rounded-full opacity-20 animate-ping" style="background:rgba(0,0,0,0.08);animation-duration:2s;"></div>
+                        <div class="w-52 h-52 rounded-full" style="background:radial-gradient(circle at 38% 35%, #ffffff 0%, #e8e8e8 40%, #c8c8c8 70%, #a0a0a0 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.18), inset 4px 4px 16px rgba(255,255,255,0.9), 0 24px 64px rgba(0,0,0,0.12);"></div>
+                    </div>
+                    <div class="text-center space-y-2">
+                        <h2 class="font-headline text-4xl font-bold tracking-tight">Syncing Session</h2>
+                        <p class="text-gray-400 font-headline text-[11px] uppercase tracking-[0.2em] font-bold">March 23, 2026 &bull; Protocol: Ultra-Low Latency</p>
+                    </div>
+                    <!-- Progress -->
+                    <div class="w-full max-w-lg space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">Active Uplink</span>
+                            <span class="font-headline text-2xl font-light" id="nr-percent">0<sup class="text-sm">%</sup></span>
+                        </div>
+                        <div class="w-full h-px bg-gray-200 rounded-full overflow-hidden">
+                            <div id="nr-progress-bar" class="h-full bg-black rounded-full transition-all duration-700" style="width:0%"></div>
+                        </div>
+                    </div>
+                    <!-- Stat Cards -->
+                    <div class="grid grid-cols-3 gap-5 w-full max-w-lg">
+                        <div class="bg-white rounded-2xl p-6 flex flex-col items-center gap-3 border border-gray-100 shadow-sm">
+                            <span class="material-symbols-outlined text-2xl text-gray-400" style="font-variation-settings:'FILL' 1;">database</span>
+                            <div class="text-center">
+                                <p class="font-headline text-xl font-bold"><span id="nr-mb">0</span> <span class="text-sm font-medium text-gray-500">MB</span></p>
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mt-1">Transferred</p>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-2xl p-6 flex flex-col items-center gap-3 border border-gray-100 shadow-sm">
+                            <span class="material-symbols-outlined text-2xl text-gray-400" style="font-variation-settings:'FILL' 1;">camera_enhance</span>
+                            <div class="text-center">
+                                <p class="font-headline text-xl font-bold"><span id="nr-visuals">0</span></p>
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mt-1">Snapshots</p>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-2xl p-6 flex flex-col items-center gap-3 border border-gray-100 shadow-sm">
+                            <span class="material-symbols-outlined text-2xl text-gray-400" style="font-variation-settings:'FILL' 1;">mic</span>
+                            <div class="text-center">
+                                <p class="font-headline text-xl font-bold"><span id="nr-audio">0.0</span> <span class="text-sm font-medium text-gray-500">HR</span></p>
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mt-1">Audio Stream</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeNewRecording()" class="px-8 py-3 rounded-full border border-gray-200 text-gray-500 hover:text-black hover:border-gray-400 text-xs font-bold uppercase tracking-widest transition-all">Stop &amp; Discard</button>
+                </div>
+            </div>
+
+        </div>
+
+
+    </main>
+
+    <script>
+        const titles = {
+            'archives': 'Workspace Archives',
+            'lecture-series': 'Learning Library',
+            'help': 'Support Center',
+            'settings': 'Account Settings'
+        };
+
+        // Per-meeting placeholder chat content
+        const meetingChat = {
+            'Q3 Strategy Meeting': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg">I've processed the <span class="font-bold underline decoration-gray-200 underline-offset-4">Q3 Strategy Meeting</span>. The primary topics were EMEA expansion timelines and budget allocation for the Berlin hub.</p>
+                        <p class="text-gray-600 leading-relaxed">Marcus advocated for an Oct 1st launch. Legal suggested a mid-November buffer. Would you like a risk summary?</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Synthesize Risks</button>
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Draft Hub Proposal</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end">
+                    <div class="bg-gray-50/80 px-8 py-6 rounded-[2rem] max-w-xl text-gray-800 border border-gray-100/50 shadow-sm">
+                        <p class="text-base leading-relaxed">Who was the primary advocate for the Oct 1st launch?</p>
+                    </div>
+                </div>
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed">Marcus was the primary advocate, citing competitive pressure. Legal suggested mid-November as a safer buffer for compliance.</p>
+                        <div class="p-5 rounded-2xl bg-gray-50 border border-gray-100 flex items-center gap-4">
+                            <span class="material-symbols-outlined text-black opacity-40">verified</span>
+                            <span class="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Citation: Timestamp 00:34:22 — "Expansion Planning" clip.</span>
+                        </div>
+                    </div>
+                </div>`,
+            'EMEA Expansion Call': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg">Processed the <span class="font-bold underline decoration-gray-200 underline-offset-4">EMEA Expansion Call</span>. Focus was on localized pricing models across UK, DE, and FR markets, plus VAT compliance.</p>
+                        <p class="text-gray-600 leading-relaxed">3 regional leads were introduced. Preliminary budget: €1.8M across 18 months. Want me to highlight budget breakdowns?</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Budget Breakdown</button>
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Country Matrix</button>
+                        </div>
+                    </div>
+                </div>`,
+            'Berlin Hub Briefing': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg">The <span class="font-bold underline decoration-gray-200 underline-offset-4">Berlin Hub Briefing</span> covered site selection, hiring timelines, and early-ops logistics. Two shortlisted locations in Mitte and Prenzlauer Berg.</p>
+                        <p class="text-gray-600 leading-relaxed">Hiring target: 12 FTEs by end of Q4. Soft launch Oct 15. Want me to extract the decision criteria for site selection?</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Site Criteria</button>
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Hire Timeline</button>
+                        </div>
+                    </div>
+                </div>`,
+            'Product Sync — Google': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg"><span class="font-bold underline decoration-gray-200 underline-offset-4">Product Sync — Google</span>: Discussed API integration roadmap with Google Cloud team. Main topics were data residency, latency targets, and auth handshake.</p>
+                        <p class="text-gray-600 leading-relaxed">Next milestone: sandbox demo by Nov 1. Waiting on legal sign-off for data-sharing agreement.</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Draft Agreement</button>
+                        </div>
+                    </div>
+                </div>`,
+            'Ads Review Weekly': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg"><span class="font-bold underline decoration-gray-200 underline-offset-4">Ads Review Weekly</span>: CTR down 12% week-over-week. Two campaigns paused pending creative refresh. Performance Max budget reallocated to branded search.</p>
+                        <p class="text-gray-600 leading-relaxed">Team agreed to test 3 new landing page variants. Results review scheduled for next Thursday.</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">View Campaigns</button>
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Landing Page Brief</button>
+                        </div>
+                    </div>
+                </div>`,
+            'NUU All-Hands Jan': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg"><span class="font-bold underline decoration-gray-200 underline-offset-4">NUU All-Hands Jan</span>: CEO shared H1 targets — 40% growth, 3 new partnerships, global headcount +35. Engineering roadmap presented for Q1/Q2.</p>
+                        <p class="text-gray-600 leading-relaxed">Culture survey results highlighted async communication as a key improvement area. Slack norms doc to be published next week.</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">H1 Targets</button>
+                        </div>
+                    </div>
+                </div>`,
+            'Eng Sprint Review': `
+                <div class="flex gap-8 group">
+                    <div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50">
+                        <span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+                    </div>
+                    <div class="space-y-5 pt-1">
+                        <p class="text-gray-900 leading-relaxed text-lg"><span class="font-bold underline decoration-gray-200 underline-offset-4">Eng Sprint Review</span>: Sprint 14 closed with 94% velocity. 2 tickets rolled over due to infra dependency. New CI/CD pipeline shipped to staging.</p>
+                        <p class="text-gray-600 leading-relaxed">Sprint 15 kicks off Monday. Focus on auth refactor + vector embedding integration. Capacity slightly reduced due to on-call rotation.</p>
+                        <div class="flex gap-3">
+                            <button class="px-5 py-2.5 rounded-xl bg-white chrome-shimmer-border text-xs font-bold uppercase tracking-wider text-black hover:bg-gray-50 transition-all">Sprint 15 Plan</button>
+                        </div>
+                    </div>
+                </div>`
+        };
+
+        // Per-meeting pinned insights
+        const meetingInsights = {
+            'Q3 Strategy Meeting': `
+                <div class="glass-morphic-silver rounded-[2.5rem] p-8 space-y-5 chrome-shimmer-border">
+                    <div class="flex items-center gap-3 text-black"><span class="material-symbols-outlined text-lg opacity-60">gavel</span><span class="text-[11px] font-bold uppercase tracking-widest font-headline">Key Decisions</span></div>
+                    <ul class="space-y-4">
+                        <li class="flex gap-4 text-sm text-gray-700 items-start"><span class="w-1.5 h-1.5 rounded-full bg-gray-300 mt-2"></span><span>Approved <span class="font-bold text-black">$2.4M seed</span> for Berlin Hub operations.</span></li>
+                        <li class="flex gap-4 text-sm text-gray-700 items-start"><span class="w-1.5 h-1.5 rounded-full bg-gray-300 mt-2"></span><span>Delayed APAC expansion to 2025.</span></li>
+                    </ul>
+                </div>
+                <div class="glass-morphic-silver rounded-[2.5rem] p-8 chrome-shimmer-border">
+                    <div class="flex items-center gap-3 text-black mb-6"><span class="material-symbols-outlined text-lg opacity-60">task_alt</span><span class="text-[11px] font-bold uppercase tracking-widest font-headline">Action Items</span></div>
+                    <div class="space-y-3">
+                        <div class="flex items-start gap-4 p-4 rounded-2xl hover:bg-white/40 transition-all cursor-pointer group border border-transparent hover:border-gray-200">
+                            <div class="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 group-hover:border-black transition-colors flex-shrink-0"></div>
+                            <div><p class="text-sm font-semibold text-black">Draft EMEA hire roadmap</p><p class="text-[9px] text-gray-400 mt-1 font-bold uppercase tracking-widest">@Marcus</p></div>
+                        </div>
+                        <div class="flex items-start gap-4 p-4 rounded-2xl hover:bg-white/40 transition-all cursor-pointer group border border-transparent hover:border-gray-200">
+                            <div class="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 group-hover:border-black transition-colors flex-shrink-0"></div>
+                            <div><p class="text-sm font-semibold text-black">Review tax implications (Berlin)</p><p class="text-[9px] text-gray-400 mt-1 font-bold uppercase tracking-widest">@Legal</p></div>
+                        </div>
+                    </div>
+                </div>`,
+            default: (name) => `
+                <div class="glass-morphic-silver rounded-[2.5rem] p-8 space-y-5 chrome-shimmer-border">
+                    <div class="flex items-center gap-3 text-black"><span class="material-symbols-outlined text-lg opacity-60">gavel</span><span class="text-[11px] font-bold uppercase tracking-widest font-headline">Key Decisions</span></div>
+                    <ul class="space-y-4">
+                        <li class="flex gap-4 text-sm text-gray-700 items-start"><span class="w-1.5 h-1.5 rounded-full bg-gray-300 mt-2"></span><span>Placeholder decision from <span class="font-bold text-black">${name}</span>.</span></li>
+                        <li class="flex gap-4 text-sm text-gray-700 items-start"><span class="w-1.5 h-1.5 rounded-full bg-gray-300 mt-2"></span><span>Follow-up action pending stakeholder review.</span></li>
+                    </ul>
+                </div>
+                <div class="glass-morphic-silver rounded-[2.5rem] p-8 chrome-shimmer-border">
+                    <div class="flex items-center gap-3 text-black mb-6"><span class="material-symbols-outlined text-lg opacity-60">task_alt</span><span class="text-[11px] font-bold uppercase tracking-widest font-headline">Action Items</span></div>
+                    <div class="space-y-3">
+                        <div class="flex items-start gap-4 p-4 rounded-2xl hover:bg-white/40 transition-all cursor-pointer group border border-transparent hover:border-gray-200">
+                            <div class="mt-1 w-5 h-5 rounded-full border-2 border-gray-300 group-hover:border-black transition-colors flex-shrink-0"></div>
+                            <div><p class="text-sm font-semibold text-black">Placeholder task from this session</p><p class="text-[9px] text-gray-400 mt-1 font-bold uppercase tracking-widest">@Team</p></div>
+                        </div>
+                    </div>
+                </div>`
+        };
+
+        function openMeeting(name, clickedEl) {
+            // Show dashboard view
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-recent-sessions').classList.add('active');
+            document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-dashboard').classList.add('active');
+
+            // Show header tabs
+            const headerTabs = document.getElementById('header-tabs');
+            headerTabs.classList.remove('hidden');
+            headerTabs.classList.add('md:flex');
+
+            // Reset + set active tab indicator
+            document.querySelectorAll('.tab-item').forEach(el => { el.classList.remove('active', 'text-black', 'border-black'); el.classList.add('text-gray-400'); });
+            const dash = document.querySelector('.tab-item[data-tab="dashboard"]');
+            if (dash) { dash.classList.add('active', 'text-black', 'border-black'); dash.classList.remove('text-gray-400'); }
+
+            // Highlight active meeting in sidebar (row + mic icon)
+            document.querySelectorAll('.meeting-link').forEach(el => {
+                el.classList.remove('text-black', 'bg-white', 'shadow-sm', 'font-semibold');
+                el.classList.add('text-gray-500');
+                const mic = el.querySelector('.material-symbols-outlined');
+                if (mic) { mic.classList.remove('text-black'); mic.classList.add('text-gray-300'); }
+            });
+            if (clickedEl) {
+                clickedEl.classList.remove('text-gray-500');
+                clickedEl.classList.add('text-black', 'bg-white', 'shadow-sm');
+                const mic = clickedEl.querySelector('.material-symbols-outlined');
+                if (mic) { mic.classList.remove('text-gray-300'); mic.classList.add('text-black'); }
+            }
+
+            // Swap chat content
+            const chatEl = document.getElementById('chat-messages');
+            if (chatEl) chatEl.innerHTML = meetingChat[name] || `<div class="flex gap-8"><div class="w-12 h-12 rounded-full liquid-mercury-soft flex items-center justify-center flex-shrink-0 shadow-lg border border-white/50"><span class="material-symbols-outlined text-black text-xl" style="font-variation-settings:'FILL' 1;">auto_awesome</span></div><div class="pt-1"><p class="text-gray-900 leading-relaxed text-lg">Loaded <span class="font-bold">${name}</span>. Ask me anything about this session.</p></div></div>`;
+
+            // Swap pinned insights
+            const insightsEl = document.getElementById('pinned-insights');
+            if (insightsEl) insightsEl.innerHTML = meetingInsights[name] || meetingInsights.default(name);
+
+            // Update input placeholder
+            const input = document.querySelector('#chat-messages ~ div input, input[placeholder]');
+            const inp = document.querySelector('input[placeholder]');
+            if (inp) inp.placeholder = `Ask SmartPuck about "${name}"...`;
+        }
+
+        function toggleFolder(id) {
+            const el = document.getElementById(id);
+            const chevron = document.getElementById('chevron-' + id);
+            const isOpen = el.style.maxHeight !== '0px' && el.style.maxHeight !== '';
+            if (isOpen) {
+                el.style.maxHeight = '0';
+                chevron.style.transform = 'rotate(-90deg)';
+            } else {
+                el.style.maxHeight = el.scrollHeight + 50 + 'px';
+                chevron.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function addFolder() {
+            const name = prompt('Folder name:');
+            if (!name || !name.trim()) return;
+            const nav = document.getElementById('folder-nav');
+            const id = 'folder-' + Date.now();
+            const div = document.createElement('div');
+            div.className = 'folder-group';
+            div.innerHTML = `
+                <button onclick="toggleFolder('${id}')" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-gray-700 hover:text-black hover:bg-white/60 transition-all group">
+                    <span class="material-symbols-outlined text-base text-gray-400 group-hover:text-black">folder</span>
+                    <span class="font-headline uppercase tracking-[0.1em] text-[11px] font-bold flex-1 text-left">${name.trim()}</span>
+                    <span id="chevron-${id}" class="material-symbols-outlined text-sm text-gray-300 transition-transform duration-200" style="transform:rotate(-90deg);">expand_more</span>
+                </button>
+                <div id="${id}" class="pl-4 space-y-0.5 overflow-hidden" style="max-height:0;transition:max-height 0.25s ease;">
+                    <p class="text-[10px] text-gray-400 px-3 py-2 italic">No recordings yet.</p>
+                </div>`;
+            nav.appendChild(div);
+        }
+
+        function askAboutFolder(name) {
+            openMeeting(name + ' — AI Chat', null);
+            setTimeout(() => {
+                const inp = document.querySelector('input[placeholder]');
+                if (inp) { inp.placeholder = `Ask SmartPuck about "${name}"...`; inp.focus(); }
+            }, 100);
+        }
+
+        function switchView(viewId) {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const target = document.querySelector(`.nav-item[data-view="${viewId}"]`);
+            if (target) target.classList.add('active');
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-' + viewId).classList.add('active');
+            const headerTabs = document.getElementById('header-tabs');
+            headerTabs.classList.add('hidden');
+            headerTabs.classList.remove('md:flex');
+            // Clear meeting highlight when leaving
+            document.querySelectorAll('.meeting-link').forEach(el => { el.classList.remove('text-black', 'bg-white', 'shadow-sm'); el.classList.add('text-gray-500'); });
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-item').forEach(el => { el.classList.remove('active', 'text-black', 'border-black'); el.classList.add('text-gray-400'); });
+            const activeTab = document.querySelector(`.tab-item[data-tab="${tabId}"]`);
+            if (activeTab) { activeTab.classList.add('active', 'text-black', 'border-black'); activeTab.classList.remove('text-gray-400'); }
+            document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+        }
+
+        let syncInterval = null;
+
+        function showNewRecording() {
+            // Hide all views, show new recording
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-new-recording').classList.add('active');
+            // Hide header tabs
+            const headerTabs = document.getElementById('header-tabs');
+            headerTabs.classList.add('hidden');
+            headerTabs.classList.remove('md:flex');
+            // Clear sidebar highlights
+            document.querySelectorAll('.meeting-link').forEach(el => { el.classList.remove('text-black', 'bg-white', 'shadow-sm'); el.classList.add('text-gray-500'); });
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            // Show connect state
+            document.getElementById('nr-connect').style.display = 'flex';
+            document.getElementById('nr-syncing').style.display = 'none';
+            // Reset stats
+            document.getElementById('nr-percent').innerHTML = '0<sup class="text-sm">%</sup>';
+            document.getElementById('nr-progress-bar').style.width = '0%';
+            document.getElementById('nr-mb').textContent = '0';
+            document.getElementById('nr-visuals').textContent = '0';
+            document.getElementById('nr-audio').textContent = '0.0';
+            if (syncInterval) clearInterval(syncInterval);
+        }
+
+        function startSyncing() {
+            document.getElementById('nr-connect').style.display = 'none';
+            document.getElementById('nr-syncing').style.display = 'flex';
+            // Animate stats over ~8s
+            let pct = 0, mb = 0, vis = 0, audio = 0;
+            const targetPct = 68, targetMb = 83, targetVis = 12, targetAudio = 1.5;
+            const steps = 80;
+            let step = 0;
+            if (syncInterval) clearInterval(syncInterval);
+            syncInterval = setInterval(() => {
+                step++;
+                const t = step / steps;
+                pct = Math.round(targetPct * t);
+                mb = Math.round(targetMb * t);
+                vis = Math.round(targetVis * t);
+                audio = (targetAudio * t).toFixed(1);
+                document.getElementById('nr-percent').innerHTML = `${pct}<sup class="text-sm">%</sup>`;
+                document.getElementById('nr-progress-bar').style.width = `${pct}%`;
+                document.getElementById('nr-mb').textContent = mb;
+                document.getElementById('nr-visuals').textContent = vis;
+                document.getElementById('nr-audio').textContent = audio;
+                if (step >= steps) clearInterval(syncInterval);
+            }, 100);
+        }
+
+        function closeNewRecording() {
+            if (syncInterval) clearInterval(syncInterval);
+            // Return to default dashboard view
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-recent-sessions').classList.add('active');
+            document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-dashboard').classList.add('active');
+        }
+    </script>
+</body>
+
+</html>
