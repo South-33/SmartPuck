@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+:root {
+  --background: #eef2f7;
+  --foreground: #111318;
+  --sp-panel: rgba(255, 255, 255, 0.72);
+  --sp-panel-strong: rgba(255, 255, 255, 0.92);
+  --sp-line: rgba(152, 162, 179, 0.24);
+  --sp-muted: #697386;
+  --sp-soft: #f8fafc;
+  --sp-shadow: 0 30px 80px rgba(15, 23, 42, 0.08);
+  --sp-glow: radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), transparent 42%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sp-panel: var(--sp-panel);
+  --color-sp-panel-strong: var(--sp-panel-strong);
+  --color-sp-line: var(--sp-line);
+  --color-sp-muted: var(--sp-muted);
+  --color-sp-soft: var(--sp-soft);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-space-grotesk);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at top right, rgba(216, 225, 239, 0.9), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(203, 213, 225, 0.72), transparent 24%),
+    linear-gradient(135deg, #eef2f7 0%, #f8fafc 48%, #e5ebf3 100%);
+}
+
+body {
+  min-height: 100vh;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-inter), sans-serif;
+}
+
+::selection {
+  background: rgba(15, 23, 42, 0.12);
+}
+
+a,
+button,
+input,
+textarea {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.glass-panel {
+  background:
+    var(--sp-glow),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.68));
+  border: 1px solid var(--sp-line);
+  box-shadow: var(--sp-shadow);
+  backdrop-filter: blur(24px);
+}
+
+.metal-border {
+  position: relative;
+}
+
+.metal-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95),
+    rgba(193, 201, 214, 0.55),
+    rgba(255, 255, 255, 0.9)
+  );
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 135, 150, 0.35) transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background: rgba(125, 135, 150, 0.32);
+  border-radius: 999px;
+}
