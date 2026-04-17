@@ -43,6 +43,68 @@ body {
   font-family: var(--font-inter), sans-serif;
 }
 
+.liquid-mercury-soft {
+  background: linear-gradient(135deg, #e0e5ec 0%, #ffffff 50%, #e0e5ec 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-mercury-soft::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(220, 225, 235, 0.4) 100%);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.chrome-shimmer-border {
+  border: 1px solid rgba(180, 185, 200, 0.3);
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.chrome-shimmer-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #ffffff, #d1d5db, #ffffff);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.glass-morphic-silver {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
+}
+
+.mercury-text-soft {
+  background: linear-gradient(135deg, #222 20%, #888 50%, #222 80%);
+  background-clip: text;
+  color: transparent;
+  background-size: 200% auto;
+}
+
+.nav-item.active {
+  background-color: white;
+  color: black;
+  border: 1px solid rgba(180, 185, 200, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.tab-item.active {
+  color: black;
+  border-bottom-color: black;
+}
+
 ::selection {
   background: rgba(15, 23, 42, 0.12);
 }
