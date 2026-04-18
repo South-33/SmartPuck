@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DemoWorkspace } from "@/components/workspace/demo-workspace";
 
@@ -8,22 +8,25 @@ describe("Demo workspace UI", () => {
 
     render(<DemoWorkspace />);
 
+    await user.click(screen.getByRole("button", { name: "Create folder" }));
     await user.type(screen.getByPlaceholderText("New folder"), "Customer Research");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
     expect(screen.getByText("Customer Research")).toBeInTheDocument();
   });
 
-  test("creates a synced meeting and continues the chat thread", async () => {
+  test("opens the placeholder new recording flow and creates a synced meeting", async () => {
     const user = userEvent.setup();
 
     render(<DemoWorkspace />);
 
+    await user.click(screen.getByRole("button", { name: "New Recording" }));
+    expect(screen.getByText(/Place puck on charging base to begin/i)).toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: /Connect over USB/i }));
 
-    expect(await screen.findByRole("heading", { name: "Desk Sync Capture" })).toBeInTheDocument();
     expect(
-      screen.getByText(/Session metadata uploaded\. Audio processing is intentionally stubbed/i),
+      await screen.findByPlaceholderText(/Ask SmartPuck about "Desk Sync Capture"/i),
     ).toBeInTheDocument();
 
     const prompt = screen.getByPlaceholderText(/Ask SmartPuck about "Desk Sync Capture"/i);
@@ -36,15 +39,20 @@ describe("Demo workspace UI", () => {
     ).toBeInTheDocument();
   });
 
-  test("filters the sidebar folders and meetings from search", async () => {
+  test("restores the old secondary pages from the sidebar", async () => {
     const user = userEvent.setup();
 
     render(<DemoWorkspace />);
 
-    const [sidebar] = screen.getAllByRole("complementary");
-    await user.type(screen.getByPlaceholderText("Search meetings or folders"), "Google");
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("heading", { name: "Profile Avatar" })).toBeInTheDocument();
 
-    expect(within(sidebar).getByText("Google Meetings")).toBeInTheDocument();
-    expect(within(sidebar).queryByText("Q3 Strategy")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Help" }));
+    expect(
+      screen.getByPlaceholderText(/Search knowledge base or ask a question/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Archives" }));
+    expect(screen.getByText("Q2 Earnings Prep")).toBeInTheDocument();
   });
 });

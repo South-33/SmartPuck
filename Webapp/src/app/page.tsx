@@ -1,5 +1,5 @@
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
 import { DemoWorkspace } from "@/components/workspace/demo-workspace";
 import { LiveWorkspace } from "@/components/workspace/live-workspace";
 import { appEnv } from "@/lib/env";
@@ -68,16 +68,20 @@ export default async function Home() {
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <SignInButton mode="modal">
-              <button className="rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white">
-                Sign in
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <button className="rounded-full border border-sp-line bg-white px-5 py-3 text-sm font-medium text-slate-900">
-                Create account
-              </button>
-            </SignUpButton>
+            <Link
+              href="/sign-in"
+              prefetch={false}
+              className="rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white"
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/sign-up"
+              prefetch={false}
+              className="rounded-full border border-sp-line bg-white px-5 py-3 text-sm font-medium text-slate-900"
+            >
+              Create account
+            </Link>
           </div>
         </section>
       </main>

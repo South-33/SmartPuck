@@ -1,12 +1,34 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../../../convex/_generated/api";
 import { WorkspaceShell } from "./workspace-shell";
 
 export function LiveWorkspace() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
+
+  if (isLoading || !isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6 py-12">
+        <div className="glass-panel metal-border w-full max-w-xl rounded-[2rem] p-10 text-center">
+          <p className="font-display text-sm uppercase tracking-[0.4em] text-sp-muted">Connecting</p>
+          <h1 className="mt-4 font-display text-4xl font-semibold text-foreground">
+            Syncing SmartPuck workspace
+          </h1>
+          <p className="mt-4 text-sm leading-7 text-sp-muted">
+            Waiting for Clerk and Convex to finish the authenticated handshake.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <LiveWorkspaceContent />;
+}
+
+function LiveWorkspaceContent() {
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const seededRef = useRef(false);
