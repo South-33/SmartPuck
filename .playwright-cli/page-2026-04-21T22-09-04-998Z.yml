@@ -1,0 +1,541 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - link "AliExpress logo" [ref=e6] [cursor=pointer]:
+        - /url: https://www.aliexpress.com
+        - text: AliExpress
+      - button "All Categories" [ref=e9]:
+        - img "All Categories" [ref=e10]
+    - generic [ref=e12]:
+      - generic [ref=e14]:
+        - searchbox "You can type an item name or keyword to search." [ref=e15]: 32gb microsd card class 10
+        - img [ref=e20] [cursor=pointer]
+        - button "You can click this button to search." [ref=e21] [cursor=pointer]
+      - generic [ref=e22]:
+        - button "You can scan the QR code to download the AliExpress app." [ref=e23] [cursor=pointer]:
+          - img [ref=e25]
+          - img [ref=e29]
+        - button "You can select a country, region or language for shopping on AliExpress kh. The current language is English." [ref=e33] [cursor=pointer]:
+          - img [ref=e36]
+        - button "You can register, sign in or view more information about your account." [ref=e38] [cursor=pointer]:
+          - img [ref=e40]
+          - img [ref=e43]
+        - link "0 items in cart." [ref=e46] [cursor=pointer]:
+          - /url: //www.aliexpress.com/p/shoppingcart/index.html
+          - img [ref=e48]
+          - generic [ref=e50]: "0"
+  - generic [ref=e51]:
+    - generic [ref=e53]:
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic [ref=e56] [cursor=pointer]:
+            - generic [ref=e57]: Deals & discounts
+            - img [ref=e59]
+          - generic [ref=e62]:
+            - generic "filterCode:bigsale" [ref=e63] [cursor=pointer]:
+              - checkbox "Sale" [ref=e64]
+              - generic [ref=e65]: Sale
+            - generic "filterCode:freeshipping" [ref=e66] [cursor=pointer]:
+              - checkbox "Free shipping" [ref=e67]
+              - generic [ref=e68]: Free shipping
+        - generic [ref=e69]:
+          - generic [ref=e70] [cursor=pointer]:
+            - generic [ref=e71]: Quality & trust
+            - img [ref=e73]
+          - generic "filterCode:4StarRating" [ref=e77] [cursor=pointer]:
+            - checkbox "& up & up" [ref=e78]
+            - generic [ref=e80]:
+              - img "& up" [ref=e81]
+              - generic [ref=e82]: "& up"
+        - generic [ref=e83]:
+          - generic [ref=e84] [cursor=pointer]:
+            - generic [ref=e85]: Price
+            - img [ref=e87]
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - generic [ref=e94]: KHR
+              - textbox "Min." [ref=e95]
+            - generic [ref=e96]: "-"
+            - generic [ref=e97]:
+              - generic [ref=e99]: KHR
+              - textbox "Max." [ref=e100]
+            - generic [ref=e101] [cursor=pointer]: OK
+      - generic [ref=e102]:
+        - generic [ref=e107]:
+          - generic [ref=e108]: "Sort by:"
+          - generic [ref=e109]:
+            - generic [ref=e111] [cursor=pointer]: Best Match
+            - generic [ref=e113] [cursor=pointer]: Orders
+            - generic [ref=e114] [cursor=pointer]:
+              - generic [ref=e115]: Price
+              - generic [ref=e116]:
+                - img [ref=e118]
+                - img [ref=e121]
+        - generic [ref=e123]:
+          - generic [ref=e124]:
+            - img [ref=e125]
+            - generic [ref=e126]:
+              - text: "Ends :"
+              - generic [ref=e127]: Apr 25, 13:59 GMT+7
+          - generic [ref=e128]:
+            - link "Report fraud item Memory Card 16GB 32GB 64GB Class 10 Flash Mini sd Card High Quality TF Card Mini SD Cards for Smartphone laptop KHR17,032.51 4.7 700+ sold Free shipping" [ref=e132] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005001419259954.html?algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-0&pdp_ext_f=%7B%22order%22%3A%22747%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2117032.51%2117032.51%21%21%214.25%214.25%21%402102f0c917768093421922437e50d2%2112000016028353001%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=7c1tQSX55Bqm&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005001419259954%7C_p_origin_prod%3A
+              - generic [ref=e133]:
+                - generic [ref=e137]:
+                  - img [ref=e138]
+                  - img [ref=e139]
+                  - img [ref=e140]
+                  - img [ref=e141]
+                  - img [ref=e142]
+                  - img [ref=e143]
+                - generic "Report fraud item" [ref=e155]
+              - generic [ref=e156]:
+                - heading "Memory Card 16GB 32GB 64GB Class 10 Flash Mini sd Card High Quality TF Card Mini SD Cards for Smartphone laptop" [level=3] [ref=e157]:
+                  - img [ref=e158]
+                  - heading "Memory Card 16GB 32GB 64GB Class 10 Flash Mini sd Card High Quality TF Card Mini SD Cards for Smartphone laptop" [level=3] [ref=e159]
+                - generic "KHR17,032.51" [ref=e160]:
+                  - generic [ref=e161]: KHR17,032.51
+                - generic [ref=e162]:
+                  - generic [ref=e164]: "4.7"
+                  - generic [ref=e165]: 700+ sold
+                - generic "Free shipping" [ref=e169]
+            - link "Report fraud item High Speed Memory Cards 8GB 16GB 32GB 64GB Micro Tf Sd Card 128GB 256GB Class 10 UHS-1 Flash Drive Micro Memory Card Usb Stick KHR15,044.22 3 sold Free shipping Extra 1% off with coins" [ref=e174] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005009998892092.html?algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-1&pdp_ext_f=%7B%22order%22%3A%223%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2130088.44%2115044.22%21%21%2150.90%2125.45%21%402102f0c917768093421922437e50d2%2112000050801056232%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=FsUG4JyZ8Jck&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005009998892092%7C_p_origin_prod%3A
+              - generic [ref=e175]:
+                - generic [ref=e179]:
+                  - img [ref=e180]
+                  - img [ref=e181]
+                  - img [ref=e182]
+                  - img [ref=e183]
+                  - img [ref=e184]
+                - generic "Report fraud item" [ref=e195]
+              - generic [ref=e196]:
+                - heading "High Speed Memory Cards 8GB 16GB 32GB 64GB Micro Tf Sd Card 128GB 256GB Class 10 UHS-1 Flash Drive Micro Memory Card Usb Stick" [level=3] [ref=e197]:
+                  - img [ref=e198]
+                  - heading "High Speed Memory Cards 8GB 16GB 32GB 64GB Micro Tf Sd Card 128GB 256GB Class 10 UHS-1 Flash Drive Micro Memory Card Usb Stick" [level=3] [ref=e199]
+                - generic "KHR15,044.22" [ref=e200]:
+                  - generic [ref=e201]: KHR15,044.22
+                  - generic [ref=e202]: KHR30,088.44
+                  - generic [ref=e203]: "-50%"
+                - generic [ref=e205]: 3 sold
+                - generic [ref=e206]:
+                  - generic "Free shipping" [ref=e208]
+                  - generic "Extra 1% off with coins" [ref=e210]
+            - link "Report fraud item Original Kodak U3 A1 V30 MicroSD 128GB 32GB 64GB 256GB Class 10 Cards 32 64 128 256 GB Video Phone Memory Card KHR55,265.49 4.7 2,000+ sold Top selling on AliExpress Free shipping Bundle deals" [ref=e215] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005007145890447:12000039659186642&pha_manifest=ssr&_immersiveMode=true&disableNav=YES&sourceName=SEARCHProduct&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005007145890447%7C_p_origin_prod%3A&pvid=e199cfa2-f416-4156-813e-1a088f82e346
+              - generic [ref=e216]:
+                - img [ref=e217]
+                - generic "Report fraud item" [ref=e220]
+              - generic [ref=e221]:
+                - heading "Original Kodak U3 A1 V30 MicroSD 128GB 32GB 64GB 256GB Class 10 Cards 32 64 128 256 GB Video Phone Memory Card" [level=3] [ref=e222]:
+                  - img [ref=e223]
+                  - heading "Original Kodak U3 A1 V30 MicroSD 128GB 32GB 64GB 256GB Class 10 Cards 32 64 128 256 GB Video Phone Memory Card" [level=3] [ref=e224]
+                - generic "KHR55,265.49" [ref=e225]:
+                  - generic [ref=e226]: KHR55,265.49
+                  - generic [ref=e227]: KHR115,660.18
+                  - generic [ref=e228]: "-52%"
+                - generic [ref=e229]:
+                  - generic [ref=e231]: "4.7"
+                  - generic [ref=e232]: 2,000+ sold
+                - generic [ref=e234]:
+                  - generic [ref=e235]:
+                    - img [ref=e236]
+                    - generic "Top selling on AliExpress" [ref=e237]
+                  - generic "Free shipping" [ref=e239]
+                - generic [ref=e240]:
+                  - generic [ref=e241]: Bundle deals
+                  - img [ref=e243]
+            - generic [ref=e247]:
+              - link "Report fraud item 128GB Micro TF/ SD Card Class 10 High Speed Memory Cards Stable Performance SD Memory Card for Phones/Digital Camera/MP3 Player KHR35,852.93 4.6 5,000+ sold Top selling on AliExpress Free shipping" [ref=e248] [cursor=pointer]:
+                - /url: //www.aliexpress.com/item/1005011703826280.html?aem_p4p_detail=202604211509021912938360039500000263253&algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-3&pdp_ext_f=%7B%22order%22%3A%226891%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2141999.67%2135852.93%21%21%2171.05%2160.65%21%402102f0c917768093421922437e50d2%2112000056291309295%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895%3BpisId%3A5000000205037758&curPageLogUid=SZhOsgnivHdv&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005011703826280%7C_p_origin_prod%3A&search_p4p_id=202604211509021912938360039500000263253_1
+                - generic [ref=e249]:
+                  - generic [ref=e253]:
+                    - img [ref=e254]
+                    - img [ref=e255]
+                    - img [ref=e256]
+                    - img [ref=e257]
+                    - img [ref=e258]
+                    - img [ref=e259]
+                  - generic "Report fraud item" [ref=e271]
+                - generic [ref=e272]:
+                  - heading "128GB Micro TF/ SD Card Class 10 High Speed Memory Cards Stable Performance SD Memory Card for Phones/Digital Camera/MP3 Player" [level=3] [ref=e273]:
+                    - img [ref=e274]
+                    - img [ref=e275]
+                    - heading "128GB Micro TF/ SD Card Class 10 High Speed Memory Cards Stable Performance SD Memory Card for Phones/Digital Camera/MP3 Player" [level=3] [ref=e276]
+                  - generic "KHR35,852.93" [ref=e277]:
+                    - generic [ref=e278]: KHR35,852.93
+                    - generic [ref=e279]: KHR41,999.67
+                    - generic [ref=e280]: "-14%"
+                  - generic [ref=e281]:
+                    - generic [ref=e283]: "4.6"
+                    - generic [ref=e284]: 5,000+ sold
+                  - generic [ref=e286]:
+                    - generic [ref=e287]:
+                      - img [ref=e288]
+                      - generic "Top selling on AliExpress" [ref=e289]
+                    - generic "Free shipping" [ref=e291]
+              - generic [ref=e292] [cursor=pointer]: Ad
+            - link "Report fraud item High Speed Mini SD Memory Card 256GB Class 10 Micro TF flash usb pen drive card 4GB 8GB 16GB 32GB 64GB 128GB for Smartphone KHR15,050.13 2 sold Free shipping" [ref=e296] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005012087127864.html?algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-4&pdp_ext_f=%7B%22order%22%3A%222%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2115345.69%2115050.13%21%21%2125.96%2125.46%21%402102f0c917768093421922437e50d2%2112000057481337999%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=wnkiWIJMmoGR&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005012087127864%7C_p_origin_prod%3A
+              - generic [ref=e297]:
+                - img [ref=e298]
+                - generic "Report fraud item" [ref=e304]
+              - generic [ref=e305]:
+                - heading "High Speed Mini SD Memory Card 256GB Class 10 Micro TF flash usb pen drive card 4GB 8GB 16GB 32GB 64GB 128GB for Smartphone" [level=3] [ref=e306]:
+                  - img [ref=e307]
+                  - img [ref=e308]
+                  - heading "High Speed Mini SD Memory Card 256GB Class 10 Micro TF flash usb pen drive card 4GB 8GB 16GB 32GB 64GB 128GB for Smartphone" [level=3] [ref=e309]
+                - generic "KHR15,050.13" [ref=e310]:
+                  - generic [ref=e311]: KHR15,050.13
+                  - generic [ref=e312]: KHR15,345.69
+                - generic [ref=e314]: 2 sold
+                - generic "Free shipping" [ref=e317]
+            - link "Report fraud item 100% Original SanDisk Micro tf SD Card Class 10 TF Card 32GB 64GB 128GB Memory Card for Phone Tablet Flash Card KHR40,276.88 4.7 4,000+ sold Top selling on AliExpress Free shipping" [ref=e322] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005007694021925.html?algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-5&pdp_ext_f=%7B%22order%22%3A%224876%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2140276.88%2140276.88%21%21%2110.05%2110.05%21%402102f0c917768093421922437e50d2%2112000041874222031%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=tkRBqinbTOAI&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005007694021925%7C_p_origin_prod%3A
+              - generic [ref=e323]:
+                - img [ref=e324]
+                - generic "Report fraud item" [ref=e330]
+              - generic [ref=e331]:
+                - heading "100% Original SanDisk Micro tf SD Card Class 10 TF Card 32GB 64GB 128GB Memory Card for Phone Tablet Flash Card" [level=3] [ref=e332]:
+                  - img [ref=e333]
+                  - heading "100% Original SanDisk Micro tf SD Card Class 10 TF Card 32GB 64GB 128GB Memory Card for Phone Tablet Flash Card" [level=3] [ref=e334]
+                - generic "KHR40,276.88" [ref=e335]:
+                  - generic [ref=e336]: KHR40,276.88
+                - generic [ref=e337]:
+                  - generic [ref=e339]: "4.7"
+                  - generic [ref=e340]: 4,000+ sold
+                - generic [ref=e342]:
+                  - generic [ref=e343]:
+                    - img [ref=e344]
+                    - generic "Top selling on AliExpress" [ref=e345]
+                  - generic "Free shipping" [ref=e347]
+            - link "Report fraud item memory cards 4GB 8GB 16GB High speed minisd 32GB 64GB class 10 mini sd card cartao de memoria TF card for smartphone KHR20,799.7 4.4 100K+ sold Free shipping Bundle deals" [ref=e352] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005001617961938:12000016836623831&pha_manifest=ssr&_immersiveMode=true&disableNav=YES&sourceName=SEARCHProduct&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005001617961938%7C_p_origin_prod%3A&pvid=e199cfa2-f416-4156-813e-1a088f82e346
+              - generic [ref=e353]:
+                - img [ref=e358]
+                - generic "Report fraud item" [ref=e367]
+              - generic [ref=e368]:
+                - heading "memory cards 4GB 8GB 16GB High speed minisd 32GB 64GB class 10 mini sd card cartao de memoria TF card for smartphone" [level=3] [ref=e369]:
+                  - img [ref=e370]
+                  - heading "memory cards 4GB 8GB 16GB High speed minisd 32GB 64GB class 10 mini sd card cartao de memoria TF card for smartphone" [level=3] [ref=e371]
+                - generic "KHR20,799.7" [ref=e372]:
+                  - generic [ref=e373]: KHR20,799.7
+                  - generic [ref=e374]: KHR22,242.46
+                  - generic [ref=e375]: "-6%"
+                - generic [ref=e376]:
+                  - generic [ref=e378]: "4.4"
+                  - generic [ref=e379]: 100K+ sold
+                - generic "Free shipping" [ref=e383]
+                - generic [ref=e384]:
+                  - generic [ref=e385]: Bundle deals
+                  - img [ref=e387]
+            - generic [ref=e392]:
+              - link "Report fraud item Kingston Memory Card Up To 200MB/S Micro SD TF 64GB 256GB 128GB 512GB 1TB Reading Speed Class 10 U1 V30 A1 Flash for Electronic KHR53,721.75 5 19 sold Best price in similar deals" [ref=e393] [cursor=pointer]:
+                - /url: //www.aliexpress.com/item/1005011922587131.html?aem_p4p_detail=202604211509021912938360039500000263253&algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-7&pdp_ext_f=%7B%22order%22%3A%2219%22%2C%22spu_best_type%22%3A%22price%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%21127908.36%2153721.75%21%21%21216.38%2190.88%21%402102f0c917768093421922437e50d2%2112000057034625741%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=mndi89b7Kw2C&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005011922587131%7C_p_origin_prod%3A&search_p4p_id=202604211509021912938360039500000263253_2
+                - generic [ref=e394]:
+                  - img [ref=e395]
+                  - generic "Report fraud item" [ref=e401]
+                - generic [ref=e402]:
+                  - heading "Kingston Memory Card Up To 200MB/S Micro SD TF 64GB 256GB 128GB 512GB 1TB Reading Speed Class 10 U1 V30 A1 Flash for Electronic" [level=3] [ref=e403]:
+                    - img [ref=e404]
+                    - heading "Kingston Memory Card Up To 200MB/S Micro SD TF 64GB 256GB 128GB 512GB 1TB Reading Speed Class 10 U1 V30 A1 Flash for Electronic" [level=3] [ref=e405]
+                  - generic "KHR53,721.75" [ref=e406]:
+                    - generic [ref=e407]: KHR53,721.75
+                    - generic [ref=e408]: KHR127,908.36
+                    - generic [ref=e409]: "-58%"
+                  - generic [ref=e410]:
+                    - generic [ref=e412]: "5"
+                    - generic [ref=e413]: 19 sold
+                  - generic [ref=e416]:
+                    - img [ref=e417]
+                    - generic "Best price in similar deals" [ref=e418]
+              - generic [ref=e420] [cursor=pointer]: Ad
+            - link "Report fraud item High speed Class 10 SD Card 8GB 16GB 32GB 64GB 128GB 256GB carte sd Memory Card SDA1HC SDA1XC Flash usb stick sdcards For Camera KHR29,616.53 4.3 10,000+ sold Free shipping Best price in similar deals Bundle deals" [ref=e424] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005002798995605:12000022237659932&pha_manifest=ssr&_immersiveMode=true&disableNav=YES&sourceName=SEARCHProduct&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005002798995605%7C_p_origin_prod%3A&pvid=e199cfa2-f416-4156-813e-1a088f82e346
+              - generic [ref=e425]:
+                - img [ref=e430]
+                - generic "Report fraud item" [ref=e439]
+              - generic [ref=e440]:
+                - heading "High speed Class 10 SD Card 8GB 16GB 32GB 64GB 128GB 256GB carte sd Memory Card SDA1HC SDA1XC Flash usb stick sdcards For Camera" [level=3] [ref=e441]:
+                  - img [ref=e442]
+                  - heading "High speed Class 10 SD Card 8GB 16GB 32GB 64GB 128GB 256GB carte sd Memory Card SDA1HC SDA1XC Flash usb stick sdcards For Camera" [level=3] [ref=e443]
+                - generic "KHR29,616.53" [ref=e444]:
+                  - generic [ref=e445]: KHR29,616.53
+                  - generic [ref=e446]: KHR30,939.06
+                - generic [ref=e447]:
+                  - generic [ref=e449]: "4.3"
+                  - generic [ref=e450]: 10,000+ sold
+                - generic [ref=e452]:
+                  - generic "Free shipping" [ref=e454]
+                  - generic [ref=e455]:
+                    - img [ref=e456]
+                    - generic "Best price in similar deals" [ref=e457]
+                - generic [ref=e458]:
+                  - generic [ref=e459]: Bundle deals
+                  - img [ref=e461]
+            - link "Report fraud item Original Memory Card 4G 8G 16GB 32GB 64GB 256GB 512GB 128GB EVO Plus Flash Mini SD Card Class 10 UHS-I High Speed Micro TF Card KHR17,633.66 4.9 82 sold Free shipping" [ref=e466] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005007614824036.html?algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-9&pdp_ext_f=%7B%22order%22%3A%2282%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2117633.66%2117633.66%21%21%214.40%214.40%21%402102f0c917768093421922437e50d2%2112000041507817510%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=qephaFJXDCiE&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005007614824036%7C_p_origin_prod%3A
+              - generic [ref=e467]:
+                - img [ref=e472]
+                - generic "Report fraud item" [ref=e484]
+              - generic [ref=e485]:
+                - heading "Original Memory Card 4G 8G 16GB 32GB 64GB 256GB 512GB 128GB EVO Plus Flash Mini SD Card Class 10 UHS-I High Speed Micro TF Card" [level=3] [ref=e486]:
+                  - img [ref=e487]
+                  - heading "Original Memory Card 4G 8G 16GB 32GB 64GB 256GB 512GB 128GB EVO Plus Flash Mini SD Card Class 10 UHS-I High Speed Micro TF Card" [level=3] [ref=e488]
+                - generic "KHR17,633.66" [ref=e489]:
+                  - generic [ref=e490]: KHR17,633.66
+                - generic [ref=e491]:
+                  - generic [ref=e493]: "4.9"
+                  - generic [ref=e494]: 82 sold
+                - generic "Free shipping" [ref=e498]
+            - link "Report fraud item Camera SD 128GB 256GB 512GB Flash Memory Card 32GB 64GB U1 SD Cards Class 10 tarjeta slr SD Card U3 UHS-I 16GB for SLR KHR26,570.72 4.5 800+ sold Free shipping" [ref=e503] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005001427824202.html?algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-10&pdp_ext_f=%7B%22order%22%3A%22821%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2126570.72%2126570.72%21%21%216.63%216.63%21%402102f0c917768093421922437e50d2%2112000016080840708%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=HKxSp7vBPXGm&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005001427824202%7C_p_origin_prod%3A
+              - generic [ref=e504]:
+                - img [ref=e509]
+                - generic "Report fraud item" [ref=e521]
+              - generic [ref=e522]:
+                - heading "Camera SD 128GB 256GB 512GB Flash Memory Card 32GB 64GB U1 SD Cards Class 10 tarjeta slr SD Card U3 UHS-I 16GB for SLR" [level=3] [ref=e523]:
+                  - img [ref=e524]
+                  - heading "Camera SD 128GB 256GB 512GB Flash Memory Card 32GB 64GB U1 SD Cards Class 10 tarjeta slr SD Card U3 UHS-I 16GB for SLR" [level=3] [ref=e525]
+                - generic "KHR26,570.72" [ref=e526]:
+                  - generic [ref=e527]: KHR26,570.72
+                - generic [ref=e528]:
+                  - generic [ref=e530]: "4.5"
+                  - generic [ref=e531]: 800+ sold
+                - generic "Free shipping" [ref=e535]
+            - generic [ref=e539]:
+              - link "Report fraud item Lenovo 128GB Micro SD Card Class 10 High Speed Memory Cards Stable Performance Memory Card for Phones/Digital Camera/MP3 Player KHR29,201.74 1 sold Free shipping Extra 4% off with coins" [ref=e540] [cursor=pointer]:
+                - /url: //www.aliexpress.com/item/1005012086584946.html?aem_p4p_detail=202604211509021912938360039500000263253&algo_pvid=e199cfa2-f416-4156-813e-1a088f82e346&algo_exp_id=e199cfa2-f416-4156-813e-1a088f82e346-11&pdp_ext_f=%7B%22order%22%3A%221%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2129201.74%2129201.74%21%21%2149.40%2149.40%21%402102f0c917768093421922437e50d2%2112000057471807144%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A1573477b%3Bm03_new_user%3A-29895&curPageLogUid=aI5fb1RSLdKb&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005012086584946%7C_p_origin_prod%3A&search_p4p_id=202604211509021912938360039500000263253_3
+                - generic [ref=e541]:
+                  - img [ref=e542]
+                  - generic "Report fraud item" [ref=e548]
+                - generic [ref=e549]:
+                  - heading "Lenovo 128GB Micro SD Card Class 10 High Speed Memory Cards Stable Performance Memory Card for Phones/Digital Camera/MP3 Player" [level=3] [ref=e550]:
+                    - img [ref=e551]
+                    - heading "Lenovo 128GB Micro SD Card Class 10 High Speed Memory Cards Stable Performance Memory Card for Phones/Digital Camera/MP3 Player" [level=3] [ref=e552]
+                  - generic "KHR29,201.74" [ref=e553]:
+                    - generic [ref=e554]: KHR29,201.74
+                  - generic [ref=e556]: 1 sold
+                  - generic [ref=e557]:
+                    - generic "Free shipping" [ref=e559]
+                    - generic "Extra 4% off with coins" [ref=e561]
+              - generic [ref=e562] [cursor=pointer]: Ad
+        - generic [ref=e613]:
+          - generic [ref=e615]:
+            - heading "Results for 32gb microsd card class 10" [level=1] [ref=e618]
+            - generic [ref=e620]:
+              - img [ref=e622] [cursor=pointer]
+              - generic [ref=e624]: Looking for a good deal on 32gb microsd card class 10? Explore a wide range of the best 32gb microsd card class 10 on AliExpress to find one that suits you! Besides good quality brands, you’ll also find plenty of discounts when you shop for 32gb microsd card class 10 during big sales. Don’t forget one crucial step - filter for items that offer bonus perks like free shipping & free return to make the most of your online shopping experience!
+          - generic [ref=e626]:
+            - heading "Shop the latest 32gb microsd card class 10 deals on AliExpress" [level=2] [ref=e627]
+            - generic [ref=e629]:
+              - img [ref=e631] [cursor=pointer]
+              - generic [ref=e633]:
+                - text: Saw something that caught your attention? Now you can shop for it and enjoy a good deal on AliExpress! Simply browse an extensive selection of the best 32gb microsd card class 10 and filter by best match or price to find one that suits you! You can also filter out items that offer free shipping, fast delivery or free return to narrow down your search for 32gb microsd card class 10!
+                - text: Need more help to find the most popular 32gb microsd card class 10? All you need to do is sort by ‘orders’ and you’ll find the bestselling 32gb microsd card class 10 on AliExpress! It’s so easy and takes only seconds to shop for what you’re looking for. To get more information, read the real reviews left by shoppers so you can make an informed decision. From a wide range of quality brands to affordable picks, these reviews will help you find the best 32gb microsd card class 10, no matter what your budget is.
+                - text: Furthermore, always look out for deals and sales like the 11.11 Global Shopping Festival, Anniversary Sale or Summer Sale to get the most bang for your buck for 32gb microsd card class 10 and enjoy even lower prices.
+                - text: If you’re a new user on AliExpress, we’ll let you in on a secret. Just before completing your order, take a moment to check for coupons and you’ll save even more on 32gb microsd card class 10. From New User Coupons to Store Coupons, there’s plenty of discounts you can find by simply exploring AliExpress or by playing fun games!
+    - generic [ref=e635]:
+      - generic [ref=e636]:
+        - link "facebook" [ref=e638] [cursor=pointer]:
+          - /url: https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fwww.aliexpress.com%2Fw%2Fwholesale-32gb-microsd-card-class-10.html%3Fchannel%3Dfacebook
+        - link "twitter" [ref=e640] [cursor=pointer]:
+          - /url: https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.aliexpress.com%2Fw%2Fwholesale-32gb-microsd-card-class-10.html%3Fchannel%3Dtwinner&text=32gb%20microsd%20card%20class%2010
+        - link "pinterest" [ref=e642] [cursor=pointer]:
+          - /url: https://www.pinterest.com/pin/create/button/?url=https%3A%2F%2Fwww.aliexpress.com%2Fw%2Fwholesale-32gb-microsd-card-class-10.html%3Fchannel%3Dpinterest&media=https%3A&description=Quality%2032gb%20microsd%20card%20class%2010%20with%20free%20worldwide%20shipping%20on%20AliExpress
+      - link "feedback" [ref=e645] [cursor=pointer]:
+        - /url: javascript:void(0);
+  - contentinfo [ref=e648]:
+    - generic [ref=e650]:
+      - generic [ref=e651]:
+        - generic [ref=e653]:
+          - term [ref=e654]:
+            - heading "Help" [level=5] [ref=e655]
+          - definition [ref=e656]:
+            - link "Help Center" [ref=e657] [cursor=pointer]:
+              - /url: //so.aliexpress.com/s/ByrCmn?language=en_US
+            - text: ","
+            - link "Disputes & Reports" [ref=e658] [cursor=pointer]:
+              - /url: //report.aliexpress.com
+            - text: ","
+            - link "Return&refund policy" [ref=e659] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000437/PinKTaDpEb?disableNav=YES&pha_manifest=ssr&_immersiveMode=true
+            - text: ","
+            - link "Report IPR infringement" [ref=e660] [cursor=pointer]:
+              - /url: https://ipp.aidcgroup.net/#/ippHome
+            - text: ","
+            - link "DSA/OSA Information" [ref=e661] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/transparencycenter/dsa.html
+            - text: ","
+            - link "Integrity Compliance" [ref=e662] [cursor=pointer]:
+              - /url: https://aidc.jubao.alibaba.com
+            - text: ","
+            - link "Transparency Center" [ref=e663] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/transparencycenter/index.html
+            - text: ","
+            - link "Submit report (non-registered users)" [ref=e664] [cursor=pointer]:
+              - /url: https://m.aliexpress.com/p/complaint-center/index.html#/complaint/report
+            - text: ","
+            - link "Return Policy" [ref=e665] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000437/G7ZED4yXte?disableNav=YES&pha_manifest=ssr&_immersiveMode=true
+        - generic [ref=e667]:
+          - term [ref=e668]:
+            - heading "AliExpress Multi-Language Sites" [level=5] [ref=e669]
+          - definition [ref=e670]:
+            - link "Russian" [ref=e671] [cursor=pointer]:
+              - /url: //ru.aliexpress.com
+            - text: ","
+            - link "Portuguese" [ref=e672] [cursor=pointer]:
+              - /url: //pt.aliexpress.com
+            - text: ","
+            - link "Spanish" [ref=e673] [cursor=pointer]:
+              - /url: //es.aliexpress.com
+            - text: ","
+            - link "French" [ref=e674] [cursor=pointer]:
+              - /url: //fr.aliexpress.com
+            - text: ","
+            - link "German" [ref=e675] [cursor=pointer]:
+              - /url: //de.aliexpress.com
+            - text: ","
+            - link "Italian" [ref=e676] [cursor=pointer]:
+              - /url: //it.aliexpress.com
+            - text: ","
+            - link "Dutch" [ref=e677] [cursor=pointer]:
+              - /url: //nl.aliexpress.com
+            - text: ","
+            - link "Turkish" [ref=e678] [cursor=pointer]:
+              - /url: //tr.aliexpress.com
+            - text: ","
+            - link "Japanese" [ref=e679] [cursor=pointer]:
+              - /url: //ja.aliexpress.com
+            - text: ","
+            - link "Korean" [ref=e680] [cursor=pointer]:
+              - /url: //ko.aliexpress.com
+            - text: ","
+            - link "Thai" [ref=e681] [cursor=pointer]:
+              - /url: //th.aliexpress.com
+            - text: ","
+            - link "Arabic" [ref=e682] [cursor=pointer]:
+              - /url: //ar.aliexpress.com
+            - text: ","
+            - link "Hebrew" [ref=e683] [cursor=pointer]:
+              - /url: //he.aliexpress.com
+            - text: ","
+            - link "Polish" [ref=e684] [cursor=pointer]:
+              - /url: //pl.aliexpress.com
+      - generic [ref=e686]:
+        - term [ref=e687]:
+          - heading "Browse by Category" [level=5] [ref=e688]
+        - definition [ref=e689]:
+          - generic [ref=e690]:
+            - link "All Popular" [ref=e691] [cursor=pointer]:
+              - /url: //www.aliexpress.com/popular.html
+            - text: ","
+            - link "Product" [ref=e692] [cursor=pointer]:
+              - /url: //www.aliexpress.com/wholesale.html
+            - text: ","
+            - link "Promotion" [ref=e693] [cursor=pointer]:
+              - /url: //www.aliexpress.com/promotion.html
+            - text: ","
+            - link "Low Price" [ref=e694] [cursor=pointer]:
+              - /url: //www.aliexpress.com/price.html
+            - text: ","
+            - link "Great Value" [ref=e695] [cursor=pointer]:
+              - /url: //www.aliexpress.com/cheap.html
+            - text: ","
+            - link "Reviews" [ref=e696] [cursor=pointer]:
+              - /url: //www.aliexpress.com/reviews.html
+            - text: ","
+            - link "Wiki" [ref=e697] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/wiki/home.html
+            - text: ","
+            - link "Blog" [ref=e698] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/blog/home.html
+            - text: ","
+            - link "Video" [ref=e699] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/video/home.html
+      - generic [ref=e701]:
+        - term [ref=e702]:
+          - heading "Alibaba Group" [level=5] [ref=e703]
+        - definition [ref=e704]:
+          - link "Alibaba Group Website" [ref=e705] [cursor=pointer]:
+            - /url: http://www.alibabagroup.com/en/global/home
+          - text: ","
+          - link "AliExpress" [ref=e706] [cursor=pointer]:
+            - /url: //www.aliexpress.com/
+          - text: ","
+          - link "Alimama" [ref=e707] [cursor=pointer]:
+            - /url: http://www.alimama.com/
+          - text: ","
+          - link "Alipay" [ref=e708] [cursor=pointer]:
+            - /url: https://intl.alipay.com/index.htm
+          - text: ","
+          - link "Fliggy" [ref=e709] [cursor=pointer]:
+            - /url: http://www.fliggy.com/
+          - text: ","
+          - link "Alibaba Cloud" [ref=e710] [cursor=pointer]:
+            - /url: http://www.alibabacloud.com
+          - text: ","
+          - link "Alibaba International" [ref=e711] [cursor=pointer]:
+            - /url: http://www.alibaba.com/
+          - text: ","
+          - link "AliTelecom" [ref=e712] [cursor=pointer]:
+            - /url: http://aliqin.tmall.com/
+          - text: ","
+          - link "DingTalk" [ref=e713] [cursor=pointer]:
+            - /url: http://www.dingtalk.com/
+          - text: ","
+          - link "Juhuasuan" [ref=e714] [cursor=pointer]:
+            - /url: http://ju.taobao.com/
+          - text: ","
+          - link "Taobao Marketplace" [ref=e715] [cursor=pointer]:
+            - /url: http://www.taobao.com/
+          - text: ","
+          - link "Tmall" [ref=e716] [cursor=pointer]:
+            - /url: http://www.tmall.com/
+          - text: ","
+          - link "Taobao Global" [ref=e717] [cursor=pointer]:
+            - /url: https://world.taobao.com/
+          - text: ","
+          - link "AliOS" [ref=e718] [cursor=pointer]:
+            - /url: http://www.alios.cn/
+          - text: ","
+          - link "1688" [ref=e719] [cursor=pointer]:
+            - /url: http://www.1688.com/
+    - generic [ref=e721]:
+      - link "Intellectual Property Protection" [ref=e722] [cursor=pointer]:
+        - /url: https://ipp.aidcgroup.net/#/ippHome
+      - text: "-"
+      - link "Privacy Policy" [ref=e723] [cursor=pointer]:
+        - /url: https://campaign.aliexpress.com/wow/gcp/app-redirect-terms/index
+      - text: "-"
+      - link "Sitemap" [ref=e724] [cursor=pointer]:
+        - /url: https://www.aliexpress.com/sitemap.html
+      - text: "-"
+      - link "Terms of Use" [ref=e725] [cursor=pointer]:
+        - /url: https://terms.alicdn.com/legal-agreement/terms/suit_bu1_aliexpress/suit_bu1_aliexpress202204182115_66077.html
+      - text: "-"
+      - link "Information for EU consumers" [ref=e726] [cursor=pointer]:
+        - /url: https://cdn.contract.alibaba.com/terms/c_platform_service_agreement/20260106183827470/20260106183827470.html?lng=en
+      - text: "-"
+      - link "Legal Information / Imprint" [ref=e728] [cursor=pointer]:
+        - /url: https://terms.alicdn.com/legal-agreement/terms/c_end_product_protocol/20230928165112460/20230928165112460.html
+      - text: "-"
+      - link "Transaction Services Agreement for non-EU/UK Consumers" [ref=e729] [cursor=pointer]:
+        - /url: https://rulechannel.alibaba.com/icbu?type=detail&ruleId=2054&cId=1304#/rule/detail?cId=1304&ruleId=2054
+      - text: "-"
+      - link "Terms and Conditions for EU/EEA/UK Consumers" [ref=e730] [cursor=pointer]:
+        - /url: https://campaign.aliexpress.com/wow/gcp-plus/ae/tupr?_immersiveMode=true&pha_manifest=upr&disableNav=YES&wh_pid=300000414/pt8AMcBikk
+      - text: "-"
+      - link "User Information Legal Enquiry Guide" [ref=e731] [cursor=pointer]:
+        - /url: https://terms.alicdn.com/legal-agreement/terms/data_processing_agreement_others/20231101174825691/20231101174825691.html
+      - text: ©️2010-2025 AliExpress.com. All rights reserved.
+      - link "增值电信业务经营许可证" [ref=e732] [cursor=pointer]:
+        - /url: http://idinfo.zjamr.zj.gov.cn//bscx.do?spm=5261.11333555.006.4.6fd42fe0LrlYeu&method=lzxx&id=3301083301080000022169
+        - img "增值电信业务经营许可证" [ref=e733]
+      - link "增值电信业务经营许可证 浙B2-20120091-8" [ref=e734] [cursor=pointer]:
+        - /url: https://beian.miit.gov.cn/
+      - link "浙公网安备 浙公网安备 33010802002248号" [ref=e735] [cursor=pointer]:
+        - /url: http://www.beian.gov.cn/portal/registerSystemInfo?spm=a260k.dacugeneral.home2019footer.32.6633436c8h108e&recordcode=33010802002248
+        - img "浙公网安备" [ref=e736]
+        - text: 浙公网安备 33010802002248号

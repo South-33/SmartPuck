@@ -17,6 +17,7 @@ const messageRoleValidator = v.union(
   v.literal("assistant"),
   v.literal("system"),
 );
+const messageStatusValidator = v.union(v.literal("complete"), v.literal("streaming"));
 
 export default defineSchema({
   folders: defineTable({
@@ -32,6 +33,7 @@ export default defineSchema({
   meetings: defineTable({
     scopeKey: v.string(),
     folderId: v.id("folders"),
+    agentThreadId: v.optional(v.string()),
     title: v.string(),
     durationLabel: v.string(),
     status: meetingStatusValidator,
@@ -61,6 +63,7 @@ export default defineSchema({
     meetingId: v.id("meetings"),
     role: messageRoleValidator,
     body: v.string(),
+    status: v.optional(messageStatusValidator),
     createdAt: v.number(),
   }).index("by_meetingId_and_createdAt", ["meetingId", "createdAt"]),
 });

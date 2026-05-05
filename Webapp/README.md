@@ -6,6 +6,8 @@ Next.js 16 App Router frontend with a Convex backend for folders, meeting upload
 
 - Folder-first workspace UI for sessions and follow-up chat
 - Convex-backed dashboard query and mutations
+- Saved chat threads inside each folder
+- Gemini-backed assistant replies grounded in the current audio-first SmartPuck context
 - Simulated smart puck upload flow for USB/Bluetooth ingestion metadata
 - Demo fallback when `NEXT_PUBLIC_CONVEX_URL` is not configured
 - Clerk authentication for the live Convex workspace
@@ -50,9 +52,16 @@ Local `.env.local`, Vercel, and Convex should be configured with:
 - `CLERK_SECRET_KEY`
 - `CLERK_JWT_ISSUER_DOMAIN`
 
+Convex also supports Gemini replies through deployment environment variables:
+
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL` optional, defaults to `gemini-2.5-flash-lite`
+
+If `GEMINI_API_KEY` is missing, chat still saves and returns a local SmartPuck-context fallback reply.
+
 ## Deployment
 
 - Frontend: Vercel
 - Backend/data: Convex cloud deployment
 - Vercel needs the Clerk and public Convex vars
-- Convex needs `CLERK_JWT_ISSUER_DOMAIN` in its deployment environment
+- Convex needs `CLERK_JWT_ISSUER_DOMAIN` and optional Gemini vars in its deployment environment

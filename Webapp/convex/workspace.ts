@@ -1,6 +1,16 @@
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { createThread } from "@convex-dev/agent";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
+import { components } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { STARTER_WORKSPACE } from "./smartpuckContext";
 
 const transportValidator = v.union(
   v.literal("usb"),
@@ -18,6 +28,10 @@ async function getViewerScope(ctx: QueryCtx | MutationCtx) {
     scopeKey: identity.tokenIdentifier,
     isAuthenticated: true,
   };
+}
+
+function starterActionIds(prefix: string, count: number) {
+  return Array.from({ length: count }, (_, index) => `${prefix}-action-${index + 1}`);
 }
 
 function slugify(value: string) {
@@ -82,6 +96,7 @@ export const getDashboard = query({
           meetings: meetings.map((meeting) => ({
             id: meeting._id,
             folderId: meeting.folderId,
+            agentThreadId: meeting.agentThreadId,
             title: meeting.title,
             durationLabel: meeting.durationLabel,
             status: meeting.status,
@@ -125,6 +140,7 @@ export const getDashboard = query({
         activeMeeting = {
           id: meetingDoc._id,
           folderId: meetingDoc.folderId,
+          agentThreadId: meetingDoc.agentThreadId,
           title: meetingDoc.title,
           durationLabel: meetingDoc.durationLabel,
           status: meetingDoc.status,
@@ -144,6 +160,7 @@ export const getDashboard = query({
             id: message._id,
             role: message.role,
             body: message.body,
+            status: message.status ?? "complete",
             createdAt: new Date(message.createdAt).toISOString(),
           })),
         };
@@ -170,15 +187,17 @@ export const getDashboard = query({
 });
 
 export const seedDemoWorkspace = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    reset: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
     const viewer = await getViewerScope(ctx);
     const existing = await ctx.db
       .query("folders")
       .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", viewer.scopeKey))
       .take(1);
 
-    if (existing.length > 0) {
+    if (existing.length > 0 && !args.reset) {
       const firstMeeting = await ctx.db
         .query("meetings")
         .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", viewer.scopeKey))
@@ -188,124 +207,94 @@ export const seedDemoWorkspace = mutation({
       return { firstMeetingId: firstMeeting[0]?._id ?? null };
     }
 
-    const now = Date.now();
+    if (args.reset) {
+      await deleteScopedWorkspace(ctx, viewer.scopeKey);
+    }
 
-    const q3FolderId = await ctx.db.insert("folders", {
-      scopeKey: viewer.scopeKey,
-      name: "Q3 Strategy",
-      accent: "silver",
-      slug: "q3-strategy",
-      updatedAt: now,
-    });
-
-    const googleFolderId = await ctx.db.insert("folders", {
-      scopeKey: viewer.scopeKey,
-      name: "Google Meetings",
-      accent: "silver",
-      slug: "google-meetings",
-      updatedAt: now - 1_000,
-    });
-
-    const q3MeetingId = await ctx.db.insert("meetings", {
-      scopeKey: viewer.scopeKey,
-      folderId: q3FolderId,
-      title: "Q3 Strategy Meeting",
-      durationLabel: "45m",
-      status: "ready",
-      startedAtLabel: "Today",
-      sourceTransport: "usb",
-      summary:
-        "The initial milestone is focused on ingest, folders, and per-meeting chat. Transcript-aware answers will plug in later without changing the workspace shape.",
-      transcriptPreview:
-        "Approved Berlin expansion budget, parked APAC discussion, and assigned follow-up for legal and tax review.",
-      syncPercent: 100,
-      syncTransferredMb: 83,
-      syncVisuals: 12,
-      syncAudioHours: 1.5,
-      decisions: [
-        "Keep the first release centered on clean upload and organization flows.",
-        "Do not hard-wire audio processing into the current schema yet.",
-      ],
-      actions: [
-        {
-          id: "q3-action-1",
-          owner: "Product",
-          label: "Choose auth provider before production hardening",
-        },
-        {
-          id: "q3-action-2",
-          owner: "Backend",
-          label: "Attach transcript job after ingest metadata is stable",
-        },
-      ],
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("messages", {
-      scopeKey: viewer.scopeKey,
-      meetingId: q3MeetingId,
-      role: "assistant",
-      body:
-        "The workspace is ready for uploads, folders, and a session thread. Transcript-grounded answers will connect after the audio pipeline exists.",
-      createdAt: now,
-    });
-
-    await ctx.db.insert("messages", {
-      scopeKey: viewer.scopeKey,
-      meetingId: q3MeetingId,
-      role: "user",
-      body: "What is intentionally out of scope for this milestone?",
-      createdAt: now + 1_000,
-    });
-
-    await ctx.db.insert("messages", {
-      scopeKey: viewer.scopeKey,
-      meetingId: q3MeetingId,
-      role: "assistant",
-      body:
-        "Automatic transcript generation, summarization, and folder-wide retrieval are deferred. The current milestone is about durable ingest and clean organization.",
-      createdAt: now + 2_000,
-    });
-
-    const googleMeetingId = await ctx.db.insert("meetings", {
-      scopeKey: viewer.scopeKey,
-      folderId: googleFolderId,
-      title: "Product Sync - Google",
-      durationLabel: "30m",
-      status: "uploaded",
-      startedAtLabel: "Yesterday",
-      sourceTransport: "bluetooth",
-      summary:
-        "Uploaded from Bluetooth on arrival. The meeting shell exists so future processing can attach transcript and summary artifacts without reshaping the product.",
-      transcriptPreview:
-        "Raw meeting metadata captured. Transcript generation remains a follow-on milestone.",
-      syncPercent: 100,
-      syncTransferredMb: 52,
-      syncVisuals: 6,
-      syncAudioHours: 0.8,
-      decisions: ["Keep auth swappable and avoid provider-specific coupling before the choice is made."],
-      actions: [
-        {
-          id: "google-action-1",
-          owner: "Infra",
-          label: "Prepare Vercel environment variables once auth is chosen",
-        },
-      ],
-      updatedAt: now - 1_000,
-    });
-
-    await ctx.db.insert("messages", {
-      scopeKey: viewer.scopeKey,
-      meetingId: googleMeetingId,
-      role: "assistant",
-      body:
-        "This session is organized and ready. The future audio job can populate transcript snippets and higher-confidence chat responses.",
-      createdAt: now - 1_000,
-    });
-
-    return { firstMeetingId: q3MeetingId };
+    return await insertStarterWorkspace(ctx, viewer.scopeKey);
   },
 });
+
+async function deleteScopedWorkspace(ctx: MutationCtx, scopeKey: string) {
+  const folders = await ctx.db
+    .query("folders")
+    .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", scopeKey))
+    .take(100);
+
+  const meetings = await ctx.db
+    .query("meetings")
+    .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", scopeKey))
+    .take(200);
+
+  for (const meeting of meetings) {
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_meetingId_and_createdAt", (q) => q.eq("meetingId", meeting._id))
+      .take(200);
+
+    for (const message of messages) {
+      await ctx.db.delete(message._id);
+    }
+
+    await ctx.db.delete(meeting._id);
+  }
+
+  for (const folder of folders) {
+    await ctx.db.delete(folder._id);
+  }
+}
+
+async function insertStarterWorkspace(ctx: MutationCtx, scopeKey: string) {
+  const now = Date.now();
+  let firstMeetingId: Id<"meetings"> | null = null;
+
+  for (const [index, starter] of STARTER_WORKSPACE.entries()) {
+    const folderId = await ctx.db.insert("folders", {
+      scopeKey,
+      name: starter.folderName,
+      accent: "silver",
+      slug: slugify(starter.folderName) || `starter-folder-${index}`,
+      updatedAt: now - index * 1_000,
+    });
+
+    const actionIds = starterActionIds(`starter-${index}`, starter.actions.length);
+    const meetingId = await ctx.db.insert("meetings", {
+      scopeKey,
+      folderId,
+      title: starter.meetingTitle,
+      durationLabel: starter.durationLabel,
+      status: "ready",
+      startedAtLabel: starter.startedAtLabel,
+      sourceTransport: index === 0 ? "usb" : "bluetooth",
+      summary: starter.summary,
+      transcriptPreview: starter.transcriptPreview,
+      syncPercent: 100,
+      syncTransferredMb: starter.syncTransferredMb,
+      syncVisuals: starter.syncVisuals,
+      syncAudioHours: starter.syncAudioHours,
+      decisions: starter.decisions,
+      actions: starter.actions.map((action, actionIndex) => ({
+        id: actionIds[actionIndex],
+        owner: action.owner,
+        label: action.label,
+      })),
+      updatedAt: now - index * 1_000,
+    });
+
+    await ctx.db.insert("messages", {
+      scopeKey,
+      meetingId,
+      role: "assistant",
+      body: starter.openingMessage,
+      status: "complete",
+      createdAt: now - index * 1_000,
+    });
+
+    firstMeetingId ??= meetingId;
+  }
+
+  return { firstMeetingId };
+}
 
 export const createFolder = mutation({
   args: {
@@ -329,6 +318,94 @@ export const createFolder = mutation({
     });
 
     return id;
+  },
+});
+
+export const createChatInFolder = mutation({
+  args: {
+    folderId: v.id("folders"),
+    title: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await getViewerScope(ctx);
+    const folder = await ensureFolderBelongsToScope(ctx, args.folderId, viewer.scopeKey);
+    const now = Date.now();
+    const trimmedTitle = args.title?.trim();
+    const title = trimmedTitle && trimmedTitle.length >= 2 ? trimmedTitle : "New SmartPuck Chat";
+    const agentThreadId = await createThread(ctx, components.agent, {
+      userId: viewer.scopeKey,
+      title,
+      summary:
+        "Saved SmartPuck chat grounded in the proposal until transcript processing is connected.",
+    });
+
+    const meetingId = await ctx.db.insert("meetings", {
+      scopeKey: viewer.scopeKey,
+      folderId: folder._id,
+      agentThreadId,
+      title,
+      durationLabel: "0m",
+      status: "ready",
+      startedAtLabel: "Just now",
+      sourceTransport: "manual",
+      summary:
+        "A saved chat thread for asking SmartPuck product, hardware, and meeting intelligence questions inside this folder.",
+      transcriptPreview:
+        "This chat is grounded in the SmartPuck proposal until a real meeting transcript is uploaded.",
+      syncPercent: 100,
+      syncTransferredMb: 0,
+      syncVisuals: 0,
+      syncAudioHours: 0,
+      decisions: [
+        "Use this chat to explore SmartPuck capabilities before real audio processing is connected.",
+      ],
+      actions: [
+        {
+          id: `chat-action-${now}`,
+          owner: "SmartPuck",
+          label: "Ask a question about device capture, USB transfer, AI notes, or export workflows.",
+        },
+      ],
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(folder._id, { updatedAt: now });
+
+    return meetingId;
+  },
+});
+
+export const deleteMeeting = mutation({
+  args: {
+    meetingId: v.id("meetings"),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await getViewerScope(ctx);
+    const meeting = await ensureMeetingBelongsToScope(ctx, args.meetingId, viewer.scopeKey);
+    const folderId = meeting.folderId;
+    const now = Date.now();
+
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_meetingId_and_createdAt", (q) => q.eq("meetingId", meeting._id))
+      .take(200);
+
+    for (const message of messages) {
+      await ctx.db.delete(message._id);
+    }
+
+    await ctx.db.delete(meeting._id);
+    await ctx.db.patch(folderId, { updatedAt: now });
+
+    const nextMeeting = await ctx.db
+      .query("meetings")
+      .withIndex("by_scopeKey_and_folderId_and_updatedAt", (q) =>
+        q.eq("scopeKey", viewer.scopeKey).eq("folderId", folderId),
+      )
+      .order("desc")
+      .take(1);
+
+    return nextMeeting[0]?._id ?? null;
   },
 });
 
@@ -356,7 +433,7 @@ export const createMeetingFromDeviceSync = mutation({
         "Raw capture received. Transcript and summary generation will attach here once the processing backend exists.",
       syncPercent: 100,
       syncTransferredMb: args.transport === "usb" ? 128 : 74,
-      syncVisuals: args.transport === "usb" ? 18 : 11,
+      syncVisuals: 0,
       syncAudioHours: args.transport === "usb" ? 1.9 : 1.2,
       decisions: [
         "Capture ingest metadata now so future background processing has stable inputs.",
@@ -385,6 +462,7 @@ export const createMeetingFromDeviceSync = mutation({
       role: "assistant",
       body:
         "The device sync completed and the meeting shell is created. Ask structural questions now, and transcript-grounded answers can plug in later.",
+      status: "complete",
       createdAt: now,
     });
 
@@ -392,40 +470,56 @@ export const createMeetingFromDeviceSync = mutation({
   },
 });
 
-export const sendMessage = mutation({
+export const getMeetingContext = internalQuery({
   args: {
     meetingId: v.id("meetings"),
-    body: v.string(),
+    scopeKey: v.string(),
   },
   handler: async (ctx, args) => {
-    const viewer = await getViewerScope(ctx);
-    const meeting = await ensureMeetingBelongsToScope(ctx, args.meetingId, viewer.scopeKey);
-    const trimmed = args.body.trim();
-
-    if (!trimmed) {
-      throw new Error("Message body cannot be empty");
+    const meeting = await ctx.db.get(args.meetingId);
+    if (!meeting || meeting.scopeKey !== args.scopeKey) {
+      throw new Error("Meeting not found");
     }
 
-    const now = Date.now();
+    const folder = await ctx.db.get(meeting.folderId);
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_meetingId_and_createdAt", (q) => q.eq("meetingId", meeting._id))
+      .take(20);
 
-    await ctx.db.insert("messages", {
-      scopeKey: viewer.scopeKey,
-      meetingId: meeting._id,
-      role: "user",
-      body: trimmed,
-      createdAt: now,
+    return {
+      folderName: folder?.name ?? "Unknown folder",
+      meetingTitle: meeting.title,
+      summary: meeting.summary,
+      transcriptPreview: meeting.transcriptPreview,
+      decisions: meeting.decisions,
+      actions: meeting.actions,
+      recentMessages: messages.map((message) => ({
+        role: message.role,
+        body: message.body,
+      })),
+    };
+  },
+});
+
+export const ensureMeetingAgentThread = internalMutation({
+  args: {
+    meetingId: v.id("meetings"),
+    scopeKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const meeting = await ensureMeetingBelongsToScope(ctx, args.meetingId, args.scopeKey);
+    if (meeting.agentThreadId) {
+      return meeting.agentThreadId;
+    }
+
+    const agentThreadId = await createThread(ctx, components.agent, {
+      userId: args.scopeKey,
+      title: meeting.title,
+      summary: meeting.summary,
     });
 
-    await ctx.db.insert("messages", {
-      scopeKey: viewer.scopeKey,
-      meetingId: meeting._id,
-      role: "assistant",
-      body: `I can help organize "${meeting.title}" and preserve the thread shape today. Transcript-aware answers and deeper meeting intelligence are still deferred until the audio processing milestone ships.`,
-      createdAt: now + 1,
-    });
-
-    await ctx.db.patch(meeting._id, { updatedAt: now + 1 });
-
-    return null;
+    await ctx.db.patch(meeting._id, { agentThreadId });
+    return agentThreadId;
   },
 });

@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as smartpuckAgent from "../smartpuckAgent.js";
+import type * as smartpuckContext from "../smartpuckContext.js";
 import type * as workspace from "../workspace.js";
 
 import type {
@@ -17,6 +19,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  smartpuckAgent: typeof smartpuckAgent;
+  smartpuckContext: typeof smartpuckContext;
   workspace: typeof workspace;
 }>;
 
@@ -46,4 +50,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+};

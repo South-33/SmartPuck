@@ -22,7 +22,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "SmartPuck Workspace",
-  description: "Upload meeting captures from SmartPuck, organize them into folders, and chat with the session context.",
+  description: "Upload SmartPuck audio sessions, organize them into folders, and chat with transcript context.",
 };
 
 export default function RootLayout({

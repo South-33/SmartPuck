@@ -32,6 +32,54 @@ export function DemoWorkspace() {
     });
   }
 
+  function createChat(folderId: string) {
+    const id = `demo-chat-${Date.now()}`;
+    startTransition(() => {
+      setDashboard((current) => {
+        const nextMeeting = {
+          id,
+          folderId,
+          title: "New SmartPuck Chat",
+          durationLabel: "0m",
+          status: "ready" as const,
+          startedAtLabel: "Just now",
+          sourceTransport: "manual" as const,
+          summary:
+            "A saved chat thread for asking SmartPuck product, hardware, and meeting intelligence questions.",
+          transcriptPreview:
+            "This chat is grounded in the SmartPuck proposal until a real meeting transcript is uploaded.",
+          syncStats: {
+            percent: 100,
+            transferredMb: 0,
+            visuals: 0,
+            audioHours: 0,
+          },
+          decisions: ["Use this chat to explore SmartPuck before real audio processing is connected."],
+          actions: [
+            {
+              id: `${id}-action-1`,
+              owner: "SmartPuck",
+              label: "Ask about device capture, USB transfer, AI notes, or exports.",
+            },
+          ],
+          messages: [],
+        };
+
+        return {
+          ...current,
+          activeMeetingId: id,
+          activeMeeting: nextMeeting,
+          folders: current.folders.map((folder) =>
+            folder.id === folderId
+              ? { ...folder, meetings: [nextMeeting, ...folder.meetings] }
+              : folder,
+          ),
+        };
+      });
+    });
+    return id;
+  }
+
   async function connectDevice(folderId: string, transport: DeviceTransport) {
     const id = `demo-meeting-${Date.now()}`;
     startTransition(() => {
@@ -52,7 +100,7 @@ export function DemoWorkspace() {
           syncStats: {
             percent: 100,
             transferredMb: transport === "usb" ? 128 : 76,
-            visuals: transport === "usb" ? 18 : 11,
+            visuals: 0,
             audioHours: transport === "usb" ? 1.9 : 1.2,
           },
           decisions: [
@@ -69,6 +117,7 @@ export function DemoWorkspace() {
               role: "assistant" as const,
               body:
                 "I have the meeting shell ready. Once audio processing is added, this thread can answer against the transcript and extracted action items.",
+              status: "complete" as const,
               createdAt,
             },
           ],
@@ -102,6 +151,25 @@ export function DemoWorkspace() {
     });
   }
 
+  function deleteMeeting(meetingId: string) {
+    startTransition(() => {
+      setDashboard((current) => {
+        const nextFolders = current.folders.map((folder) => ({
+          ...folder,
+          meetings: folder.meetings.filter((meeting) => meeting.id !== meetingId),
+        }));
+        const nextActiveMeeting = nextFolders.flatMap((folder) => folder.meetings)[0] ?? null;
+
+        return {
+          ...current,
+          folders: nextFolders,
+          activeMeetingId: current.activeMeetingId === meetingId ? nextActiveMeeting?.id ?? null : current.activeMeetingId,
+          activeMeeting: current.activeMeetingId === meetingId ? nextActiveMeeting : current.activeMeeting,
+        };
+      });
+    });
+  }
+
   function sendMessage(meetingId: string, body: string) {
     startTransition(() => {
       setDashboard((current) => {
@@ -110,13 +178,15 @@ export function DemoWorkspace() {
           id: `${meetingId}-user-${Date.now()}`,
           role: "user" as const,
           body,
+          status: "complete" as const,
           createdAt: timestamp,
         };
         const assistantMessage = {
           id: `${meetingId}-assistant-${Date.now()}`,
           role: "assistant" as const,
           body:
-            "This is the local demo path. Folder organization, meeting shells, and thread persistence are ready; transcript-grounded answers will plug in after the audio pipeline exists.",
+            "**SmartPuck demo:** Folder organization, meeting shells, and thread persistence are ready; transcript-grounded answers will plug in after the audio pipeline exists.",
+          status: "complete" as const,
           createdAt: timestamp,
         };
 
@@ -152,8 +222,10 @@ export function DemoWorkspace() {
       isMutating={isPending}
       fallbackFolderId={fallbackFolderId}
       onCreateFolder={createFolder}
+      onCreateChat={createChat}
       onConnectDevice={connectDevice}
       onSelectMeeting={selectMeeting}
+      onDeleteMeeting={deleteMeeting}
       onSendMessage={sendMessage}
     />
   );

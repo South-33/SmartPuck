@@ -1,7 +1,19 @@
 "use client";
 
 import clsx from "clsx";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { Streamdown } from "streamdown";
 import {
   Archive,
   ArrowRight,
@@ -23,9 +35,12 @@ import {
   Settings,
   Share2,
   Sparkles,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import type {
+  ChatAttachment,
   DashboardData,
   DeviceTransport,
   MeetingMessage,
@@ -35,16 +50,19 @@ import type {
 
 type WorkspaceShellProps = {
   dashboard: DashboardData;
+  liveMessages?: MeetingMessage[] | null;
   mode: WorkspaceShellMode;
   isMutating: boolean;
   fallbackFolderId: string | null;
   onCreateFolder: (name: string) => void | Promise<void>;
+  onCreateChat: (folderId: string) => Promise<string | void> | string | void;
   onConnectDevice: (
     folderId: string,
     transport: DeviceTransport,
   ) => Promise<string | void> | string | void;
   onSelectMeeting: (meetingId: string) => void;
-  onSendMessage: (meetingId: string, body: string) => void | Promise<void>;
+  onDeleteMeeting: (meetingId: string) => void | Promise<void>;
+  onSendMessage: (meetingId: string, body: string, privateContext?: string) => void | Promise<void>;
 };
 
 type WorkspaceView =
@@ -122,20 +140,49 @@ const HELP_ITEMS = [
   },
 ];
 
+const ATTACHMENT_TEXT_TYPES = new Set([
+  "application/json",
+  "application/pdf",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+]);
+
+const MAX_ATTACHMENT_PREVIEW_CHARS = 2500;
+const MOTION_EXIT_MS = 120;
+const DRAFT_STORAGE_PREFIX = "smartpuck:chat-draft:";
+const REMOVED_STARTER_MESSAGE =
+  "New chat saved. Ask me about SmartPuck's offline recorder, hardware prototype, transcript pipeline, image context, structured notes, or future roadmap.";
+const PROMPT_SUGGESTIONS = [
+  "Explain the hardware prototype",
+  "How does USB transfer work?",
+  "What is still not built?",
+  "Summarize the transcript pipeline",
+];
+
 export function WorkspaceShell({
   dashboard,
+  liveMessages,
   mode,
   isMutating,
   fallbackFolderId,
   onCreateFolder,
+  onCreateChat,
   onConnectDevice,
   onSelectMeeting,
+  onDeleteMeeting,
   onSendMessage,
 }: WorkspaceShellProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("recent-sessions");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("dashboard");
+  const animatedTab = useAnimatedValue(activeTab, MOTION_EXIT_MS);
+  const animatedView = useAnimatedValue(activeView, MOTION_EXIT_MS);
   const [draftMessage, setDraftMessage] = useState("");
+  const [draftAttachments, setDraftAttachments] = useState<ChatAttachment[]>([]);
   const [draftFolder, setDraftFolder] = useState("");
+  const [creatingChatFolderId, setCreatingChatFolderId] = useState<string | null>(null);
+  const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
+  const [pendingMessagesByMeeting, setPendingMessagesByMeeting] = useState<Record<string, MeetingMessage[]>>({});
   const [showFolderComposer, setShowFolderComposer] = useState(false);
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
@@ -149,12 +196,59 @@ export function WorkspaceShell({
   const [syncProgress, setSyncProgress] = useState({
     percent: 0,
     transferredMb: 0,
-    visuals: 0,
+    attachments: 0,
     audioHours: 0,
   });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isSendingRef = useRef(false);
 
-  const activeMeeting = dashboard.activeMeeting;
+  const activeMeeting = dashboard.activeMeeting
+    ? { ...dashboard.activeMeeting, messages: liveMessages ?? dashboard.activeMeeting.messages }
+    : null;
+  const activeMeetingId = activeMeeting?.id ?? null;
+  const activePendingMessages = activeMeetingId ? (pendingMessagesByMeeting[activeMeetingId] ?? []) : [];
   const visibleFolders = useMemo(() => dashboard.folders, [dashboard.folders]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let cancelled = false;
+    const loadDraft = () => {
+      if (cancelled) {
+        return;
+      }
+      if (!activeMeetingId || typeof window === "undefined") {
+        setDraftMessage("");
+        return;
+      }
+
+      setDraftMessage(window.localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${activeMeetingId}`) ?? "");
+    };
+
+    window.requestAnimationFrame(loadDraft);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMeetingId]);
+
+  useEffect(() => {
+    if (!activeMeetingId || typeof window === "undefined") {
+      return;
+    }
+
+    const draftKey = `${DRAFT_STORAGE_PREFIX}${activeMeetingId}`;
+    const timer = window.setTimeout(() => {
+      if (draftMessage.trim()) {
+        window.localStorage.setItem(draftKey, draftMessage);
+      } else {
+        window.localStorage.removeItem(draftKey);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [activeMeetingId, draftMessage]);
 
   useEffect(() => {
     if (activeView !== "new-recording" || newRecordingState !== "syncing") {
@@ -163,10 +257,10 @@ export function WorkspaceShell({
 
     const targets =
       pendingTransport === "usb"
-        ? { percent: 68, transferredMb: 83, visuals: 12, audioHours: 1.5 }
+        ? { percent: 68, transferredMb: 83, attachments: 0, audioHours: 1.5 }
         : pendingTransport === "bluetooth"
-          ? { percent: 52, transferredMb: 52, visuals: 6, audioHours: 0.8 }
-          : { percent: 41, transferredMb: 34, visuals: 4, audioHours: 0.5 };
+          ? { percent: 52, transferredMb: 52, attachments: 0, audioHours: 0.8 }
+          : { percent: 41, transferredMb: 34, attachments: 0, audioHours: 0.5 };
 
     let step = 0;
     const totalSteps = 16;
@@ -177,7 +271,7 @@ export function WorkspaceShell({
       setSyncProgress({
         percent: Math.round(targets.percent * ratio),
         transferredMb: Math.round(targets.transferredMb * ratio),
-        visuals: Math.round(targets.visuals * ratio),
+        attachments: Math.round(targets.attachments * ratio),
         audioHours: Number((targets.audioHours * ratio).toFixed(1)),
       });
 
@@ -215,9 +309,35 @@ export function WorkspaceShell({
   }
 
   function openMeeting(meetingId: string) {
+    setDraftAttachments([]);
     setActiveView("recent-sessions");
     setActiveTab("dashboard");
     onSelectMeeting(meetingId);
+  }
+
+  async function deleteMeeting(meetingId: string) {
+    setDeletingMeetingId(meetingId);
+    try {
+      await Promise.resolve(onDeleteMeeting(meetingId));
+    } finally {
+      setDeletingMeetingId(null);
+    }
+  }
+
+  async function createChat(folderId: string) {
+    setCreatingChatFolderId(folderId);
+    setOpenFolders((current) => ({ ...current, [folderId]: true }));
+    setActiveView("recent-sessions");
+    setActiveTab("dashboard");
+
+    try {
+      const meetingId = await Promise.resolve(onCreateChat(folderId));
+      if (typeof meetingId === "string") {
+        onSelectMeeting(meetingId);
+      }
+    } finally {
+      setCreatingChatFolderId(null);
+    }
   }
 
   function showNewRecording() {
@@ -241,7 +361,7 @@ export function WorkspaceShell({
     setSyncProgress({
       percent: 0,
       transferredMb: 0,
-      visuals: 0,
+      attachments: 0,
       audioHours: 0,
     });
     setNewRecordingState("syncing");
@@ -269,21 +389,76 @@ export function WorkspaceShell({
     if (!activeMeeting) {
       return;
     }
-
-    const trimmed = draftMessage.trim();
-    if (!trimmed) {
+    if (isSendingRef.current) {
       return;
     }
 
-    await onSendMessage(activeMeeting.id, trimmed);
+    const trimmed = draftMessage.trim();
+    if (!trimmed && draftAttachments.length === 0) {
+      return;
+    }
+
     setDraftMessage("");
+    const attachments = draftAttachments;
+    setDraftAttachments([]);
+    const privateAttachmentContext = buildAttachmentContext(attachments);
+    const optimisticMessage: MeetingMessage = {
+      id: `optimistic-${activeMeeting.id}-${Date.now()}`,
+      role: "user",
+      body: trimmed || "Attached context",
+      status: "complete",
+      createdAt: new Date().toISOString(),
+      attachments,
+    };
+    setPendingMessagesByMeeting((current) => ({
+      ...current,
+      [activeMeeting.id]: [...(current[activeMeeting.id] ?? []), optimisticMessage],
+    }));
+    isSendingRef.current = true;
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${activeMeeting.id}`);
+      }
+      await onSendMessage(activeMeeting.id, trimmed || "Attached context", privateAttachmentContext);
+    } finally {
+      setPendingMessagesByMeeting((current) => ({
+        ...current,
+        [activeMeeting.id]: (current[activeMeeting.id] ?? []).filter(
+          (message) => message.id !== optimisticMessage.id,
+        ),
+      }));
+      isSendingRef.current = false;
+    }
+  }
+
+  async function attachFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    await attachSelectedFiles(files);
+  }
+
+  async function attachSelectedFiles(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
+    const nextAttachments = await Promise.all(files.slice(0, 6).map(readDraftAttachment));
+    setDraftAttachments((current) => [...current, ...nextAttachments].slice(-8));
+  }
+
+  function removeDraftAttachment(id: string) {
+    setDraftAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
   const headerTabsVisible = activeView === "recent-sessions";
 
   return (
-    <div className="min-h-screen bg-white text-on-background lg:flex">
-      <aside className="scrollbar-subtle z-30 flex w-full flex-col border-b border-gray-100 bg-[#fbfbfd]/80 px-3 pb-3 pt-6 backdrop-blur-md lg:fixed lg:left-0 lg:top-0 lg:h-screen lg:w-72 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+    <div className="flex min-h-screen flex-col bg-white text-on-background lg:h-screen lg:flex-row lg:overflow-hidden">
+      <aside className="scrollbar-subtle z-30 flex w-full flex-col border-b border-gray-100 bg-[#fbfbfd]/80 px-3 pb-3 pt-6 backdrop-blur-md lg:h-screen lg:w-72 lg:flex-shrink-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="mb-5 flex-shrink-0 px-3">
           <div className="mb-5 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm">
@@ -351,31 +526,59 @@ export function WorkspaceShell({
           <div className="space-y-0.5">
             {visibleFolders.map((folder) => (
               <div key={folder.id} className="folder-group">
-                <button
-                  type="button"
-                  onClick={() => toggleFolder(folder.id)}
-                  className="group flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-gray-700 hover:bg-white/60 hover:text-black"
-                >
-                  <Folder className="h-4 w-4 text-gray-400 transition-colors group-hover:text-black" />
-                  <span className="flex-1 text-left font-display text-[11px] font-bold uppercase tracking-[0.1em]">
-                    {folder.name}
-                  </span>
-                  <ChevronDown
-                    className={clsx(
-                      "h-4 w-4 text-gray-300 transition-transform duration-200",
-                      isFolderOpen(folder.id) ? "rotate-0" : "-rotate-90",
-                    )}
-                  />
-                </button>
+                <div className="mb-1 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleFolder(folder.id)}
+                    className="group flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2.5 text-gray-700 hover:bg-white/60 hover:text-black"
+                  >
+                    <Folder className="h-4 w-4 flex-shrink-0 text-gray-400 transition-colors group-hover:text-black" />
+                    <span className="min-w-0 flex-1 truncate text-left font-display text-[11px] font-bold uppercase tracking-[0.1em]">
+                      {folder.name}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void createChat(folder.id);
+                    }}
+                    disabled={creatingChatFolderId === folder.id || isMutating}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-300 hover:bg-white hover:text-black disabled:cursor-wait disabled:opacity-40"
+                    aria-label={`Start new chat in ${folder.name}`}
+                    title={`Start new chat in ${folder.name}`}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleFolder(folder.id)}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-300 hover:bg-white hover:text-black"
+                    aria-label={`Toggle ${folder.name}`}
+                  >
+                    <ChevronDown
+                      className={clsx(
+                        "h-4 w-4 text-gray-300 transition-transform duration-200",
+                        isFolderOpen(folder.id) ? "rotate-0" : "-rotate-90",
+                      )}
+                    />
+                  </button>
+                </div>
 
                 <div
                   className="overflow-hidden pl-4 transition-all duration-200"
                   style={{
                     maxHeight: isFolderOpen(folder.id)
-                      ? `${Math.max(folder.meetings.length, 1) * 52 + 52}px`
+                      ? `${Math.max(folder.meetings.length, 1) * 52 + 56}px`
                       : "0px",
                   }}
                 >
+                  {creatingChatFolderId === folder.id ? (
+                    <div className="mb-1 flex items-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-[11px] font-medium text-gray-400 shadow-sm">
+                      <Sparkles className="h-4 w-4" />
+                      Saving new chat...
+                    </div>
+                  ) : null}
+
                   {folder.meetings.length === 0 ? (
                     <p className="px-3 py-2 text-[10px] italic text-gray-400">No recordings yet.</p>
                   ) : null}
@@ -386,40 +589,47 @@ export function WorkspaceShell({
                         dashboard.activeMeetingId === meeting.id && activeView === "recent-sessions";
 
                       return (
-                        <button
+                        <div
                           key={meeting.id}
-                          type="button"
-                          onClick={() => openMeeting(meeting.id)}
                           className={clsx(
-                            "meeting-link group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-all",
+                            "meeting-link group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-all duration-200",
                             isActive
                               ? "bg-white text-black shadow-sm"
                               : "text-gray-500 hover:bg-white/70 hover:text-black",
                           )}
                         >
-                          <Mic
+                          <button
+                            type="button"
+                            onClick={() => openMeeting(meeting.id)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            <Mic
+                              className={clsx(
+                                "h-4 w-4 flex-shrink-0",
+                                isActive ? "text-black" : "text-gray-300 group-hover:text-gray-500",
+                              )}
+                            />
+                            <span className="flex-1 truncate text-[11px] font-medium">{meeting.title}</span>
+                            <span className="font-display text-[9px] text-gray-300">{meeting.durationLabel}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void deleteMeeting(meeting.id);
+                            }}
+                            aria-label={`Delete ${meeting.title}`}
+                            title={`Delete ${meeting.title}`}
                             className={clsx(
-                              "h-4 w-4",
-                              isActive ? "text-black" : "text-gray-300 group-hover:text-gray-500",
+                              "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-gray-300 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100",
+                              deletingMeetingId === meeting.id ? "cursor-wait opacity-100" : "",
                             )}
-                          />
-                          <span className="flex-1 truncate text-[11px] font-medium">{meeting.title}</span>
-                          <span className="font-display text-[9px] text-gray-300">{meeting.durationLabel}</span>
-                        </button>
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
-
-                  {folder.meetings.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => openMeeting(folder.meetings[0].id)}
-                      className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-200 px-3 py-2 text-gray-400 hover:border-gray-400 hover:bg-white/70 hover:text-black"
-                    >
-                      <Sparkles className="h-4 w-4 text-gray-300" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Ask about folder</span>
-                    </button>
-                  ) : null}
                 </div>
               </div>
             ))}
@@ -454,7 +664,7 @@ export function WorkspaceShell({
         </div>
       </aside>
 
-      <main className="min-h-screen flex-1 bg-white lg:ml-72 lg:h-screen lg:overflow-hidden">
+      <main className="flex min-h-0 flex-1 flex-col bg-white lg:h-screen lg:overflow-hidden">
         <header className="z-20 flex h-20 flex-shrink-0 items-center justify-between border-b border-gray-100 bg-white/70 px-6 backdrop-blur-2xl lg:px-10">
           <div className="flex items-center gap-10">
             {headerTabsVisible ? (
@@ -513,29 +723,42 @@ export function WorkspaceShell({
           </div>
         </header>
 
-        <div className="relative flex-1 overflow-hidden">
-          {activeView === "recent-sessions" ? (
-            <div id="view-recent-sessions" className="flex h-[calc(100vh-5rem)] w-full flex-col lg:h-full">
-              {activeTab === "dashboard" ? (
-                <DashboardTab
-                  activeMeeting={activeMeeting}
-                  draftMessage={draftMessage}
-                  onDraftMessageChange={setDraftMessage}
-                  onSubmitMessage={submitMessage}
-                  isMutating={isMutating}
-                />
-              ) : null}
-              {activeTab === "transcripts" ? <TranscriptTab activeMeeting={activeMeeting} /> : null}
-              {activeTab === "analytics" ? (
-                <AnalyticsTab activeMeeting={activeMeeting} mode={mode} />
-              ) : null}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {animatedView.value === "recent-sessions" ? (
+            <div
+              id="view-recent-sessions"
+              className={clsx(
+                "flex h-full min-h-0 w-full flex-col",
+                animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel",
+              )}
+            >
+              <AnimatedTabPanel
+                activeTab={animatedTab.value}
+                isExiting={animatedTab.isExiting}
+                activeMeeting={activeMeeting}
+                draftMessage={draftMessage}
+                draftAttachments={draftAttachments}
+                pendingMessages={activePendingMessages}
+                onDraftMessageChange={setDraftMessage}
+                onAttachClick={() => fileInputRef.current?.click()}
+                onAttachmentInputChange={attachFiles}
+                onAttachFiles={attachSelectedFiles}
+                onRemoveDraftAttachment={removeDraftAttachment}
+                onSubmitMessage={submitMessage}
+                isMutating={isMutating}
+                fileInputRef={fileInputRef}
+                mode={mode}
+              />
             </div>
           ) : null}
 
-          {activeView === "new-recording" ? (
+          {animatedView.value === "new-recording" ? (
             <div
               id="view-new-recording"
-              className="flex h-[calc(100vh-5rem)] w-full flex-col items-center justify-center overflow-hidden bg-[#f8f9fa] px-6 lg:h-full lg:px-12"
+              className={clsx(
+                "flex h-[calc(100vh-5rem)] w-full flex-col items-center justify-center overflow-hidden bg-[#f8f9fa] px-6 lg:h-full lg:px-12",
+                animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel",
+              )}
             >
               {newRecordingState === "connect" ? (
                 <div id="nr-connect" className="flex h-full w-full flex-col items-center justify-center gap-10">
@@ -635,7 +858,7 @@ export function WorkspaceShell({
                       value={`${syncProgress.transferredMb}`}
                       suffix="MB"
                     />
-                    <SyncStatCard label="Snapshots" value={`${syncProgress.visuals}`} />
+                    <SyncStatCard label="Attachments" value={`${syncProgress.attachments}`} />
                     <SyncStatCard
                       label="Audio Stream"
                       value={syncProgress.audioHours.toFixed(1)}
@@ -655,12 +878,88 @@ export function WorkspaceShell({
             </div>
           ) : null}
 
-          {activeView === "archives" ? <ArchivesView /> : null}
-          {activeView === "lecture-series" ? <LectureSeriesView /> : null}
-          {activeView === "help" ? <HelpView /> : null}
-          {activeView === "settings" ? <SettingsView /> : null}
+          {animatedView.value === "archives" ? (
+            <div className={animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel"}>
+              <ArchivesView />
+            </div>
+          ) : null}
+          {animatedView.value === "lecture-series" ? (
+            <div className={animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel"}>
+              <LectureSeriesView />
+            </div>
+          ) : null}
+          {animatedView.value === "help" ? (
+            <div className={animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel"}>
+              <HelpView />
+            </div>
+          ) : null}
+          {animatedView.value === "settings" ? (
+            <div className={animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel"}>
+              <SettingsView />
+            </div>
+          ) : null}
         </div>
       </main>
+    </div>
+  );
+}
+
+function AnimatedTabPanel({
+  activeTab,
+  isExiting,
+  activeMeeting,
+  draftMessage,
+  draftAttachments,
+  pendingMessages,
+  onDraftMessageChange,
+  onAttachClick,
+  onAttachmentInputChange,
+  onAttachFiles,
+  onRemoveDraftAttachment,
+  onSubmitMessage,
+  isMutating,
+  fileInputRef,
+  mode,
+}: {
+  activeTab: WorkspaceTab;
+  isExiting: boolean;
+  activeMeeting: MeetingRecord | null;
+  draftMessage: string;
+  draftAttachments: ChatAttachment[];
+  pendingMessages: MeetingMessage[];
+  onDraftMessageChange: (value: string) => void;
+  onAttachClick: () => void;
+  onAttachmentInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onAttachFiles: (files: File[]) => void | Promise<void>;
+  onRemoveDraftAttachment: (id: string) => void;
+  onSubmitMessage: (event: FormEvent<HTMLFormElement>) => void;
+  isMutating: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  mode: WorkspaceShellMode;
+}) {
+  return (
+    <div
+      key={activeTab}
+      className={clsx("h-full min-h-0", isExiting ? "workspace-panel-exit" : "workspace-panel")}
+    >
+      {activeTab === "dashboard" ? (
+        <DashboardTab
+          activeMeeting={activeMeeting}
+          draftMessage={draftMessage}
+          draftAttachments={draftAttachments}
+          pendingMessages={pendingMessages}
+          onDraftMessageChange={onDraftMessageChange}
+          onAttachClick={onAttachClick}
+          onAttachmentInputChange={onAttachmentInputChange}
+          onAttachFiles={onAttachFiles}
+          onRemoveDraftAttachment={onRemoveDraftAttachment}
+          onSubmitMessage={onSubmitMessage}
+          isMutating={isMutating}
+          fileInputRef={fileInputRef}
+        />
+      ) : null}
+      {activeTab === "transcripts" ? <TranscriptTab activeMeeting={activeMeeting} /> : null}
+      {activeTab === "analytics" ? <AnalyticsTab activeMeeting={activeMeeting} mode={mode} /> : null}
     </div>
   );
 }
@@ -668,25 +967,126 @@ export function WorkspaceShell({
 function DashboardTab({
   activeMeeting,
   draftMessage,
+  draftAttachments,
+  pendingMessages,
   onDraftMessageChange,
+  onAttachClick,
+  onAttachmentInputChange,
+  onAttachFiles,
+  onRemoveDraftAttachment,
   onSubmitMessage,
   isMutating,
+  fileInputRef,
 }: {
   activeMeeting: MeetingRecord | null;
   draftMessage: string;
+  draftAttachments: ChatAttachment[];
+  pendingMessages: MeetingMessage[];
   onDraftMessageChange: (value: string) => void;
+  onAttachClick: () => void;
+  onAttachmentInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onAttachFiles: (files: File[]) => void | Promise<void>;
+  onRemoveDraftAttachment: (id: string) => void;
   onSubmitMessage: (event: FormEvent<HTMLFormElement>) => void;
   isMutating: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
 }) {
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const animatedMeeting = useAnimatedValue(activeMeeting, MOTION_EXIT_MS, activeMeeting?.id ?? "empty");
+  const renderedMeeting = animatedMeeting.value;
+  const messages = useMemo(
+    () =>
+      mergeServerAndOptimisticMessages(renderedMeeting?.messages ?? [], pendingMessages).filter(
+        (message) => !isRemovedStarterMessage(message),
+      ),
+    [renderedMeeting?.messages, pendingMessages],
+  );
+  const messageCount = messages.length;
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView?.({ block: "end" });
+  }, [renderedMeeting?.id, messageCount]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+  }, [draftMessage]);
+
+  useEffect(() => {
+    function focusComposer(event: globalThis.KeyboardEvent) {
+      if (!activeMeeting || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      if (event.key.length !== 1) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable) {
+        return;
+      }
+      textareaRef.current?.focus();
+    }
+
+    window.addEventListener("keydown", focusComposer);
+    return () => window.removeEventListener("keydown", focusComposer);
+  }, [activeMeeting]);
+
+  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.files ?? []);
+    if (files.length > 0) {
+      event.preventDefault();
+      void onAttachFiles(files);
+    }
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (Array.from(event.dataTransfer.types).includes("Files")) {
+      event.preventDefault();
+      setIsDraggingFiles(true);
+    }
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    void onAttachFiles(files);
+  }
+
   return (
-    <div id="tab-dashboard" className="flex h-full w-full flex-1">
-      <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden border-r border-gray-50 bg-white">
-        <div className="scrollbar-subtle mx-auto w-full max-w-4xl flex-1 overflow-y-auto p-8 pb-40 lg:p-12">
-          <div className="space-y-12">
-            {activeMeeting ? (
-              activeMeeting.messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
-              ))
+    <div
+      id="tab-dashboard"
+      className="flex h-full min-h-0 w-full flex-1"
+      onDragLeave={() => setIsDraggingFiles(false)}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-gray-50 bg-white">
+        <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto">
+          <div
+            key={renderedMeeting?.id ?? "empty"}
+            className={clsx(
+              "mx-auto w-full max-w-4xl space-y-12 p-8 lg:p-12",
+              animatedMeeting.isExiting ? "workspace-panel-exit" : "workspace-panel",
+            )}
+          >
+            {renderedMeeting ? (
+              <>
+                {messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
+                ))}
+                <div ref={messageEndRef} />
+              </>
             ) : (
               <div className="flex min-h-[420px] items-center justify-center">
                 <div className="text-center">
@@ -702,35 +1102,109 @@ function DashboardTab({
           </div>
         </div>
 
-        <div className="pointer-events-none absolute bottom-6 left-0 right-0 flex justify-center px-4 lg:px-8">
-          <form onSubmit={onSubmitMessage} className="pointer-events-auto w-full max-w-3xl">
-            <div className="chrome-shimmer-border relative flex items-center rounded-[1.5rem] bg-white p-2.5 shadow-2xl transition-all focus-within:shadow-xl">
-              <button
-                type="button"
-                className="p-3 text-gray-400 hover:text-black"
-                aria-label="Attach file"
-              >
-                <Paperclip className="h-5 w-5" />
-              </button>
-              <input
-                value={draftMessage}
-                onChange={(event) => onDraftMessageChange(event.target.value)}
-                className="flex-1 border-none bg-transparent px-4 py-3 font-medium text-gray-900 outline-none placeholder:text-gray-400"
-                placeholder={
-                  activeMeeting
-                    ? `Ask SmartPuck about "${activeMeeting.title}"...`
-                    : "Ask SmartPuck about this session..."
-                }
-                type="text"
-              />
-              <button
-                type="submit"
-                disabled={!draftMessage.trim() || !activeMeeting || isMutating}
-                className="liquid-mercury-soft flex h-12 w-12 items-center justify-center rounded-2xl border border-white/40 text-black shadow-lg disabled:opacity-50"
-                aria-label="Send"
-              >
-                <ArrowUp className="relative z-10 h-4 w-4" />
-              </button>
+        <div className="flex-shrink-0 border-t border-gray-100/80 bg-white/85 px-4 py-4 backdrop-blur-2xl lg:px-8 lg:py-6">
+          <form onSubmit={onSubmitMessage} className="mx-auto w-full max-w-3xl">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="sr-only"
+              onChange={onAttachmentInputChange}
+              accept=".txt,.md,.markdown,.csv,.json,.pdf,image/*"
+            />
+            <div
+              className={clsx(
+                "chrome-shimmer-border relative rounded-[1.5rem] bg-white p-2.5 shadow-2xl transition-all focus-within:shadow-xl",
+                isDraggingFiles ? "scale-[1.01] ring-2 ring-black/10" : "",
+              )}
+            >
+              {isDraggingFiles ? (
+                <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-[1.1rem] border border-dashed border-gray-300 bg-white/85 text-xs font-bold uppercase tracking-[0.2em] text-gray-500 backdrop-blur">
+                  Drop to attach
+                </div>
+              ) : null}
+              {draftAttachments.length > 0 ? (
+                <div className="mb-2 flex flex-wrap gap-2 px-2 pt-1">
+                  {draftAttachments.map((attachment) => (
+                    <div
+                      key={attachment.id}
+                      className="flex max-w-full items-center gap-2 rounded-full border border-gray-100 bg-gray-50 px-3 py-1.5 text-[11px] font-semibold text-gray-600"
+                    >
+                      <FileText className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                      <span className="max-w-48 truncate">{attachment.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveDraftAttachment(attachment.id)}
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-gray-300 hover:bg-white hover:text-black"
+                        aria-label={`Remove ${attachment.name}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex items-end gap-1">
+                <button
+                  type="button"
+                  onClick={onAttachClick}
+                  disabled={!activeMeeting || isMutating}
+                  className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl text-gray-400 hover:bg-gray-50 hover:text-black disabled:opacity-40"
+                  aria-label="Attach files"
+                  title="Attach files"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+                <textarea
+                  ref={textareaRef}
+                  value={draftMessage}
+                  onChange={(event) => onDraftMessageChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  onPaste={handleComposerPaste}
+                  rows={1}
+                  className="max-h-40 min-h-12 flex-1 resize-none border-none bg-transparent px-2 py-3 font-medium leading-6 text-gray-900 outline-none placeholder:text-gray-400"
+                  placeholder={
+                    activeMeeting
+                      ? `Ask SmartPuck about "${activeMeeting.title}"...`
+                      : "Ask SmartPuck about this session..."
+                  }
+                />
+                <button
+                  type="submit"
+                  disabled={(!draftMessage.trim() && draftAttachments.length === 0) || !activeMeeting || isMutating}
+                  className="liquid-mercury-soft flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl border border-white/40 text-black shadow-lg disabled:opacity-50"
+                  aria-label="Send"
+                >
+                  <ArrowUp className="relative z-10 h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            {activeMeeting && messages.length === 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2 px-1">
+                {PROMPT_SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => {
+                      onDraftMessageChange(suggestion);
+                      requestAnimationFrame(() => textareaRef.current?.focus());
+                    }}
+                    className="rounded-full border border-gray-100 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-500 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:text-black"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-3 flex items-center justify-between px-2 text-[10px] font-bold uppercase tracking-[0.22em] text-gray-300">
+              <span>{draftAttachments.length > 0 ? `${draftAttachments.length} attached` : "Saved chat"}</span>
+              <span>{isMutating ? "Streaming response" : "Enter to send - Shift+Enter for line break"}</span>
             </div>
           </form>
         </div>
@@ -738,8 +1212,16 @@ function DashboardTab({
 
       <aside className="hidden w-[420px] flex-col overflow-hidden bg-[#f8f9fa] xl:flex">
         <div className="scrollbar-subtle flex-1 overflow-y-auto p-10 pb-32">
-          {activeMeeting ? (
-            <div className="flex flex-col gap-8">
+          {renderedMeeting ? (
+            <div
+              key={renderedMeeting.id}
+              className={clsx(
+                "flex flex-col gap-8",
+                animatedMeeting.isExiting
+                  ? "workspace-rail-panel workspace-panel-exit"
+                  : "workspace-rail-panel",
+              )}
+            >
               <div className="space-y-2">
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">
                   Session Intelligence
@@ -749,7 +1231,7 @@ function DashboardTab({
 
               <InsightCard title="Key Decisions" icon={<Sparkles className="h-4 w-4 opacity-60" />}>
                 <ul className="space-y-4">
-                  {activeMeeting.decisions.map((decision) => (
+                  {renderedMeeting.decisions.map((decision) => (
                     <li key={decision} className="flex items-start gap-4 text-sm leading-relaxed text-gray-700">
                       <span className="mt-2 h-1.5 w-1.5 rounded-full bg-gray-300" />
                       <span>{decision}</span>
@@ -760,7 +1242,7 @@ function DashboardTab({
 
               <InsightCard title="Action Items" icon={<Grip className="h-4 w-4 opacity-60" />}>
                 <div className="space-y-3">
-                  {activeMeeting.actions.map((action) => (
+                  {renderedMeeting.actions.map((action) => (
                     <div key={action.id} className="rounded-2xl border border-gray-100 bg-white/70 p-4">
                       <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400">
                         {action.owner}
@@ -772,7 +1254,7 @@ function DashboardTab({
               </InsightCard>
 
               <InsightCard title="Transcript Preview" icon={<Search className="h-4 w-4 opacity-60" />}>
-                <p className="text-sm leading-7 text-gray-700">{activeMeeting.transcriptPreview}</p>
+                <p className="text-sm leading-7 text-gray-700">{renderedMeeting.transcriptPreview}</p>
               </InsightCard>
 
               <div className="rounded-[2.5rem] border border-gray-100 bg-gray-50 p-8 text-center">
@@ -862,7 +1344,7 @@ function AnalyticsTab({
                 {activeMeeting?.title ?? "No session selected"}
               </h2>
               <p className="mt-3 max-w-3xl text-base leading-8 text-gray-600">
-                The first milestone is still metadata-first. These cards mirror the old workspace shell so analytics can drop into the same visual frame later.
+                The first milestone is audio-first. These cards track session transfer, optional context attachments, and recorded audio duration.
               </p>
             </div>
             <div className="rounded-full border border-gray-200 bg-white px-5 py-3">
@@ -882,7 +1364,7 @@ function AnalyticsTab({
             value={activeMeeting ? `${activeMeeting.syncStats.transferredMb} MB` : "0 MB"}
           />
           <AnalyticsCard
-            label="Visuals"
+            label="Attachments"
             value={activeMeeting ? `${activeMeeting.syncStats.visuals}` : "0"}
           />
           <AnalyticsCard
@@ -1166,25 +1648,157 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
     return (
       <div className="flex justify-end">
         <div className="max-w-xl rounded-[2rem] border border-gray-100/50 bg-gray-50/80 px-8 py-6 text-gray-800 shadow-sm">
+          {message.attachments && message.attachments.length > 0 ? (
+            <div className="mb-4 flex flex-wrap justify-end gap-2">
+              {message.attachments.map((attachment) => (
+                <span
+                  key={attachment.id}
+                  className="inline-flex max-w-full items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-semibold text-gray-500"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span className="max-w-44 truncate">{attachment.name}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
           <p className="text-base leading-relaxed">{message.body}</p>
         </div>
       </div>
     );
   }
 
+  const isStreamingEmpty = message.status === "streaming" && !message.body.trim();
+
   return (
-    <div className="group flex gap-8">
+      <div className="group flex gap-8">
       <div className="liquid-mercury-soft flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-white/50 shadow-lg">
         <Sparkles className="h-5 w-5 text-black" />
       </div>
       <div className="space-y-5 pt-1">
-        <p className="max-w-3xl text-base leading-8 text-gray-900 lg:text-lg">{message.body}</p>
+        {isStreamingEmpty ? (
+          <div className="flex items-center gap-2 pt-2 text-sm font-medium text-gray-400">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
+            Preparing response...
+          </div>
+        ) : (
+          <Streamdown
+            className="smartpuck-markdown max-w-3xl text-base leading-8 text-gray-900 lg:text-lg"
+            skipHtml
+          >
+            {message.body}
+          </Streamdown>
+        )}
         <p className="font-display text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">
           SmartPuck - {relativeLabel(message.createdAt)}
         </p>
       </div>
     </div>
   );
+}
+
+async function readDraftAttachment(file: File): Promise<ChatAttachment> {
+  const id = `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`;
+  let preview: string | undefined;
+  const isTextLike =
+    file.type.startsWith("text/") ||
+    ATTACHMENT_TEXT_TYPES.has(file.type) ||
+    /\.(csv|json|md|markdown|txt)$/i.test(file.name);
+
+  if (isTextLike) {
+    const text = await file.text();
+    preview = text.slice(0, MAX_ATTACHMENT_PREVIEW_CHARS);
+  }
+
+  return {
+    id,
+    name: file.name,
+    type: file.type || "application/octet-stream",
+    size: file.size,
+    preview,
+  };
+}
+
+function buildAttachmentContext(attachments: ChatAttachment[]) {
+  if (attachments.length === 0) {
+    return undefined;
+  }
+
+  const attachmentContext = attachments
+    .map((attachment) => {
+      const preview = attachment.preview;
+      return [
+        `File: ${attachment.name}`,
+        `Type: ${attachment.type || "unknown"}`,
+        `Size: ${formatBytes(attachment.size)}`,
+        preview ? `Preview:\n${preview}` : "Preview unavailable in browser; use the filename and type as context.",
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return ["Attached context:", attachmentContext].join("\n");
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isRemovedStarterMessage(message: MeetingMessage) {
+  return message.role === "assistant" && message.body.trim() === REMOVED_STARTER_MESSAGE;
+}
+
+function mergeServerAndOptimisticMessages(
+  serverMessages: MeetingMessage[],
+  optimisticMessages: MeetingMessage[],
+) {
+  const visibleMessages = [...serverMessages];
+  const serverUserBodies = new Set(
+    serverMessages
+      .filter((message) => message.role === "user")
+      .map((message) => normalizeMessageBody(message.body)),
+  );
+
+  for (const optimisticMessage of optimisticMessages) {
+    const isSavedOnServer =
+      optimisticMessage.role === "user" &&
+      serverUserBodies.has(normalizeMessageBody(optimisticMessage.body));
+
+    if (!isSavedOnServer) {
+      visibleMessages.push(optimisticMessage);
+    }
+  }
+
+  return visibleMessages;
+}
+
+function normalizeMessageBody(body: string) {
+  return body.trim().replace(/\s+/g, " ");
+}
+
+function useAnimatedValue<T>(value: T, exitMs: number, key: string = String(value)) {
+  const [exitingValue, setExitingValue] = useState(value);
+  const [renderedKey, setRenderedKey] = useState(key);
+
+  useEffect(() => {
+    if (key === renderedKey) {
+      return;
+    }
+
+    const exitTimer = window.setTimeout(() => {
+      setExitingValue(value);
+      setRenderedKey(key);
+    }, exitMs);
+
+    return () => window.clearTimeout(exitTimer);
+  }, [exitMs, key, renderedKey, value]);
+
+  const isExiting = key !== renderedKey;
+  return { value: isExiting ? exitingValue : value, isExiting };
 }
 
 function RecordingOrb({ pulsing }: { pulsing: boolean }) {

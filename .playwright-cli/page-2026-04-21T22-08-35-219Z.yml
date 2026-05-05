@@ -1,0 +1,584 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - link "AliExpress logo" [ref=e6] [cursor=pointer]:
+        - /url: https://www.aliexpress.com
+        - text: AliExpress
+      - button "All Categories" [ref=e9]:
+        - img "All Categories" [ref=e10]
+    - generic [ref=e12]:
+      - generic [ref=e14]:
+        - searchbox "You can type an item name or keyword to search." [ref=e15]: xiao esp32s3 sense
+        - img [ref=e20] [cursor=pointer]
+        - button "You can click this button to search." [ref=e21] [cursor=pointer]
+      - generic [ref=e22]:
+        - button "You can scan the QR code to download the AliExpress app." [ref=e23] [cursor=pointer]:
+          - img [ref=e25]
+          - img [ref=e29]
+        - button "You can select a country, region or language for shopping on AliExpress kh. The current language is English." [ref=e33] [cursor=pointer]:
+          - img [ref=e36]
+        - button "You can register, sign in or view more information about your account." [ref=e38] [cursor=pointer]:
+          - img [ref=e40]
+          - img [ref=e43]
+        - link "0 items in cart." [ref=e46] [cursor=pointer]:
+          - /url: //www.aliexpress.com/p/shoppingcart/index.html
+          - img [ref=e48]
+          - generic [ref=e50]: "0"
+  - generic [ref=e51]:
+    - generic [ref=e53]:
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic [ref=e56] [cursor=pointer]:
+            - generic [ref=e57]: Deals & discounts
+            - img [ref=e59]
+          - generic [ref=e62]:
+            - generic "filterCode:bigsale" [ref=e63] [cursor=pointer]:
+              - checkbox "Sale" [ref=e64]
+              - generic [ref=e65]: Sale
+            - generic "filterCode:freeshipping" [ref=e66] [cursor=pointer]:
+              - checkbox "Free shipping" [ref=e67]
+              - generic [ref=e68]: Free shipping
+        - generic [ref=e69]:
+          - generic [ref=e70] [cursor=pointer]:
+            - generic [ref=e71]: Quality & trust
+            - img [ref=e73]
+          - generic [ref=e76]:
+            - generic "filterCode:4StarRating" [ref=e77] [cursor=pointer]:
+              - checkbox "& up & up" [ref=e78]
+              - generic [ref=e80]:
+                - img "& up" [ref=e81]
+                - generic [ref=e82]: "& up"
+            - generic "filterCode:PremiumQuality" [ref=e83] [cursor=pointer]:
+              - checkbox "Premium Quality" [ref=e84]
+              - generic [ref=e85]: Premium Quality
+        - generic [ref=e86]:
+          - generic [ref=e87] [cursor=pointer]:
+            - generic [ref=e88]: Price
+            - img [ref=e90]
+          - generic [ref=e94]:
+            - generic [ref=e95]:
+              - generic [ref=e97]: KHR
+              - textbox "Min." [ref=e98]
+            - generic [ref=e99]: "-"
+            - generic [ref=e100]:
+              - generic [ref=e102]: KHR
+              - textbox "Max." [ref=e103]
+            - generic [ref=e104] [cursor=pointer]: OK
+      - generic [ref=e105]:
+        - generic [ref=e110]:
+          - generic [ref=e111]: "Sort by:"
+          - generic [ref=e112]:
+            - generic [ref=e114] [cursor=pointer]: Best Match
+            - generic [ref=e116] [cursor=pointer]: Orders
+            - generic [ref=e117] [cursor=pointer]:
+              - generic [ref=e118]: Price
+              - generic [ref=e119]:
+                - img [ref=e121]
+                - img [ref=e124]
+        - generic [ref=e126]:
+          - generic [ref=e127]:
+            - img [ref=e128]
+            - generic [ref=e129]:
+              - text: "Ends :"
+              - generic [ref=e130]: Apr 25, 13:59 GMT+7
+          - generic [ref=e131]:
+            - link "Report fraud item XIAO ESP32S3 Sense With Camera S3R8 For Arduino For SeeedStudio KHR84,481.26 5 141 sold Premium Quality Free shipping" [ref=e135] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005007426895461.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-0&pdp_ext_f=%7B%22order%22%3A%22141%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2184481.26%2184481.26%21%21%2121.08%2121.08%21%402141131717768093122698173e87f8%2112000040716134677%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=jneQQW91rmsa&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005007426895461%7C_p_origin_prod%3A
+              - generic [ref=e136]:
+                - generic [ref=e140]:
+                  - img [ref=e141]
+                  - img [ref=e142]
+                  - img [ref=e143]
+                  - img [ref=e144]
+                  - img [ref=e145]
+                  - img [ref=e146]
+                - generic "Report fraud item" [ref=e158]
+              - generic [ref=e159]:
+                - heading "XIAO ESP32S3 Sense With Camera S3R8 For Arduino For SeeedStudio" [level=3] [ref=e160]:
+                  - img [ref=e161]
+                  - heading "XIAO ESP32S3 Sense With Camera S3R8 For Arduino For SeeedStudio" [level=3] [ref=e162]
+                - generic "KHR84,481.26" [ref=e163]:
+                  - generic [ref=e164]: KHR84,481.26
+                - generic [ref=e165]:
+                  - generic [ref=e167]: "5"
+                  - generic [ref=e168]: 141 sold
+                - generic [ref=e170]:
+                  - generic "Premium Quality" [ref=e172]
+                  - generic "Free shipping" [ref=e174]
+            - link "Report fraud item 10pcs/1pc Seeeduino ESP32S3 Sense Seeed Studio XIAO 2.4G Development Board ESP32-S3 Camera WiFi Wireless Ble Module For Arduino KHR801.53 4.9 1,000+ sold Top selling on AliExpress Best price in similar deals" [ref=e178] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005005386944262.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-1&pdp_ext_f=%7B%22order%22%3A%221097%22%2C%22spu_best_type%22%3A%22price%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%211122.14%21801.53%21%21%210.28%210.20%21%402141131717768093122698173e87f8%2112000047075847360%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=e95Zq3HoZtlJ&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005005386944262%7C_p_origin_prod%3A
+              - generic [ref=e179]:
+                - generic [ref=e183]:
+                  - img [ref=e184]
+                  - img [ref=e185]
+                  - img [ref=e186]
+                  - img [ref=e187]
+                  - img [ref=e188]
+                  - img [ref=e189]
+                - generic "Report fraud item" [ref=e201]
+              - generic [ref=e202]:
+                - heading "10pcs/1pc Seeeduino ESP32S3 Sense Seeed Studio XIAO 2.4G Development Board ESP32-S3 Camera WiFi Wireless Ble Module For Arduino" [level=3] [ref=e203]:
+                  - heading "10pcs/1pc Seeeduino ESP32S3 Sense Seeed Studio XIAO 2.4G Development Board ESP32-S3 Camera WiFi Wireless Ble Module For Arduino" [level=3] [ref=e204]
+                - generic "KHR801.53" [ref=e205]:
+                  - generic [ref=e206]: KHR801.53
+                  - generic [ref=e207]: KHR1,122.14
+                  - generic [ref=e208]: "-28%"
+                - generic [ref=e209]:
+                  - generic [ref=e211]: "4.9"
+                  - generic [ref=e212]: 1,000+ sold
+                - generic [ref=e214]:
+                  - generic [ref=e215]:
+                    - img [ref=e216]
+                    - generic "Top selling on AliExpress" [ref=e217]
+                  - generic [ref=e218]:
+                    - img [ref=e219]
+                    - generic "Best price in similar deals" [ref=e220]
+            - link "Report fraud item XIAO ESP32S3 / ESP32S3 Sense 2.4GHz WiFi BLE Mesh 5.0 8MB OV2640 Camera Sensor Module Board for Arduino for Seeeduino KHR55,926.66 5 38 sold Free shipping Extra 2% off with coins" [ref=e224] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005008486699343.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-2&pdp_ext_f=%7B%22order%22%3A%2238%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2155926.66%2155926.66%21%21%2194.61%2194.61%21%402141131717768093122698173e87f8%2112000049118817816%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=Ijbg3eRq1Bpv&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005008486699343%7C_p_origin_prod%3A
+              - generic [ref=e225]:
+                - generic [ref=e229]:
+                  - img [ref=e230]
+                  - img [ref=e231]
+                  - img [ref=e232]
+                  - img [ref=e233]
+                  - img [ref=e234]
+                  - img [ref=e235]
+                - generic "Report fraud item" [ref=e247]
+              - generic [ref=e248]:
+                - heading "XIAO ESP32S3 / ESP32S3 Sense 2.4GHz WiFi BLE Mesh 5.0 8MB OV2640 Camera Sensor Module Board for Arduino for Seeeduino" [level=3] [ref=e249]:
+                  - img [ref=e250]
+                  - heading "XIAO ESP32S3 / ESP32S3 Sense 2.4GHz WiFi BLE Mesh 5.0 8MB OV2640 Camera Sensor Module Board for Arduino for Seeeduino" [level=3] [ref=e251]
+                - generic "KHR55,926.66" [ref=e252]:
+                  - generic [ref=e253]: KHR55,926.66
+                - generic [ref=e254]:
+                  - generic [ref=e256]: "5"
+                  - generic [ref=e257]: 38 sold
+                - generic [ref=e259]:
+                  - generic "Free shipping" [ref=e261]
+                  - generic "Extra 2% off with coins" [ref=e263]
+            - generic [ref=e266]:
+              - link "Report fraud item 10Pcs/1Pcs Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino KHR3,304.41 Extra 5% off with coins" [ref=e267] [cursor=pointer]:
+                - /url: //www.aliexpress.com/item/1005012085328187.html?aem_p4p_detail=202604211508321694678042237790000263712&algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-3&pdp_ext_f=%7B%22order%22%3A%22-1%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%213304.41%213304.41%21%21%215.59%215.59%21%402141131717768093122698173e87f8%2112000057484672127%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=qUuAKLgtYouC&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005012085328187%7C_p_origin_prod%3A&search_p4p_id=202604211508321694678042237790000263712_1
+                - generic [ref=e268]:
+                  - generic [ref=e272]:
+                    - img [ref=e273]
+                    - img [ref=e274]
+                    - img [ref=e275]
+                    - img [ref=e276]
+                    - img [ref=e277]
+                    - img [ref=e278]
+                  - generic "Report fraud item" [ref=e290]
+                - generic [ref=e291]:
+                  - heading "10Pcs/1Pcs Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino" [level=3] [ref=e292]:
+                    - heading "10Pcs/1Pcs Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino" [level=3] [ref=e293]
+                  - generic "KHR3,304.41" [ref=e294]:
+                    - generic [ref=e295]: KHR3,304.41
+                  - generic "Extra 5% off with coins" [ref=e298]
+              - generic [ref=e300] [cursor=pointer]: Ad
+            - link "Report fraud item 2pcs/1pc Seeeduino XIAO ESP32S3 Sense Seeed Studio ESP32-S3 2.4G WiFi Wireless BLE Mesh 5.0 8MB Flash OV2640 Development Board KHR86,525.16 4.9 232 sold Top selling on AliExpress Free shipping Bundle deals" [ref=e304] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005009532378267:12000049385728701&pha_manifest=ssr&_immersiveMode=true&disableNav=YES&sourceName=SEARCHProduct&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005009532378267%7C_p_origin_prod%3A&pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9
+              - generic [ref=e305]:
+                - generic [ref=e309]:
+                  - img [ref=e310]
+                  - img [ref=e311]
+                  - img [ref=e312]
+                  - img [ref=e313]
+                  - img [ref=e314]
+                  - img [ref=e315]
+                - generic "Report fraud item" [ref=e324]
+              - generic [ref=e325]:
+                - heading "2pcs/1pc Seeeduino XIAO ESP32S3 Sense Seeed Studio ESP32-S3 2.4G WiFi Wireless BLE Mesh 5.0 8MB Flash OV2640 Development Board" [level=3] [ref=e326]:
+                  - img [ref=e327]
+                  - heading "2pcs/1pc Seeeduino XIAO ESP32S3 Sense Seeed Studio ESP32-S3 2.4G WiFi Wireless BLE Mesh 5.0 8MB Flash OV2640 Development Board" [level=3] [ref=e328]
+                - generic "KHR86,525.16" [ref=e329]:
+                  - generic [ref=e330]: KHR86,525.16
+                  - generic [ref=e331]: KHR182,185.77
+                  - generic [ref=e332]: "-52%"
+                - generic [ref=e333]:
+                  - generic [ref=e335]: "4.9"
+                  - generic [ref=e336]: 232 sold
+                - generic [ref=e338]:
+                  - generic [ref=e339]:
+                    - img [ref=e340]
+                    - generic "Top selling on AliExpress" [ref=e341]
+                  - generic "Free shipping" [ref=e343]
+                - generic [ref=e344]:
+                  - generic [ref=e345]: Bundle deals
+                  - img [ref=e347]
+            - link "Report fraud item Seeeduino Seeed Studio XIAO ESP32-S3 Sense Module 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Mini Development Board For Arduino KHR69,144.29 5 91 sold Free shipping" [ref=e352] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005009855991485.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-5&pdp_ext_f=%7B%22order%22%3A%2291%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2169144.29%2169144.29%21%21%21116.97%21116.97%21%402141131717768093122698173e87f8%2112000050384589549%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=YeDQnm3fdgqy&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005009855991485%7C_p_origin_prod%3A
+              - generic [ref=e353]:
+                - generic [ref=e357]:
+                  - img [ref=e358]
+                  - img [ref=e359]
+                  - img [ref=e360]
+                - generic "Report fraud item" [ref=e369]
+              - generic [ref=e370]:
+                - heading "Seeeduino Seeed Studio XIAO ESP32-S3 Sense Module 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Mini Development Board For Arduino" [level=3] [ref=e371]:
+                  - img [ref=e372]
+                  - heading "Seeeduino Seeed Studio XIAO ESP32-S3 Sense Module 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Mini Development Board For Arduino" [level=3] [ref=e373]
+                - generic "KHR69,144.29" [ref=e374]:
+                  - generic [ref=e375]: KHR69,144.29
+                - generic [ref=e376]:
+                  - generic [ref=e378]: "5"
+                  - generic [ref=e379]: 91 sold
+                - generic "Free shipping" [ref=e383]
+            - link "Report fraud item Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino KHR117,155.74 4 sold Extra 2% off with coins" [ref=e388] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005007639865982.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-6&pdp_ext_f=%7B%22order%22%3A%224%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%21117155.74%21117155.74%21%21%21198.19%21198.19%21%402141131717768093122698173e87f8%2112000041607166779%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=hVoppnpw4dIn&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005007639865982%7C_p_origin_prod%3A
+              - generic [ref=e389]:
+                - img [ref=e394]
+                - generic "Report fraud item" [ref=e403]
+              - generic [ref=e404]:
+                - heading "Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino" [level=3] [ref=e405]:
+                  - heading "Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino" [level=3] [ref=e406]
+                - generic "KHR117,155.74" [ref=e407]:
+                  - generic [ref=e408]: KHR117,155.74
+                - generic [ref=e410]: 4 sold
+                - generic "Extra 2% off with coins" [ref=e413]
+            - generic [ref=e417]:
+              - link "Report fraud item Seeed Studio XIAO ESP32S3 2.4G Development Board Seeeduino ESP32-S3 WiFi Wireless BLE Mesh 5.0 8MB Flash Module For Arduino KHR36,508.09 Early bird deal, only 1 left Extra 5% off with coins" [ref=e418] [cursor=pointer]:
+                - /url: //www.aliexpress.com/item/1005012090084334.html?aem_p4p_detail=202604211508321694678042237790000263712&algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-7&pdp_ext_f=%7B%22order%22%3A%22-1%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2173022.09%2136508.09%21%21%21123.53%2161.76%21%402141131717768093122698173e87f8%2112000057495486400%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=KYWrvbql3XEf&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005012090084334%7C_p_origin_prod%3A&search_p4p_id=202604211508321694678042237790000263712_2
+                - generic [ref=e419]:
+                  - img [ref=e424]
+                  - generic "Report fraud item" [ref=e436]
+                - generic [ref=e437]:
+                  - heading "Seeed Studio XIAO ESP32S3 2.4G Development Board Seeeduino ESP32-S3 WiFi Wireless BLE Mesh 5.0 8MB Flash Module For Arduino" [level=3] [ref=e438]:
+                    - heading "Seeed Studio XIAO ESP32S3 2.4G Development Board Seeeduino ESP32-S3 WiFi Wireless BLE Mesh 5.0 8MB Flash Module For Arduino" [level=3] [ref=e439]
+                  - generic "KHR36,508.09" [ref=e440]:
+                    - generic [ref=e441]: KHR36,508.09
+                    - generic [ref=e442]: KHR73,022.09
+                    - generic [ref=e443]: "-50%"
+                  - generic [ref=e444]:
+                    - generic "Early bird deal, only 1 left" [ref=e446]
+                    - generic "Extra 5% off with coins" [ref=e448]
+              - generic [ref=e450] [cursor=pointer]: Ad
+            - link "Report fraud item Seeed Studio XIAO ESP32S3 Sense - 2.4GHz Wi-Fi, BLE 5.0, OV2640 Camera Sensor, Digital Microphone, Battery Charge Supported KHR87,351.04 8 sold Free shipping Extra 2% off with coins" [ref=e454] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005005481109064.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-8&pdp_ext_f=%7B%22order%22%3A%228%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2187351.04%2187351.04%21%21%21147.77%21147.77%21%402141131717768093122698173e87f8%2112000039846594247%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=svjNNc0IytLw&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005005481109064%7C_p_origin_prod%3A
+              - generic [ref=e455]:
+                - img [ref=e460]
+                - generic "Report fraud item" [ref=e472]
+              - generic [ref=e473]:
+                - heading "Seeed Studio XIAO ESP32S3 Sense - 2.4GHz Wi-Fi, BLE 5.0, OV2640 Camera Sensor, Digital Microphone, Battery Charge Supported" [level=3] [ref=e474]:
+                  - img [ref=e475]
+                  - heading "Seeed Studio XIAO ESP32S3 Sense - 2.4GHz Wi-Fi, BLE 5.0, OV2640 Camera Sensor, Digital Microphone, Battery Charge Supported" [level=3] [ref=e476]
+                - generic "KHR87,351.04" [ref=e477]:
+                  - generic [ref=e478]: KHR87,351.04
+                - generic [ref=e480]: 8 sold
+                - generic [ref=e481]:
+                  - generic "Free shipping" [ref=e483]
+                  - generic "Extra 2% off with coins" [ref=e485]
+            - link "Report fraud item 10Pcs/1Pcs Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino KHR130,006.87 4 sold" [ref=e489] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005012000149156.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-9&pdp_ext_f=%7B%22order%22%3A%224%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%21130006.87%21130006.87%21%21%21219.93%21219.93%21%402141131717768093122698173e87f8%2112000057257828106%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=FF4waqHcoC2V&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005012000149156%7C_p_origin_prod%3A
+              - generic [ref=e490]:
+                - img [ref=e495]
+                - generic "Report fraud item" [ref=e507]
+              - generic [ref=e508]:
+                - heading "10Pcs/1Pcs Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino" [level=3] [ref=e509]:
+                  - heading "10Pcs/1Pcs Seeed Studio XIAO ESP32S3 Sense Seeeduino ESP32-S3 2.4G WiFi BLE Mesh 5.0 OV2640 Camera Development Board For Arduino" [level=3] [ref=e510]
+                - generic "KHR130,006.87" [ref=e511]:
+                  - generic [ref=e512]: KHR130,006.87
+                - generic [ref=e514]: 4 sold
+            - link "Report fraud item 1pcs Original XIAO ESP32S3 Sense Wi-Fi BLE 5.0 OV2640 Camera Sensor Module KHR106,403.11" [ref=e519] [cursor=pointer]:
+              - /url: //www.aliexpress.com/item/1005012008818204.html?algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-10&pdp_ext_f=%7B%22order%22%3A%22-1%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%21106403.11%21106403.11%21%21%21180.00%21180.00%21%402141131717768093122698173e87f8%2112000057273518780%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=cQ04Uy7spFOx&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005012008818204%7C_p_origin_prod%3A
+              - generic [ref=e520]:
+                - img [ref=e525]
+                - generic "Report fraud item" [ref=e534]
+              - generic [ref=e535]:
+                - heading "1pcs Original XIAO ESP32S3 Sense Wi-Fi BLE 5.0 OV2640 Camera Sensor Module" [level=3] [ref=e536]:
+                  - heading "1pcs Original XIAO ESP32S3 Sense Wi-Fi BLE 5.0 OV2640 Camera Sensor Module" [level=3] [ref=e537]
+                - generic "KHR106,403.11" [ref=e538]:
+                  - generic [ref=e539]: KHR106,403.11
+            - generic [ref=e543]:
+              - link "Report fraud item 1-10PCESP32-S3-DevKitC-1 ESP32-S3 WiFi Bluetooth-compatible BLE 5.0 Mesh Development Board ESP32 Wireless Module N16R8 N8R8 N8R2 KHR28,320.96 4.7 2,000+ sold Top selling on AliExpress Free shipping" [ref=e544] [cursor=pointer]:
+                - /url: //www.aliexpress.com/item/1005010373962338.html?aem_p4p_detail=202604211508321694678042237790000263712&algo_pvid=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9&algo_exp_id=3714790b-b5a1-4d2e-9ab7-ec1f8da697f9-11&pdp_ext_f=%7B%22order%22%3A%222889%22%2C%22spu_best_type%22%3A%22price%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21KHR%2157800.53%2128320.96%21%21%2197.78%2147.91%21%402141131717768093122698173e87f8%2112000052183962985%21sea%21KH%210%21ABX%211%210%21n_tag%3A-29910%3Bd%3A266e40ea%3Bm03_new_user%3A-29895&curPageLogUid=7fK4PByb1wBj&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005010373962338%7C_p_origin_prod%3A&search_p4p_id=202604211508321694678042237790000263712_3
+                - generic [ref=e545]:
+                  - img [ref=e550]
+                  - generic "Report fraud item" [ref=e562]
+                - generic [ref=e563]:
+                  - heading "1-10PCESP32-S3-DevKitC-1 ESP32-S3 WiFi Bluetooth-compatible BLE 5.0 Mesh Development Board ESP32 Wireless Module N16R8 N8R8 N8R2" [level=3] [ref=e564]:
+                    - img [ref=e565]
+                    - img [ref=e566]
+                    - heading "1-10PCESP32-S3-DevKitC-1 ESP32-S3 WiFi Bluetooth-compatible BLE 5.0 Mesh Development Board ESP32 Wireless Module N16R8 N8R8 N8R2" [level=3] [ref=e567]
+                  - generic "KHR28,320.96" [ref=e568]:
+                    - generic [ref=e569]: KHR28,320.96
+                    - generic [ref=e570]: KHR57,800.53
+                    - generic [ref=e571]: "-51%"
+                  - generic [ref=e572]:
+                    - generic [ref=e574]: "4.7"
+                    - generic [ref=e575]: 2,000+ sold
+                  - generic [ref=e577]:
+                    - generic [ref=e578]:
+                      - img [ref=e579]
+                      - generic "Top selling on AliExpress" [ref=e580]
+                    - generic "Free shipping" [ref=e582]
+              - generic [ref=e583] [cursor=pointer]: Ad
+        - generic [ref=e634]:
+          - generic [ref=e636]:
+            - generic [ref=e637]:
+              - generic [ref=e639]:
+                - generic [ref=e640]: "5"
+                - generic [ref=e641]:
+                  - generic [ref=e642]:
+                    - img [ref=e644]
+                    - img [ref=e647]
+                    - img [ref=e650]
+                    - img [ref=e653]
+                    - img [ref=e656]
+                  - generic [ref=e659]:
+                    - img [ref=e661]
+                    - img [ref=e664]
+                    - img [ref=e667]
+                    - img [ref=e670]
+                    - img [ref=e673]
+              - heading "Results for xiao esp32s3 sense" [level=1] [ref=e677]
+            - generic [ref=e679]:
+              - img [ref=e681] [cursor=pointer]
+              - generic [ref=e683]:
+                - text: Th
+                - link "e X" [ref=e684] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-e X.html
+                - text: iao
+                - link "ESP32S3" [ref=e685] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-ESP32S3.html
+                - link "Sense" [ref=e686] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-Sense.html
+                - text: has become a popular choice among developers, hobbyists, and electronics enthusiasts looking for a powerful and versatile microcontroller. This compact yet feature-rich board is designed to simplify the development process while delivering high performance. The Xiao ESP32S3 Sense is built on the ESP32-S3 chip, which offers dual-core processing, Wi-Fi connectivity, and Bluetooth capabilities, making it ideal for a wide range of IoT and embedded projects. One of the key advantages of the Xiao ESP32S3 Sense is its compatibility with Arduino IDE, allowing users to quickly get started with coding and prototyping. Its small form factor makes it suitable for both desktop and portable applications, while its low power consumption ensures efficient operation in battery-powered devices. Whether you're working on smart home automation, wearable technology, or industrial control systems, the Xiao ESP32S3 Sense provides the tools needed to bring your ideas to life. The Xiao ESP32S3 Sense is also equipped with a variety of built-in peripherals, including multiple GPIO pins, UART, SPI, and I2C interfaces. These features make it easy to connect sensors, actuators, and other peripherals, enabling seamless integration into complex projects. Its support for various communication protocols, such as MQTT and HTTP, further enhances its flexibility and usability in real-world applications. For those seeking a reliable and cost-effective solution, the Xiao ESP32S3 Sense is an excellent choice. It offers a balance between performance and affordability, making it accessible to both beginners and experienced developers. The board’s user-friendly design and extensive documentation make it an ideal platform for learning and experimentation. On AliExpress, the Xiao ESP32S3 Sense is available in a wide range of options, ensuring that users can find the right product for their specific needs. The platform offers competitive pricing, fast shipping, and a variety of seller options, making it easy to purchase the Xiao ESP32S3 Sense with confidence. Whether you're looking for a single unit or bulk quantities, AliExpress provides a convenient and reliable marketplace for acquiring this essential development tool. With its powerful hardware, extensive connectivity options, and ease of use, the Xiao ESP32S3 Sense continues to be a go-to choice for developers around the world. Its versatility and performance make it a valuable asset in the world of embedded systems and IoT development. Whether you're a professional engineer or a hobbyist, the Xiao ESP32S3 Sense is an excellent investment that can help you achieve your project goals efficiently and effectively.
+          - generic [ref=e688]:
+            - heading "Xiao ESP32S3 Sense Development Board - Arduino Compatible IoT Module for Smart Projects!" [level=2] [ref=e689]
+            - generic [ref=e691]:
+              - img [ref=e693] [cursor=pointer]
+              - generic [ref=e695]:
+                - text: Th
+                - link "e p" [ref=e696] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-e p.html
+                - text: roduct
+                - link "xiao" [ref=e697] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-xiao.html
+                - link "esp32s3" [ref=e698] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-esp32s3.html
+                - link "sense" [ref=e699] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-sense.html
+                - text: is a highly versatile and powerful microcontroller board that has gained significant popularity among makers, hobbyists, and developers working on Internet of Things (IoT) projects, robotics, and embedded systems. Designed with advanced features and a user-friendly interface, the xiao esp32s3 sense is an ideal choice for those looking to build smart, connected devices that can handle complex tasks with ease. This board is specifically tailored for users who want to combine the power of the ESP32-S3 microcontroller with a rich set of sensors and peripherals, making it a perfect solution for both beginners and advanced users. The xiao esp32s3 sense is available on AliExpress, where it stands out due to its competitive pricing, wide range of compatible accessories, and fast shipping options. For buyers looking for a reliable and cost-effective solution, the xiao esp32s3 sense on AliExpress offers a great opportunity to access high-quality development hardware without breaking the bank. Whether you're working on a home automation project, a wearable device, or a custom sensor-based system, the xiao esp32s3 sense provides the performance and flexibility you need to bring your ideas to life. One of the key advantages of the xiao esp32s3 sense is its integration of multiple built-in sensors, including a light sensor, temperature sensor, humidity sensor, and a microphone. These sensors make it incredibly easy to create interactive and responsive devices that can detect and react to environmental changes. The board also features a powerful dual-core processor, which allows for efficient multitasking and smooth execution of complex applications. This makes the xiao esp32s3 sense an excellent choice for projects that require real-time data processing and communication. In addition to its hardware capabilities, the xiao esp32s3 sense is fully compatible with a wide range of development tools and programming environments. It supports popular platforms such as Arduino, MicroPython, and ESP-IDF, allowing users to choose the programming language and framework that best suits their needs. This flexibility makes it an ideal platform for both learning and professional development, as users can easily transition between different coding environments and experiment with various functionalities. The xiao esp32s3 sense is also designed with a compact and lightweight form factor, making it easy to integrate into a wide variety of projects. Whether you're building a small IoT device, a smart home gadget, or a custom sensor network, the xiao esp32s3 sense offers the perfect balance of performance and portability. Its low power consumption and efficient power management features also make it suitable for battery-powered applications, further expanding its potential use cases. When purchasing the xiao esp32s3 sense on AliExpress, buyers can take advantage of the platform’s extensive product selection, competitive pricing, and reliable seller ratings. AliExpress is known for its wide range of electronics components and development boards, and the xiao esp32s3 sense is no exception. The platform allows users to compare different sellers, read customer reviews, and make informed decisions based on real-world experiences. This ensures that buyers can find the best value for their money and get a high-quality product that meets their specific needs. Another major benefit of buying the xiao esp32s3 sense on AliExpress is the availability of a wide range of accessories and add-ons. From breakout boards and shields to sensors and modules, there are numerous options available to enhance the functionality of the xiao esp32s3 sense. This makes it easy for users to expand their projects and create more complex and feature-rich devices. Whether you're looking for a simple starter kit or a fully equipped development system, AliExpress has the resources to support your project from start to finish. In terms of performance, the xiao esp32s3 sense delivers exceptional results. With its advanced Wi-Fi and Bluetooth connectivity options, it can easily connect to the internet and communicate with other devices, making it ideal for IoT applications. The board also supports a variety of communication protocols, including I2C, SPI, and UART, allowing for seamless integration with other hardware components. These features make the xiao esp32s3 sense a powerful tool for developers who want to create smart, connected systems that can interact with the digital world. For users who are new to microcontroller development, the xiao esp32s3 sense offers an excellent learning platform. Its intuitive design, extensive documentation, and active community support make it easy to get started and build meaningful projects. Whether you're a student, a hobbyist, or a professional developer, the xiao esp32s3 sense provides a solid foundation for exploring the world of embedded systems and IoT development. The xiao esp32s3 sense is also known for its durability and reliability. The board is built with high-quality materials and is designed to withstand the rigors of everyday use. This makes it a great choice for both short-term projects and long-term applications. Whether you're working on a prototype or a commercial product, the xiao esp32s3 sense offers the stability and performance needed to ensure your project runs smoothly. In summary, the xiao esp32s3 sense is a powerful, versatile, and user-friendly microcontroller board that offers a wide range of features and capabilities. With its built-in sensors, advanced processing power, and compatibility with multiple development environments, it is an excellent choice for a variety of projects. When purchased on AliExpress, the xiao esp32s3 sense provides an affordable and reliable solution for developers, hobbyists, and makers who want to create smart, connected devices. Whether you're just starting out or looking to expand your existing projects, the xiao esp32s3 sense is a valuable tool that can help you achieve your goals. ---
+                - text: FAQ
+                - text: "Q: What is the xiao esp32s3 sense?"
+                - text: "A: The xiao esp32s3 sense is a microcontroller board based on the ESP32-S3 chip, featuring built-in sensors and a powerful dual-core processor. It is designed for IoT, robotics, and embedded system development. Q: What are the key features of the xiao esp32s3 sense?"
+                - text: "A: The xiao esp32s3 sense includes a light sensor, temperature sensor, humidity sensor, and microphone, along with a dual-core processor, Wi-Fi, and Bluetooth connectivity. It is also compatible with multiple development environments. Q: Can I use the xiao esp32s3 sense for IoT projects?"
+                - text: "A: Yes, the xiao esp32s3 sense is ideal for IoT applications due to its Wi-Fi and Bluetooth capabilities, as well as its ability to process and transmit data in real time. Q: Is the xiao esp32s3 sense suitable for beginners?"
+                - text: "A: Yes, the xiao esp32s3 sense is user-friendly and well-documented, making it a great option for both beginners and experienced developers. Q: Where can I buy the xiao esp32s3 sense?"
+                - text: "A: The xiao esp32s3 sense is available on AliExpress, where it can be purchased at competitive prices with a wide selection of sellers and customer reviews. Q: What are the advantages of buying the xiao esp32s3 sense on AliExpress?"
+                - text: "A: Buying the xiao esp32s3 sense on AliExpress offers access to a wide range of accessories, competitive pricing, fast shipping, and reliable seller ratings. Q: Is the xiao esp32s3 sense compatible with Arduino?"
+                - text: "A: Yes, the xiao esp32s3 sense supports the Arduino development environment, making it easy to program and use for a variety of projects. Q: How long does it take to receive the xiao esp32s3 sense from AliExpress?"
+                - text: "A: Shipping times vary depending on the seller and the destination, but many"
+                - link "product" [ref=e700] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-product.html
+                - text: "s on AliExpress are shipped quickly and arrive within a few weeks. Q: Can I use the xiao esp32s3 sense for wearable projects?"
+                - text: "A: Yes, the xiao esp32s3 sense is compact and energy-efficient, making it suitable for wearable devices and other battery-powered applications. Q: What kind of projects can I build with the xiao esp32s3 sense?"
+                - text: "A: The xiao esp32s3 sense can be used for a wide range of projects, including home automation, robotics, smart sensors, and IoT devices. Its versatility allows for endless creative possibilities."
+                - text: See more details about
+                - link "xiao esp32s3 sense" [ref=e701] [cursor=pointer]:
+                  - /url: https://www.aliexpress.com/w/wholesale-xiao esp32s3 sense.html
+                - text: in AliExpress Video Page.
+    - generic [ref=e703]:
+      - generic [ref=e704]:
+        - link "facebook" [ref=e706] [cursor=pointer]:
+          - /url: https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fwww.aliexpress.com%2Fw%2Fwholesale-xiao-esp32s3-sense.html%3Fchannel%3Dfacebook
+        - link "twitter" [ref=e708] [cursor=pointer]:
+          - /url: https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.aliexpress.com%2Fw%2Fwholesale-xiao-esp32s3-sense.html%3Fchannel%3Dtwinner&text=xiao%20esp32s3%20sense
+        - link "pinterest" [ref=e710] [cursor=pointer]:
+          - /url: https://www.pinterest.com/pin/create/button/?url=https%3A%2F%2Fwww.aliexpress.com%2Fw%2Fwholesale-xiao-esp32s3-sense.html%3Fchannel%3Dpinterest&media=https%3A&description=A%20smart%20and%20powerful%20IoT%20device%20for%20home%20automation%2C%20the%20xiao%20esp32s3%20sense%20offers%20advanced%20sensing%20and%20connectivity.%20Perfect%20for%20developers%20and%20hobbyists.%20Explore%20features%20and%20buy%20now.
+      - link "feedback" [ref=e713] [cursor=pointer]:
+        - /url: javascript:void(0);
+  - contentinfo [ref=e716]:
+    - generic [ref=e718]:
+      - generic [ref=e719]:
+        - generic [ref=e721]:
+          - term [ref=e722]:
+            - heading "Help" [level=5] [ref=e723]
+          - definition [ref=e724]:
+            - link "Help Center" [ref=e725] [cursor=pointer]:
+              - /url: //so.aliexpress.com/s/ByrCmn?language=en_US
+            - text: ","
+            - link "Disputes & Reports" [ref=e726] [cursor=pointer]:
+              - /url: //report.aliexpress.com
+            - text: ","
+            - link "Return&refund policy" [ref=e727] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000437/PinKTaDpEb?disableNav=YES&pha_manifest=ssr&_immersiveMode=true
+            - text: ","
+            - link "Report IPR infringement" [ref=e728] [cursor=pointer]:
+              - /url: https://ipp.aidcgroup.net/#/ippHome
+            - text: ","
+            - link "DSA/OSA Information" [ref=e729] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/transparencycenter/dsa.html
+            - text: ","
+            - link "Integrity Compliance" [ref=e730] [cursor=pointer]:
+              - /url: https://aidc.jubao.alibaba.com
+            - text: ","
+            - link "Transparency Center" [ref=e731] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/transparencycenter/index.html
+            - text: ","
+            - link "Submit report (non-registered users)" [ref=e732] [cursor=pointer]:
+              - /url: https://m.aliexpress.com/p/complaint-center/index.html#/complaint/report
+            - text: ","
+            - link "Return Policy" [ref=e733] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/ssr/300000437/G7ZED4yXte?disableNav=YES&pha_manifest=ssr&_immersiveMode=true
+        - generic [ref=e735]:
+          - term [ref=e736]:
+            - heading "AliExpress Multi-Language Sites" [level=5] [ref=e737]
+          - definition [ref=e738]:
+            - link "Russian" [ref=e739] [cursor=pointer]:
+              - /url: //ru.aliexpress.com
+            - text: ","
+            - link "Portuguese" [ref=e740] [cursor=pointer]:
+              - /url: //pt.aliexpress.com
+            - text: ","
+            - link "Spanish" [ref=e741] [cursor=pointer]:
+              - /url: //es.aliexpress.com
+            - text: ","
+            - link "French" [ref=e742] [cursor=pointer]:
+              - /url: //fr.aliexpress.com
+            - text: ","
+            - link "German" [ref=e743] [cursor=pointer]:
+              - /url: //de.aliexpress.com
+            - text: ","
+            - link "Italian" [ref=e744] [cursor=pointer]:
+              - /url: //it.aliexpress.com
+            - text: ","
+            - link "Dutch" [ref=e745] [cursor=pointer]:
+              - /url: //nl.aliexpress.com
+            - text: ","
+            - link "Turkish" [ref=e746] [cursor=pointer]:
+              - /url: //tr.aliexpress.com
+            - text: ","
+            - link "Japanese" [ref=e747] [cursor=pointer]:
+              - /url: //ja.aliexpress.com
+            - text: ","
+            - link "Korean" [ref=e748] [cursor=pointer]:
+              - /url: //ko.aliexpress.com
+            - text: ","
+            - link "Thai" [ref=e749] [cursor=pointer]:
+              - /url: //th.aliexpress.com
+            - text: ","
+            - link "Arabic" [ref=e750] [cursor=pointer]:
+              - /url: //ar.aliexpress.com
+            - text: ","
+            - link "Hebrew" [ref=e751] [cursor=pointer]:
+              - /url: //he.aliexpress.com
+            - text: ","
+            - link "Polish" [ref=e752] [cursor=pointer]:
+              - /url: //pl.aliexpress.com
+      - generic [ref=e754]:
+        - term [ref=e755]:
+          - heading "Browse by Category" [level=5] [ref=e756]
+        - definition [ref=e757]:
+          - generic [ref=e758]:
+            - link "All Popular" [ref=e759] [cursor=pointer]:
+              - /url: //www.aliexpress.com/popular.html
+            - text: ","
+            - link "Product" [ref=e760] [cursor=pointer]:
+              - /url: //www.aliexpress.com/wholesale.html
+            - text: ","
+            - link "Promotion" [ref=e761] [cursor=pointer]:
+              - /url: //www.aliexpress.com/promotion.html
+            - text: ","
+            - link "Low Price" [ref=e762] [cursor=pointer]:
+              - /url: //www.aliexpress.com/price.html
+            - text: ","
+            - link "Great Value" [ref=e763] [cursor=pointer]:
+              - /url: //www.aliexpress.com/cheap.html
+            - text: ","
+            - link "Reviews" [ref=e764] [cursor=pointer]:
+              - /url: //www.aliexpress.com/reviews.html
+            - text: ","
+            - link "Wiki" [ref=e765] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/wiki/home.html
+            - text: ","
+            - link "Blog" [ref=e766] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/blog/home.html
+            - text: ","
+            - link "Video" [ref=e767] [cursor=pointer]:
+              - /url: https://www.aliexpress.com/p/video/home.html
+      - generic [ref=e769]:
+        - term [ref=e770]:
+          - heading "Alibaba Group" [level=5] [ref=e771]
+        - definition [ref=e772]:
+          - link "Alibaba Group Website" [ref=e773] [cursor=pointer]:
+            - /url: http://www.alibabagroup.com/en/global/home
+          - text: ","
+          - link "AliExpress" [ref=e774] [cursor=pointer]:
+            - /url: //www.aliexpress.com/
+          - text: ","
+          - link "Alimama" [ref=e775] [cursor=pointer]:
+            - /url: http://www.alimama.com/
+          - text: ","
+          - link "Alipay" [ref=e776] [cursor=pointer]:
+            - /url: https://intl.alipay.com/index.htm
+          - text: ","
+          - link "Fliggy" [ref=e777] [cursor=pointer]:
+            - /url: http://www.fliggy.com/
+          - text: ","
+          - link "Alibaba Cloud" [ref=e778] [cursor=pointer]:
+            - /url: http://www.alibabacloud.com
+          - text: ","
+          - link "Alibaba International" [ref=e779] [cursor=pointer]:
+            - /url: http://www.alibaba.com/
+          - text: ","
+          - link "AliTelecom" [ref=e780] [cursor=pointer]:
+            - /url: http://aliqin.tmall.com/
+          - text: ","
+          - link "DingTalk" [ref=e781] [cursor=pointer]:
+            - /url: http://www.dingtalk.com/
+          - text: ","
+          - link "Juhuasuan" [ref=e782] [cursor=pointer]:
+            - /url: http://ju.taobao.com/
+          - text: ","
+          - link "Taobao Marketplace" [ref=e783] [cursor=pointer]:
+            - /url: http://www.taobao.com/
+          - text: ","
+          - link "Tmall" [ref=e784] [cursor=pointer]:
+            - /url: http://www.tmall.com/
+          - text: ","
+          - link "Taobao Global" [ref=e785] [cursor=pointer]:
+            - /url: https://world.taobao.com/
+          - text: ","
+          - link "AliOS" [ref=e786] [cursor=pointer]:
+            - /url: http://www.alios.cn/
+          - text: ","
+          - link "1688" [ref=e787] [cursor=pointer]:
+            - /url: http://www.1688.com/
+    - generic [ref=e789]:
+      - link "Intellectual Property Protection" [ref=e790] [cursor=pointer]:
+        - /url: https://ipp.aidcgroup.net/#/ippHome
+      - text: "-"
+      - link "Privacy Policy" [ref=e791] [cursor=pointer]:
+        - /url: https://campaign.aliexpress.com/wow/gcp/app-redirect-terms/index
+      - text: "-"
+      - link "Sitemap" [ref=e792] [cursor=pointer]:
+        - /url: https://www.aliexpress.com/sitemap.html
+      - text: "-"
+      - link "Terms of Use" [ref=e793] [cursor=pointer]:
+        - /url: https://terms.alicdn.com/legal-agreement/terms/suit_bu1_aliexpress/suit_bu1_aliexpress202204182115_66077.html
+      - text: "-"
+      - link "Information for EU consumers" [ref=e794] [cursor=pointer]:
+        - /url: https://cdn.contract.alibaba.com/terms/c_platform_service_agreement/20260106183827470/20260106183827470.html?lng=en
+      - text: "-"
+      - link "Legal Information / Imprint" [ref=e796] [cursor=pointer]:
+        - /url: https://terms.alicdn.com/legal-agreement/terms/c_end_product_protocol/20230928165112460/20230928165112460.html
+      - text: "-"
+      - link "Transaction Services Agreement for non-EU/UK Consumers" [ref=e797] [cursor=pointer]:
+        - /url: https://rulechannel.alibaba.com/icbu?type=detail&ruleId=2054&cId=1304#/rule/detail?cId=1304&ruleId=2054
+      - text: "-"
+      - link "Terms and Conditions for EU/EEA/UK Consumers" [ref=e798] [cursor=pointer]:
+        - /url: https://campaign.aliexpress.com/wow/gcp-plus/ae/tupr?_immersiveMode=true&pha_manifest=upr&disableNav=YES&wh_pid=300000414/pt8AMcBikk
+      - text: "-"
+      - link "User Information Legal Enquiry Guide" [ref=e799] [cursor=pointer]:
+        - /url: https://terms.alicdn.com/legal-agreement/terms/data_processing_agreement_others/20231101174825691/20231101174825691.html
+      - text: ©️2010-2025 AliExpress.com. All rights reserved.
+      - link "增值电信业务经营许可证" [ref=e800] [cursor=pointer]:
+        - /url: http://idinfo.zjamr.zj.gov.cn//bscx.do?spm=5261.11333555.006.4.6fd42fe0LrlYeu&method=lzxx&id=3301083301080000022169
+        - img "增值电信业务经营许可证" [ref=e801]
+      - link "增值电信业务经营许可证 浙B2-20120091-8" [ref=e802] [cursor=pointer]:
+        - /url: https://beian.miit.gov.cn/
+      - link "浙公网安备 浙公网安备 33010802002248号" [ref=e803] [cursor=pointer]:
+        - /url: http://www.beian.gov.cn/portal/registerSystemInfo?spm=a260k.dacugeneral.home2019footer.32.6633436c8h108e&recordcode=33010802002248
+        - img "浙公网安备" [ref=e804]
+        - text: 浙公网安备 33010802002248号

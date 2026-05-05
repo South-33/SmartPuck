@@ -3,6 +3,15 @@ export type MeetingStatus = "uploaded" | "processing" | "ready";
 export type DeviceTransport = "usb" | "bluetooth" | "manual";
 export type AccentTone = "silver" | "slate";
 export type MessageRole = "user" | "assistant" | "system";
+export type MessageStatus = "complete" | "streaming";
+
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  preview?: string;
+};
 
 export type MeetingAction = {
   id: string;
@@ -14,12 +23,15 @@ export type MeetingMessage = {
   id: string;
   role: MessageRole;
   body: string;
+  status?: MessageStatus;
   createdAt: string;
+  attachments?: ChatAttachment[];
 };
 
 export type MeetingRecord = {
   id: string;
   folderId: string;
+  agentThreadId?: string;
   title: string;
   durationLabel: string;
   status: MeetingStatus;
