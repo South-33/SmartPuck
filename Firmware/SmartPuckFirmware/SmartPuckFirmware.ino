@@ -24,6 +24,8 @@
 #include "FS.h"
 #include "SPI.h"
 #include <driver/i2s.h>
+#include <WiFi.h>
+#include <WebServer.h>
 
 // ============================================================================
 // BOARD SELECTION - Uncomment ONLY the board you are using!
@@ -55,11 +57,11 @@
   #define I2S_WS   5
   #define I2S_SD   6
 
-  // Controls (Record Button & LED)
-  // Connect momentary button between GPIO 7 and GND (uses internal pull-up)
-  // Connect LED anode to GPIO 8 through a 330-ohm resistor, cathode to GND
-  #define BUTTON_PIN 7
-  #define LED_PIN    8
+  // Controls (Record Button & Onboard RGB LED)
+  // LOLIN S3 Pro has a Boot button connected to GPIO 0 and a WS2812B RGB LED on GPIO 38.
+  // We use these onboard components directly so you don't need to wire an external button/LED!
+  #define BUTTON_PIN 0
+  #define LED_PIN    38
 #endif
 
 #ifdef BOARD_ESP32_CAM
@@ -112,6 +114,7 @@ String currentWavPath = "";
 // WAV Header Helper (44 bytes)
 void writeWavHeader(File file, uint32_t totalAudioLen) {
   uint32_t totalDataLen = totalAudioLen + 36;
+  uint32_t sampleRate = SAMPLE_RATE;
   uint32_t byteRate = SAMPLE_RATE * CHANNEL_COUNT * BITS_PER_SAMPLE / 8;
   uint16_t blockAlign = CHANNEL_COUNT * BITS_PER_SAMPLE / 8;
   uint16_t bits = BITS_PER_SAMPLE;
@@ -127,12 +130,27 @@ void writeWavHeader(File file, uint32_t totalAudioLen) {
   file.write((const uint8_t*)&subChunk1Size, 4);
   file.write((const uint8_t*)&format, 2);
   file.write((const uint8_t*)&channels, 2);
-  file.write((const uint8_t*)&SAMPLE_RATE, 4);
+  file.write((const uint8_t*)&sampleRate, 4);
   file.write((const uint8_t*)&byteRate, 4);
   file.write((const uint8_t*)&blockAlign, 2);
   file.write((const uint8_t*)&bits, 2);
   file.write((const uint8_t*)"data", 4);
   file.write((const uint8_t*)&totalAudioLen, 4);
+}
+
+// LED Status Helper (Handles both LOLIN's RGB LED and ESP32-CAM's active-low LED)
+void setStatusLED(uint8_t r, uint8_t g, uint8_t b) {
+#ifdef BOARD_LOLIN_S3_PRO
+  neopixelWrite(LED_PIN, r, g, b);
+#endif
+#ifdef BOARD_ESP32_CAM
+  // ESP32-CAM uses a standard active-low single-color LED
+  if (r > 0 || g > 0 || b > 0) {
+    digitalWrite(LED_PIN, LOW); // LED ON
+  } else {
+    digitalWrite(LED_PIN, HIGH); // LED OFF
+  }
+#endif
 }
 
 // ============================================================================
@@ -279,12 +297,8 @@ void startRecording() {
   Serial.print("Started recording to: ");
   Serial.println(currentWavPath);
 
-  // Turn on recording LED
-#ifdef BOARD_ESP32_CAM
-  digitalWrite(LED_PIN, LOW);  // Active Low on ESP32-CAM
-#else
-  digitalWrite(LED_PIN, HIGH); // Active High
-#endif
+  // Set LED to Blinking Red (or solid red to start)
+  setStatusLED(30, 0, 0); // Dim Red (don't blind the user!)
 }
 
 // ============================================================================
@@ -303,12 +317,143 @@ void stopRecording() {
   Serial.print(audioSize);
   Serial.println(" bytes.");
 
-  // Turn off LED
-#ifdef BOARD_ESP32_CAM
-  digitalWrite(LED_PIN, HIGH); // Active Low off on ESP32-CAM
-#else
-  digitalWrite(LED_PIN, LOW);  // Active High off
-#endif
+  // Set LED to Solid Blue (Ready / Idle)
+  setStatusLED(0, 0, 30); // Dim Blue
+}
+
+// ============================================================================
+// WIFI & WEB SERVER PORTAL
+// ============================================================================
+WebServer server(80);
+const char* ssid = "RITH";
+const char* password = "29051995";
+bool wifiConnected = false;
+
+// HTTP "/" handler - lists files on SD card and displays streaming/download portal
+void handleRoot() {
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
+  html += "<title>SmartPuck Web Portal</title>";
+  html += "<style>";
+  html += "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; padding: 25px; max-width: 600px; margin: 0 auto; }";
+  html += "h1 { color: #38bdf8; font-weight: 300; margin-bottom: 5px; }";
+  html += ".subtitle { color: #94a3b8; font-size: 0.9em; margin-bottom: 30px; }";
+  html += ".session { background: #1e293b; padding: 20px; border-radius: 16px; margin-bottom: 15px; border: 1px solid #334155; }";
+  html += ".session-title { font-weight: 600; margin-bottom: 12px; color: #e2e8f0; font-size: 1.1em; }";
+  html += "a { color: #38bdf8; text-decoration: none; display: inline-block; font-weight: 500; font-size: 0.9em; margin-bottom: 10px; }";
+  html += "a:hover { text-decoration: underline; }";
+  html += "audio { display: block; width: 100%; height: 36px; margin-top: 5px; filter: invert(0.9) hue-rotate(180deg); }";
+  html += "</style></head><body>";
+  html += "<h1>SmartPuck Portal</h1>";
+  html += "<div class='subtitle'>Connected to Wi-Fi <strong>" + String(ssid) + "</strong></div>";
+  html += "<h3>Recorded Sessions</h3>";
+
+  // Scan sessions folder
+  File root = SD_DEVICE.open("/sessions");
+  if (!root) {
+    html += "<p style='color: #94a3b8; font-style: italic;'>No recordings found. Press the boot button to make your first recording!</p>";
+  } else {
+    File file = root.openNextFile();
+    bool hasSessions = false;
+    while (file) {
+      if (file.isDirectory()) {
+        hasSessions = true;
+        String folderPath = file.name();
+        int lastSlash = folderPath.lastIndexOf('/');
+        String baseName = (lastSlash >= 0) ? folderPath.substring(lastSlash + 1) : folderPath;
+
+        html += "<div class='session'>";
+        html += "<div class='session-title'>📁 " + baseName + "</div>";
+        String wavPath = "/sessions/" + baseName + "/audio_000.wav";
+        if (SD_DEVICE.exists(wavPath)) {
+          html += "<a href='/download?path=" + wavPath + "' download>⬇️ Download WAV Audio File</a>";
+          html += "<audio controls src='/download?path=" + wavPath + "'></audio>";
+        } else {
+          html += "<span style='color: #f87171; font-size: 0.9em;'>WAV audio file not found</span>";
+        }
+        html += "</div>";
+      }
+      file = root.openNextFile();
+    }
+    root.close();
+    if (!hasSessions) {
+      html += "<p style='color: #94a3b8; font-style: italic;'>No recordings found. Press the boot button to make your first recording!</p>";
+    }
+  }
+
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+// HTTP "/download" handler - streams WAV file directly from SD card
+void handleDownload() {
+  if (!server.hasArg("path")) {
+    server.send(400, "text/plain", "Bad Request: Missing 'path' parameter");
+    return;
+  }
+  
+  String path = server.arg("path");
+  if (!SD_DEVICE.exists(path)) {
+    server.send(404, "text/plain", "File Not Found");
+    return;
+  }
+
+  File file = SD_DEVICE.open(path, FILE_READ);
+  if (!file) {
+    server.send(500, "text/plain", "Internal Server Error: Could not open file");
+    return;
+  }
+
+  // Stream WAV file directly
+  server.streamFile(file, "audio/wav");
+  file.close();
+}
+
+void initWiFi() {
+  Serial.println();
+  Serial.print("Attempting connection to WiFi SSID: ");
+  Serial.println(ssid);
+  
+  // Set LED to dim orange while connecting to WiFi
+  setStatusLED(30, 10, 0); 
+  
+  WiFi.begin(ssid, password);
+
+  // Wait for connection (timeout after 10 seconds)
+  int count = 0;
+  while (WiFi.status() != WL_CONNECTED && count < 20) {
+    delay(500);
+    Serial.print(".");
+    count++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    Serial.println("\nWiFi connected successfully!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+
+    server.on("/", handleRoot);
+    server.on("/download", handleDownload);
+    server.begin();
+    Serial.println("Web Portal HTTP Server started.");
+    
+    // Flash green twice to confirm connection
+    for (int i = 0; i < 2; i++) {
+      setStatusLED(0, 30, 0);
+      delay(200);
+      setStatusLED(0, 0, 0);
+      delay(200);
+    }
+  } else {
+    Serial.println("\nWiFi connection timed out. Booting in local offline mode.");
+    // Flash red twice to show WiFi fail
+    for (int i = 0; i < 2; i++) {
+      setStatusLED(30, 0, 0);
+      delay(200);
+      setStatusLED(0, 0, 0);
+      delay(200);
+    }
+  }
 }
 
 // ============================================================================
@@ -320,35 +465,42 @@ void setup() {
   Serial.println("--- SmartPuck Offline Audio Recorder Initializing ---");
 
   // Configure status LED
-  pinMode(LED_PIN, OUTPUT);
 #ifdef BOARD_ESP32_CAM
-  digitalWrite(LED_PIN, HIGH); // Off (Active Low)
-#else
-  digitalWrite(LED_PIN, LOW);  // Off (Active High)
+  pinMode(LED_PIN, OUTPUT);
 #endif
+  setStatusLED(0, 0, 0); // Off initially
 
   // Configure Button (uses internal pull-up)
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   // Mount SD Card
   if (!initSDCard()) {
-    // Fast flash LED to signal SD failure
+    // Flash LED Red rapidly to signal SD failure
     while (true) {
-      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+      setStatusLED(50, 0, 0);
+      delay(100);
+      setStatusLED(0, 0, 0);
       delay(100);
     }
   }
 
   // Install I2S Microphone
   if (!initI2S()) {
-    // Slow flash LED to signal Microphone failure
+    // Flash LED Yellow (Red + Green) slowly to signal Microphone failure
     while (true) {
-      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+      setStatusLED(40, 20, 0);
+      delay(500);
+      setStatusLED(0, 0, 0);
       delay(500);
     }
   }
 
-  Serial.println("Setup complete. Press the button to start recording.");
+  // Initialize Wi-Fi
+  initWiFi();
+
+  // Ready! Turn LED Solid Blue
+  setStatusLED(0, 0, 30);
+  Serial.println("Setup complete. Press the boot button to start recording.");
 }
 
 // ============================================================================
@@ -373,6 +525,19 @@ void loop() {
 
   // If recording, stream samples from I2S and write to SD card
   if (isRecording) {
+    // Pulse/Blink LED during recording (every 500ms)
+    static uint32_t lastBlinkTime = 0;
+    static bool ledState = true;
+    if (millis() - lastBlinkTime > 500) {
+      lastBlinkTime = millis();
+      ledState = !ledState;
+      if (ledState) {
+        setStatusLED(30, 0, 0); // Dim Red
+      } else {
+        setStatusLED(5, 0, 0);  // Very dim Red
+      }
+    }
+
     uint8_t buffer[I2S_BUFFER_SIZE];
     size_t bytesRead = 0;
 
@@ -387,5 +552,10 @@ void loop() {
       }
       audioSize += bytesWritten;
     }
+  }
+
+  // Handle WiFi Web Server Clients
+  if (wifiConnected && !isRecording) {
+    server.handleClient();
   }
 }

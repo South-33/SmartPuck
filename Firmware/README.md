@@ -20,8 +20,12 @@ The LOLIN S3 Pro has an onboard microSD (TF) slot and battery charger, which kee
 | **WS** | `GPIO 5` | I2S Word Select (LRCLK) |
 | **SD** | `GPIO 6` | I2S Serial Data Out (SD) |
 
-*   **Record Button:** Connect a momentary push button between `GPIO 7` and `GND`.
-*   **Status LED:** Connect an LED anode to `GPIO 8` via a 330Ω resistor; connect the cathode to `GND`.
+*   **Record Button:** The onboard `Boot` button (marked **0** on the PCB, next to the card slot) is used to start and stop recordings. No external button or wiring is needed!
+*   **Status LED:** The onboard RGB Neopixel LED (GPIO 38, near the EN/0 buttons) is used for status feedback. No external LED or wiring is needed!
+    *   **Solid Blue:** Ready / Idle
+    *   **Blinking Red:** Recording Active
+    *   **Flashing Red:** microSD Card Mount Error
+    *   **Flashing Yellow:** Microphone Connection Error
 
 ---
 
