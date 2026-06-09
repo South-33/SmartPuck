@@ -111,6 +111,11 @@ uint32_t audioSize = 0;
 String currentSessionDir = "";
 String currentWavPath = "";
 
+// PSRAM Fallback State
+bool usePsramFallback = false;
+uint8_t* psramBuffer = NULL;
+const uint32_t PSRAM_BUFFER_MAX = 4000000; // 4MB (approx 125 seconds of 16kHz 16-bit mono)
+
 // WAV Header Helper (44 bytes)
 void writeWavHeader(File file, uint32_t totalAudioLen) {
   uint32_t totalDataLen = totalAudioLen + 36;
@@ -138,10 +143,36 @@ void writeWavHeader(File file, uint32_t totalAudioLen) {
   file.write((const uint8_t*)&totalAudioLen, 4);
 }
 
+// WAV Header Generator for Memory Buffers (44 bytes)
+void fillWavHeader(uint8_t* header, uint32_t totalAudioLen) {
+  uint32_t totalDataLen = totalAudioLen + 36;
+  uint32_t sampleRate = SAMPLE_RATE;
+  uint32_t byteRate = SAMPLE_RATE * CHANNEL_COUNT * BITS_PER_SAMPLE / 8;
+  uint16_t blockAlign = CHANNEL_COUNT * BITS_PER_SAMPLE / 8;
+  uint16_t bits = BITS_PER_SAMPLE;
+  uint16_t channels = CHANNEL_COUNT;
+  uint16_t format = 1; // PCM Format
+  uint32_t subChunk1Size = 16;
+
+  memcpy(header, "RIFF", 4);
+  memcpy(header + 4, &totalDataLen, 4);
+  memcpy(header + 8, "WAVEfmt ", 8);
+  memcpy(header + 16, &subChunk1Size, 4);
+  memcpy(header + 20, &format, 2);
+  memcpy(header + 22, &channels, 2);
+  memcpy(header + 24, &sampleRate, 4);
+  memcpy(header + 28, &byteRate, 4);
+  memcpy(header + 32, &blockAlign, 2);
+  memcpy(header + 34, &bits, 2);
+  memcpy(header + 36, "data", 4);
+  memcpy(header + 40, &totalAudioLen, 4);
+}
+
 // LED Status Helper (Handles both LOLIN's RGB LED and ESP32-CAM's active-low LED)
 void setStatusLED(uint8_t r, uint8_t g, uint8_t b) {
 #ifdef BOARD_LOLIN_S3_PRO
-  neopixelWrite(LED_PIN, r, g, b);
+  // LOLIN S3 Pro onboard WS2812 is GRB, so we swap R and G parameters
+  neopixelWrite(LED_PIN, g, r, b);
 #endif
 #ifdef BOARD_ESP32_CAM
   // ESP32-CAM uses a standard active-low single-color LED
@@ -225,7 +256,7 @@ bool initI2S() {
   i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
     .sample_rate = SAMPLE_RATE,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT, // INMP441 outputs 24-bit inside a 32-bit frame slot
     .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, // Left channel for mono INMP441
     .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
@@ -261,6 +292,14 @@ bool initI2S() {
 // START RECORDING
 // ============================================================================
 void startRecording() {
+  if (usePsramFallback) {
+    audioSize = 0;
+    isRecording = true;
+    Serial.println("Started recording to PSRAM buffer (Fallback Mode)...");
+    setStatusLED(30, 0, 0); // Dim Red (physical Green in GRB)
+    return;
+  }
+
   currentSessionDir = getNextSessionPath();
   Serial.print("Creating session directory: ");
   Serial.println(currentSessionDir);
@@ -309,13 +348,19 @@ void stopRecording() {
 
   isRecording = false;
   
-  // Rewind to beginning and write complete WAV header
-  writeWavHeader(audioFile, audioSize);
-  audioFile.close();
+  if (usePsramFallback) {
+    Serial.print("Stopped recording to PSRAM. Total audio size captured: ");
+    Serial.print(audioSize);
+    Serial.println(" bytes.");
+  } else {
+    // Rewind to beginning and write complete WAV header
+    writeWavHeader(audioFile, audioSize);
+    audioFile.close();
 
-  Serial.print("Stopped recording. Total audio size written: ");
-  Serial.print(audioSize);
-  Serial.println(" bytes.");
+    Serial.print("Stopped recording to SD. Total audio size written: ");
+    Serial.print(audioSize);
+    Serial.println(" bytes.");
+  }
 
   // Set LED to Solid Blue (Ready / Idle)
   setStatusLED(0, 0, 30); // Dim Blue
@@ -325,7 +370,7 @@ void stopRecording() {
 // WIFI & WEB SERVER PORTAL
 // ============================================================================
 WebServer server(80);
-const char* ssid = "RITH";
+const char* ssid = "Rith";
 const char* password = "29051995";
 bool wifiConnected = false;
 
@@ -344,39 +389,167 @@ void handleRoot() {
   html += "audio { display: block; width: 100%; height: 36px; margin-top: 5px; filter: invert(0.9) hue-rotate(180deg); }";
   html += "</style></head><body>";
   html += "<h1>SmartPuck Portal</h1>";
-  html += "<div class='subtitle'>Connected to Wi-Fi <strong>" + String(ssid) + "</strong></div>";
+  if (usePsramFallback) {
+    html += "<div class='subtitle' style='color: #fb923c;'>⚠️ Storage Fallback: <strong>PSRAM Mode (No SD Card)</strong></div>";
+  } else {
+    html += "<div class='subtitle'>Connected to Wi-Fi <strong>" + String(ssid) + "</strong></div>";
+  }
+
+  // Add Live Audio Stream section
+  html += "<h3>🎙️ Live Audio Stream</h3>";
+  html += "<div class='session'>";
+  html += "<div class='session-title'>Live Playback (Low Latency Web Audio)</div>";
+  html += "<span style='color: #94a3b8; font-size: 0.85em; display: block; margin-bottom: 15px;'>Stream and listen to the ESP32 microphone in real-time with sub-second latency.</span>";
+  html += "<button id='playBtn' style='background: #38bdf8; color: #0b0f19; border: none; padding: 10px 20px; font-weight: bold; border-radius: 8px; cursor: pointer; margin-bottom: 10px;'>Start Listening</button>";
+  html += "<button id='stopBtn' style='background: #ef4444; color: white; border: none; padding: 10px 20px; font-weight: bold; border-radius: 8px; cursor: pointer; display: none; margin-bottom: 10px;'>Stop</button>";
+  html += "<div id='status' style='font-size: 0.9em; color: #94a3b8;'>Status: Idle</div>";
+  html += "<script>";
+  html += "const playBtn = document.getElementById('playBtn');";
+  html += "const stopBtn = document.getElementById('stopBtn');";
+  html += "const statusDiv = document.getElementById('status');";
+  html += "let audioCtx = null;";
+  html += "let nextPlayTime = 0;";
+  html += "const safetyDelay = 0.1;";
+  html += "let controller = null;";
+  html += "let activeSources = [];";
+  html += "playBtn.addEventListener('click', async () => {";
+  html += "  try {";
+  html += "    statusDiv.textContent = 'Status: Connecting...';";
+  html += "    playBtn.style.display = 'none';";
+  html += "    stopBtn.style.display = 'inline-block';";
+  html += "    if (!audioCtx) {";
+  html += "      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });";
+  html += "    } else if (audioCtx.state === 'suspended') {";
+  html += "      await audioCtx.resume();";
+  html += "    }";
+  html += "    nextPlayTime = audioCtx.currentTime + safetyDelay;";
+  html += "    controller = new AbortController();";
+  html += "    const response = await fetch('/stream', { signal: controller.signal });";
+  html += "    const reader = response.body.getReader();";
+  html += "    statusDiv.textContent = 'Status: Streaming live...';";
+  html += "    let headerSkipped = false;";
+  html += "    let leftoverBytes = new Uint8Array(0);";
+  html += "    while (true) {";
+  html += "      const { done, value } = await reader.read();";
+  html += "      if (done) break;";
+  html += "      let data = new Uint8Array(leftoverBytes.length + value.length);";
+  html += "      data.set(leftoverBytes);";
+  html += "      data.set(value, leftoverBytes.length);";
+  html += "      let offset = 0;";
+  html += "      if (!headerSkipped) {";
+  html += "        if (data.length >= 44) {";
+  html += "          offset = 44;";
+  html += "          headerSkipped = true;";
+  html += "        } else {";
+  html += "          leftoverBytes = data;";
+  html += "          continue;";
+  html += "        }";
+  html += "      }";
+  html += "      const bytesToProcess = data.length - offset;";
+  html += "      const samplesToProcess = Math.floor(bytesToProcess / 2);";
+  html += "      if (samplesToProcess === 0) {";
+  html += "        leftoverBytes = data.subarray(offset);";
+  html += "        continue;";
+  html += "      }";
+  html += "      const floatData = new Float32Array(samplesToProcess);";
+  html += "      for (let i = 0; i < samplesToProcess; i++) {";
+  html += "        const byteIdx = offset + i * 2;";
+  html += "        let val = data[byteIdx] | (data[byteIdx + 1] << 8);";
+  html += "        if (val & 0x8000) val = val - 0x10000;";
+  html += "        floatData[i] = val / 32768.0;";
+  html += "      }";
+  html += "      leftoverBytes = data.subarray(offset + samplesToProcess * 2);";
+  html += "      if (floatData.length > 0) {";
+  html += "        const audioBuffer = audioCtx.createBuffer(1, floatData.length, 16000);";
+  html += "        audioBuffer.copyToChannel(floatData, 0);";
+  html += "        const source = audioCtx.createBufferSource();";
+  html += "        source.buffer = audioBuffer;";
+  html += "        source.connect(audioCtx.destination);";
+  html += "        const currentTime = audioCtx.currentTime;";
+  html += "        if (nextPlayTime < currentTime) {";
+  html += "          nextPlayTime = currentTime + safetyDelay;";
+  html += "        }";
+  html += "        source.start(nextPlayTime);";
+  html += "        activeSources.push(source);";
+  html += "        nextPlayTime += audioBuffer.duration;";
+  html += "        source.onended = () => {";
+  html += "          activeSources = activeSources.filter(s => s !== source);";
+  html += "        };";
+  html += "      }";
+  html += "    }";
+  html += "  } catch (err) {";
+  html += "    if (err.name !== 'AbortError') {";
+  html += "      console.error(err);";
+  html += "      statusDiv.textContent = 'Status: Error - ' + err.message;";
+  html += "      stopStreaming();";
+  html += "    }";
+  html += "  }";
+  html += "});";
+  html += "stopBtn.addEventListener('click', () => {";
+  html += "  stopStreaming();";
+  html += "});";
+  html += "function stopStreaming() {";
+  html += "  if (controller) {";
+  html += "    controller.abort();";
+  html += "    controller = null;";
+  html += "  }";
+  html += "  activeSources.forEach(s => {";
+  html += "    try { s.stop(); } catch(e) {}";
+  html += "  });";
+  html += "  activeSources = [];";
+  html += "  statusDiv.textContent = 'Status: Stopped';";
+  html += "  playBtn.style.display = 'inline-block';";
+  html += "  stopBtn.style.display = 'none';";
+  html += "}";
+  html += "</script>";
+  html += "</div>";
+
   html += "<h3>Recorded Sessions</h3>";
 
-  // Scan sessions folder
-  File root = SD_DEVICE.open("/sessions");
-  if (!root) {
-    html += "<p style='color: #94a3b8; font-style: italic;'>No recordings found. Press the boot button to make your first recording!</p>";
-  } else {
-    File file = root.openNextFile();
-    bool hasSessions = false;
-    while (file) {
-      if (file.isDirectory()) {
-        hasSessions = true;
-        String folderPath = file.name();
-        int lastSlash = folderPath.lastIndexOf('/');
-        String baseName = (lastSlash >= 0) ? folderPath.substring(lastSlash + 1) : folderPath;
-
-        html += "<div class='session'>";
-        html += "<div class='session-title'>📁 " + baseName + "</div>";
-        String wavPath = "/sessions/" + baseName + "/audio_000.wav";
-        if (SD_DEVICE.exists(wavPath)) {
-          html += "<a href='/download?path=" + wavPath + "' download>⬇️ Download WAV Audio File</a>";
-          html += "<audio controls src='/download?path=" + wavPath + "'></audio>";
-        } else {
-          html += "<span style='color: #f87171; font-size: 0.9em;'>WAV audio file not found</span>";
-        }
-        html += "</div>";
-      }
-      file = root.openNextFile();
+  if (usePsramFallback) {
+    // PSRAM Mode File List
+    if (audioSize == 0) {
+      html += "<p style='color: #94a3b8; font-style: italic;'>No recordings found in PSRAM. Press the boot button to make your first recording!</p>";
+    } else {
+      html += "<div class='session'>";
+      html += "<div class='session-title'>🧠 temporary_psram_session (RAM)</div>";
+      html += "<span style='color: #94a3b8; font-size: 0.85em; display: block; margin-bottom: 10px;'>Size: " + String(audioSize) + " bytes (approx. " + String(audioSize / 32000) + " seconds)</span>";
+      html += "<a href='/download?path=psram' download='recording.wav'>⬇️ Download WAV Audio File</a>";
+      html += "<audio controls src='/download?path=psram'></audio>";
+      html += "</div>";
     }
-    root.close();
-    if (!hasSessions) {
+  } else {
+    // Scan sessions folder on SD card
+    File root = SD_DEVICE.open("/sessions");
+    if (!root) {
       html += "<p style='color: #94a3b8; font-style: italic;'>No recordings found. Press the boot button to make your first recording!</p>";
+    } else {
+      File file = root.openNextFile();
+      bool hasSessions = false;
+      while (file) {
+        if (file.isDirectory()) {
+          hasSessions = true;
+          String folderPath = file.name();
+          int lastSlash = folderPath.lastIndexOf('/');
+          String baseName = (lastSlash >= 0) ? folderPath.substring(lastSlash + 1) : folderPath;
+
+          html += "<div class='session'>";
+          html += "<div class='session-title'>📁 " + baseName + "</div>";
+          String wavPath = "/sessions/" + baseName + "/audio_000.wav";
+          if (SD_DEVICE.exists(wavPath)) {
+            html += "<a href='/download?path=" + wavPath + "' download>⬇️ Download WAV Audio File</a>";
+            html += "<audio controls src='/download?path=" + wavPath + "'></audio>";
+          } else {
+            html += "<span style='color: #f87171; font-size: 0.9em;'>WAV audio file not found</span>";
+          }
+          html += "</div>";
+        }
+        file = root.openNextFile();
+      }
+      root.close();
+      if (!hasSessions) {
+        html += "<p style='color: #94a3b8; font-style: italic;'>No recordings found. Press the boot button to make your first recording!</p>";
+      }
     }
   }
 
@@ -384,7 +557,7 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
-// HTTP "/download" handler - streams WAV file directly from SD card
+// HTTP "/download" handler - streams WAV file directly from SD card or PSRAM
 void handleDownload() {
   if (!server.hasArg("path")) {
     server.send(400, "text/plain", "Bad Request: Missing 'path' parameter");
@@ -392,6 +565,28 @@ void handleDownload() {
   }
   
   String path = server.arg("path");
+
+  if (usePsramFallback && path == "psram") {
+    if (audioSize == 0) {
+      server.send(404, "text/plain", "No audio recorded in RAM yet");
+      return;
+    }
+    
+    // Stream WAV file from PSRAM
+    server.setContentLength(44 + audioSize);
+    server.send(200, "audio/wav", "");
+    
+    // Generate WAV header on the fly and send it
+    uint8_t header[44];
+    fillWavHeader(header, audioSize);
+    server.client().write(header, 44);
+    
+    // Send raw audio data
+    server.client().write(psramBuffer, audioSize);
+    return;
+  }
+
+  // Standard SD Card file streaming
   if (!SD_DEVICE.exists(path)) {
     server.send(404, "text/plain", "File Not Found");
     return;
@@ -406,6 +601,69 @@ void handleDownload() {
   // Stream WAV file directly
   server.streamFile(file, "audio/wav");
   file.close();
+}
+
+// HTTP "/stream" handler - streams I2S microphone audio live in real-time
+void handleStream() {
+  Serial.println("[Stream] Client connected. Starting live raw audio stream...");
+  
+  WiFiClient client = server.client();
+  client.setNoDelay(true); // Disable Nagle's algorithm for low-latency transmission
+  
+  // Send raw HTTP headers directly to avoid chunked encoding issues
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: audio/wav");
+  client.println("Connection: close");
+  client.println();
+  
+  // Send a giant WAV header (2GB) so browser plays it as an open-ended audio stream
+  uint8_t header[44];
+  fillWavHeader(header, 0x7FFFFFFF);
+  client.write(header, 44);
+  
+  int32_t i2s_raw_buffer[I2S_BUFFER_SIZE / 4];
+  size_t bytesRead = 0;
+  
+  // Set LED to Cyan while streaming
+  setStatusLED(0, 15, 15);
+  
+  uint32_t lastPrint = 0;
+  
+  while (client.connected()) {
+    esp_err_t result = i2s_read(I2S_PORT, &i2s_raw_buffer, I2S_BUFFER_SIZE, &bytesRead, portMAX_DELAY);
+    if (result == ESP_OK && bytesRead > 0) {
+      size_t sampleCount = bytesRead / 4;
+      int16_t processedBuffer[sampleCount];
+      int16_t maxSample = -32768;
+      int16_t minSample = 32767;
+      
+      for (size_t i = 0; i < sampleCount; i++) {
+        // Shift 24-bit MSB alignment to 16-bit PCM range
+        int32_t sample = i2s_raw_buffer[i] >> 14;
+        if (sample > 32767) sample = 32767;
+        else if (sample < -32768) sample = -32768;
+        processedBuffer[i] = (int16_t)sample;
+        
+        if (processedBuffer[i] > maxSample) maxSample = processedBuffer[i];
+        if (processedBuffer[i] < minSample) minSample = processedBuffer[i];
+      }
+      
+      // Print mic data range once a second
+      if (millis() - lastPrint > 1000) {
+        lastPrint = millis();
+        Serial.printf("[Stream] Mic signal range: %d to %d\n", minSample, maxSample);
+      }
+      
+      if (client.write((const uint8_t*)processedBuffer, sampleCount * 2) != sampleCount * 2) {
+        break; // Connection closed or socket write failed
+      }
+    }
+    yield();
+  }
+  
+  // Restore Blue LED
+  setStatusLED(0, 0, 30);
+  Serial.println("[Stream] Client disconnected. Live audio stream closed.");
 }
 
 void initWiFi() {
@@ -434,6 +692,7 @@ void initWiFi() {
 
     server.on("/", handleRoot);
     server.on("/download", handleDownload);
+    server.on("/stream", handleStream);
     server.begin();
     Serial.println("Web Portal HTTP Server started.");
     
@@ -474,13 +733,29 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   // Mount SD Card
-  if (!initSDCard()) {
-    // Flash LED Red rapidly to signal SD failure
-    while (true) {
-      setStatusLED(50, 0, 0);
-      delay(100);
-      setStatusLED(0, 0, 0);
-      delay(100);
+  bool sdCardOk = initSDCard();
+  if (!sdCardOk) {
+    Serial.println("MicroSD card not found. Attempting to fall back to PSRAM buffer mode...");
+    if (psramFound()) {
+      psramBuffer = (uint8_t*)ps_malloc(PSRAM_BUFFER_MAX);
+      if (psramBuffer != NULL) {
+        usePsramFallback = true;
+        Serial.printf("SUCCESS: Allocated %d bytes in PSRAM for audio recording buffer.\n", PSRAM_BUFFER_MAX);
+      } else {
+        Serial.println("ERROR: Failed to allocate PSRAM audio buffer.");
+      }
+    } else {
+      Serial.println("ERROR: PSRAM not found/enabled on this board.");
+    }
+
+    if (!usePsramFallback) {
+      // Flash LED Red rapidly to signal fatal storage failure (both SD and PSRAM failed)
+      while (true) {
+        setStatusLED(50, 0, 0);
+        delay(100);
+        setStatusLED(0, 0, 0);
+        delay(100);
+      }
     }
   }
 
@@ -507,7 +782,43 @@ void setup() {
 // MAIN LOOP
 // ============================================================================
 void loop() {
-  static bool lastButtonState = HIGH;
+  // Handle background Wi-Fi connection if it connects after setup timeout
+  if (WiFi.status() == WL_CONNECTED && !wifiConnected) {
+    wifiConnected = true;
+    Serial.println("\n[WiFi] Connected in background!");
+    Serial.print("[WiFi] IP Address: ");
+    Serial.println(WiFi.localIP());
+
+    server.on("/", handleRoot);
+    server.on("/download", handleDownload);
+    server.on("/stream", handleStream);
+    server.begin();
+    Serial.println("[WiFi] Web Portal HTTP Server started.");
+    
+    // Flash green twice (physical Red on GRB) to confirm connection
+    for (int i = 0; i < 2; i++) {
+      setStatusLED(0, 30, 0);
+      delay(200);
+      setStatusLED(0, 0, 0);
+      delay(200);
+    }
+    setStatusLED(0, 0, 30); // Solid Blue
+  }
+
+  // Print status/IP address every 10 seconds
+  static uint32_t lastStatusPrint = 0;
+  if (millis() - lastStatusPrint > 10000) {
+    lastStatusPrint = millis();
+    if (wifiConnected) {
+      Serial.print("[SmartPuck] Web Portal is active at: http://");
+      Serial.print(WiFi.localIP());
+      Serial.println("/");
+    } else {
+      Serial.println("[SmartPuck] Running in local offline mode (no WiFi).");
+    }
+  }
+
+  static bool lastButtonState = digitalRead(BUTTON_PIN);
   bool currentButtonState = digitalRead(BUTTON_PIN);
 
   // Button pressed (falling edge transition HIGH -> LOW)
@@ -523,7 +834,7 @@ void loop() {
   }
   lastButtonState = currentButtonState;
 
-  // If recording, stream samples from I2S and write to SD card
+  // If recording, stream samples from I2S and write to SD card or PSRAM
   if (isRecording) {
     // Pulse/Blink LED during recording (every 500ms)
     static uint32_t lastBlinkTime = 0;
@@ -538,19 +849,42 @@ void loop() {
       }
     }
 
-    uint8_t buffer[I2S_BUFFER_SIZE];
+    int32_t i2s_raw_buffer[I2S_BUFFER_SIZE / 4];
     size_t bytesRead = 0;
 
-    // Read audio chunk from mic
-    esp_err_t result = i2s_read(I2S_PORT, &buffer, I2S_BUFFER_SIZE, &bytesRead, portMAX_DELAY);
+    // Read audio chunk from mic (32-bit samples)
+    esp_err_t result = i2s_read(I2S_PORT, &i2s_raw_buffer, I2S_BUFFER_SIZE, &bytesRead, portMAX_DELAY);
     
     if (result == ESP_OK && bytesRead > 0) {
-      // Write raw bytes directly to wav file on microSD
-      size_t bytesWritten = audioFile.write(buffer, bytesRead);
-      if (bytesWritten != bytesRead) {
-        Serial.println("WARNING: File write buffer mismatch! SD card write might be too slow.");
+      size_t sampleCount = bytesRead / 4;
+      int16_t processedBuffer[sampleCount];
+      for (size_t i = 0; i < sampleCount; i++) {
+        // Shift 24-bit MSB alignment to 16-bit PCM range
+        int32_t sample = i2s_raw_buffer[i] >> 14;
+        if (sample > 32767) sample = 32767;
+        else if (sample < -32768) sample = -32768;
+        processedBuffer[i] = (int16_t)sample;
       }
-      audioSize += bytesWritten;
+
+      size_t processedBytes = sampleCount * 2;
+
+      if (usePsramFallback) {
+        // PSRAM Recording
+        if (audioSize + processedBytes < PSRAM_BUFFER_MAX) {
+          memcpy(psramBuffer + audioSize, processedBuffer, processedBytes);
+          audioSize += processedBytes;
+        } else {
+          Serial.println("PSRAM Audio Buffer is Full! Stopping recording automatically.");
+          stopRecording();
+        }
+      } else {
+        // SD Card Recording
+        size_t bytesWritten = audioFile.write((const uint8_t*)processedBuffer, processedBytes);
+        if (bytesWritten != processedBytes) {
+          Serial.println("WARNING: File write buffer mismatch! SD card write might be too slow.");
+        }
+        audioSize += bytesWritten;
+      }
     }
   }
 
