@@ -100,7 +100,7 @@
 #define SAMPLE_RATE         16000 // 16kHz is standard for Speech-to-Text models
 #define BITS_PER_SAMPLE     16    // 16-bit PCM
 #define CHANNEL_COUNT       1     // Mono (L/R pin grounded on mic)
-#define I2S_BUFFER_SIZE     1024  // Audio buffer size in bytes
+#define I2S_BUFFER_SIZE     512  // Audio buffer size in bytes (128 samples of 32-bit data = 8ms)
 
 // ============================================================================
 // GLOBAL VARIABLES
@@ -261,7 +261,7 @@ bool initI2S() {
     .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = 8,
-    .dma_buf_len = 512,
+    .dma_buf_len = 128,
     .use_apll = false,
     .tx_desc_auto_clear = false,
     .fixed_mclk = 0
@@ -409,7 +409,7 @@ void handleRoot() {
   html += "const statusDiv = document.getElementById('status');";
   html += "let audioCtx = null;";
   html += "let nextPlayTime = 0;";
-  html += "const safetyDelay = 0.05;";
+  html += "const safetyDelay = 0.02;";
   html += "let controller = null;";
   html += "let activeSources = [];";
   html += "playBtn.addEventListener('click', async () => {";
