@@ -409,7 +409,7 @@ void handleRoot() {
   html += "const statusDiv = document.getElementById('status');";
   html += "let audioCtx = null;";
   html += "let nextPlayTime = 0;";
-  html += "const safetyDelay = 0.1;";
+  html += "const safetyDelay = 0.05;";
   html += "let controller = null;";
   html += "let activeSources = [];";
   html += "playBtn.addEventListener('click', async () => {";
@@ -418,7 +418,7 @@ void handleRoot() {
   html += "    playBtn.style.display = 'none';";
   html += "    stopBtn.style.display = 'inline-block';";
   html += "    if (!audioCtx) {";
-  html += "      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });";
+  html += "      audioCtx = new (window.AudioContext || window.webkitAudioContext)();";
   html += "    } else if (audioCtx.state === 'suspended') {";
   html += "      await audioCtx.resume();";
   html += "    }";
@@ -606,6 +606,10 @@ void handleDownload() {
 // HTTP "/stream" handler - streams I2S microphone audio live in real-time
 void handleStream() {
   Serial.println("[Stream] Client connected. Starting live raw audio stream...");
+  
+  // Stop and restart I2S to reset the DMA buffer and discard stale audio data
+  i2s_stop(I2S_PORT);
+  i2s_start(I2S_PORT);
   
   WiFiClient client = server.client();
   client.setNoDelay(true); // Disable Nagle's algorithm for low-latency transmission
