@@ -37,6 +37,8 @@ function LiveWorkspaceContent() {
   const deleteFolder = useMutation(api.workspace.deleteFolder);
   const deleteMeeting = useMutation(api.workspace.deleteMeeting);
   const createMeetingFromDeviceSync = useMutation(api.workspace.createMeetingFromDeviceSync);
+  const generateUploadUrl = useMutation(api.workspace.generateUploadUrl);
+  const createMeetingWithAudio = useMutation(api.workspace.createMeetingWithAudio);
   const streamMeetingReply = useAction(api.smartpuckAgent.streamMeetingReply);
   const isMutating = pendingOperations > 0;
   const [displayDashboard, setDisplayDashboard] = useState<DashboardData | undefined>(undefined);
@@ -155,7 +157,7 @@ function LiveWorkspaceContent() {
       fallbackFolderId={fallbackFolderId}
       initialPuckAddress={rememberedDevice?.baseUrl ?? null}
       onCreateFolder={async (name) => {
-        await runOperation(() => createFolder({ name }));
+        return await runOperation(() => createFolder({ name }));
       }}
       onDeleteFolder={async (folderId) => {
         const nextMeetingId = await runOperation(() =>
@@ -179,6 +181,27 @@ function LiveWorkspaceContent() {
           createMeetingFromDeviceSync({
             folderId: folderId as Id<"folders">,
             transport,
+          }),
+        );
+        setSelectedMeetingId(meetingId);
+        return meetingId;
+      }}
+      onGenerateUploadUrl={async () => {
+        return await runOperation(() => generateUploadUrl());
+      }}
+      onCreateMeetingWithAudio={async (args) => {
+        const meetingId = await runOperation(() =>
+          createMeetingWithAudio({
+            folderId: args.folderId as Id<"folders">,
+            title: args.title,
+            transport: args.transport,
+            audioFileId: args.audioFileId as Id<"_storage"> | undefined,
+            audioFileName: args.audioFileName,
+            transcriptText: args.transcriptText,
+            transcriptJson: args.transcriptJson,
+            durationLabel: args.durationLabel,
+            transferredMb: args.transferredMb,
+            audioHours: args.audioHours,
           }),
         );
         setSelectedMeetingId(meetingId);

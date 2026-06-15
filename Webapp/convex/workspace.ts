@@ -90,31 +90,44 @@ export const getDashboard = query({
           .order("desc")
           .take(12);
 
+        const hydratedMeetings = await Promise.all(
+          meetings.map(async (meeting) => {
+            const audioUrl = meeting.audioFileId
+              ? await ctx.storage.getUrl(meeting.audioFileId)
+              : null;
+            return {
+              id: meeting._id,
+              folderId: meeting.folderId,
+              agentThreadId: meeting.agentThreadId,
+              title: meeting.title,
+              durationLabel: meeting.durationLabel,
+              status: meeting.status,
+              startedAtLabel: meeting.startedAtLabel,
+              sourceTransport: meeting.sourceTransport,
+              summary: meeting.summary,
+              transcriptPreview: meeting.transcriptPreview,
+              syncStats: {
+                percent: meeting.syncPercent,
+                transferredMb: meeting.syncTransferredMb,
+                visuals: meeting.syncVisuals,
+                audioHours: meeting.syncAudioHours,
+              },
+              decisions: meeting.decisions,
+              actions: meeting.actions,
+              messages: [],
+              audioFileId: meeting.audioFileId,
+              audioFileName: meeting.audioFileName,
+              audioUrl: audioUrl ?? undefined,
+              transcriptText: meeting.transcriptText,
+            };
+          }),
+        );
+
         return {
           id: folder._id,
           name: folder.name,
           accent: folder.accent,
-          meetings: meetings.map((meeting) => ({
-            id: meeting._id,
-            folderId: meeting.folderId,
-            agentThreadId: meeting.agentThreadId,
-            title: meeting.title,
-            durationLabel: meeting.durationLabel,
-            status: meeting.status,
-            startedAtLabel: meeting.startedAtLabel,
-            sourceTransport: meeting.sourceTransport,
-            summary: meeting.summary,
-            transcriptPreview: meeting.transcriptPreview,
-            syncStats: {
-              percent: meeting.syncPercent,
-              transferredMb: meeting.syncTransferredMb,
-              visuals: meeting.syncVisuals,
-              audioHours: meeting.syncAudioHours,
-            },
-            decisions: meeting.decisions,
-            actions: meeting.actions,
-            messages: [],
-          })),
+          meetings: hydratedMeetings,
         };
       }),
     );
@@ -137,6 +150,10 @@ export const getDashboard = query({
           .query("messages")
           .withIndex("by_meetingId_and_createdAt", (q) => q.eq("meetingId", meetingDoc._id))
           .take(40);
+
+        const audioUrl = meetingDoc.audioFileId
+          ? await ctx.storage.getUrl(meetingDoc.audioFileId)
+          : null;
 
         activeMeeting = {
           id: meetingDoc._id,
@@ -164,6 +181,10 @@ export const getDashboard = query({
             status: message.status ?? "complete",
             createdAt: new Date(message.createdAt).toISOString(),
           })),
+          audioFileId: meetingDoc.audioFileId,
+          audioFileName: meetingDoc.audioFileName,
+          audioUrl: audioUrl ?? undefined,
+          transcriptText: meetingDoc.transcriptText,
         };
       }
     }
@@ -820,5 +841,78 @@ export const updateMeetingInsights = internalMutation({
     await ctx.db.patch(args.meetingId, {
       pinnedInsights: args.insights,
     });
+  },
+});
+
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const createMeetingWithAudio = mutation({
+  args: {
+    folderId: v.id("folders"),
+    title: v.string(),
+    transport: transportValidator,
+    audioFileId: v.optional(v.id("_storage")),
+    audioFileName: v.optional(v.string()),
+    transcriptText: v.string(),
+    transcriptJson: v.optional(v.string()),
+    durationLabel: v.string(),
+    transferredMb: v.number(),
+    audioHours: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await getViewerScope(ctx);
+    const folder = await ensureFolderBelongsToScope(ctx, args.folderId, viewer.scopeKey);
+    const now = Date.now();
+
+    const lines = args.transcriptText.split("\n");
+    const transcriptPreview = lines.slice(0, 3).join("\n") || "No preview available.";
+
+    const meetingId = await ctx.db.insert("meetings", {
+      scopeKey: viewer.scopeKey,
+      folderId: folder._id,
+      title: args.title,
+      durationLabel: args.durationLabel,
+      status: "ready",
+      startedAtLabel: "Just now",
+      sourceTransport: args.transport,
+      summary: "Local audio sync session transcribed on the laptop.",
+      transcriptPreview,
+      syncPercent: 100,
+      syncTransferredMb: args.transferredMb,
+      syncVisuals: 0,
+      syncAudioHours: args.audioHours,
+      decisions: [
+        "Transcribe locally using Whisper to keep voice data private.",
+        "Store session files inside the selected folder."
+      ],
+      actions: [],
+      transcriptText: args.transcriptText,
+      audioFileId: args.audioFileId,
+      audioFileName: args.audioFileName,
+      transcriptJson: args.transcriptJson,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(folder._id, { updatedAt: now });
+
+    await ctx.db.insert("messages", {
+      scopeKey: viewer.scopeKey,
+      meetingId,
+      role: "assistant",
+      body: `The recording "${args.title}" has been successfully uploaded, transcribed locally, and saved. Ask me anything about this session!`,
+      status: "complete",
+      createdAt: now,
+    });
+
+    return meetingId;
   },
 });

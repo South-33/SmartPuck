@@ -55,6 +55,9 @@ export default defineSchema({
       }),
     ),
     transcriptText: v.optional(v.string()),
+    audioFileId: v.optional(v.id("_storage")),
+    audioFileName: v.optional(v.string()),
+    transcriptJson: v.optional(v.string()),
     pinnedInsights: v.optional(
       v.array(
         v.object({

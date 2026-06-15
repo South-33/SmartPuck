@@ -50,6 +50,10 @@ export type MeetingRecord = {
   actions: MeetingAction[];
   messages: MeetingMessage[];
   transcriptText?: string;
+  audioFileId?: string;
+  audioFileName?: string;
+  audioUrl?: string;
+  transcriptJson?: string;
   pinnedInsights?: Array<{
     id: string;
     title: string;

@@ -58,7 +58,7 @@ type WorkspaceShellProps = {
   isMutating: boolean;
   fallbackFolderId: string | null;
   initialPuckAddress?: string | null;
-  onCreateFolder: (name: string) => void | Promise<void>;
+  onCreateFolder: (name: string) => Promise<string | void> | string | void;
   onDeleteFolder: (folderId: string) => void | Promise<void>;
   onCreateChat: (folderId: string) => Promise<string | void> | string | void;
   onConnectDevice: (
@@ -68,6 +68,19 @@ type WorkspaceShellProps = {
   onSelectMeeting: (meetingId: string) => void;
   onDeleteMeeting: (meetingId: string) => void | Promise<void>;
   onSendMessage: (meetingId: string, body: string, privateContext?: string) => void | Promise<void>;
+  onGenerateUploadUrl?: () => Promise<string>;
+  onCreateMeetingWithAudio?: (args: {
+    folderId: string;
+    title: string;
+    transport: DeviceTransport;
+    audioFileId?: string;
+    audioFileName?: string;
+    transcriptText: string;
+    transcriptJson?: string;
+    durationLabel: string;
+    transferredMb: number;
+    audioHours: number;
+  }) => Promise<string>;
 };
 
 type WorkspaceView =
@@ -183,6 +196,8 @@ export function WorkspaceShell({
   onSelectMeeting,
   onDeleteMeeting,
   onSendMessage,
+  onGenerateUploadUrl,
+  onCreateMeetingWithAudio,
 }: WorkspaceShellProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("recent-sessions");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("dashboard");
@@ -204,7 +219,12 @@ export function WorkspaceShell({
     return initial;
   });
   const [newRecordingState, setNewRecordingState] = useState<NewRecordingState>("connect");
-  const [pendingTransport, setPendingTransport] = useState<DeviceTransport>("bluetooth");
+  const [pendingTransport, setPendingTransport] = useState<DeviceTransport>("wifi");
+  const [showInlineFolderCreator, setShowInlineFolderCreator] = useState(false);
+  const [inlineFolderName, setInlineFolderName] = useState("");
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionProgressMessage, setTranscriptionProgressMessage] = useState("");
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
   const [syncProgress, setSyncProgress] = useState({
     percent: 0,
     transferredMb: 0,
@@ -495,7 +515,7 @@ export function WorkspaceShell({
   function showNewRecording() {
     setActiveView("new-recording");
     setNewRecordingState("connect");
-    setPendingTransport("bluetooth");
+    setPendingTransport("wifi");
     setImportFolderId(fallbackFolderId || "");
   }
 
@@ -756,13 +776,146 @@ export function WorkspaceShell({
     };
   }
 
-  async function handleDeviceConnect(transport: DeviceTransport) {
+  async function handleCreateInlineFolder() {
+    const trimmed = inlineFolderName.trim();
+    if (!trimmed || isMutating) {
+      return;
+    }
+
+    try {
+      const folderId = await Promise.resolve(onCreateFolder(trimmed));
+      if (folderId) {
+        setImportFolderId(folderId);
+      }
+      setInlineFolderName("");
+      setShowInlineFolderCreator(false);
+    } catch (error) {
+      console.error("Failed to create inline folder", error);
+    }
+  }
+
+  async function handleAudioFileSelect(file: File) {
+    const folderId = importFolderId || fallbackFolderId;
+    if (!folderId) {
+      alert("Please select or create a folder to save this recording to.");
+      return;
+    }
+
+    setIsTranscribing(true);
+    setNewRecordingState("syncing");
+    setTranscriptionProgressMessage("Uploading audio to local transcription engine...");
+    setSyncProgress({
+      percent: 10,
+      transferredMb: 1,
+      attachments: 0,
+      audioHours: 0.1,
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      const transcribeRes = await fetch("http://127.0.0.1:8000/transcribe?model_name=turbo", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!transcribeRes.ok) {
+        throw new Error(`Local transcription server returned ${transcribeRes.status}: ${await transcribeRes.text()}`);
+      }
+
+      setTranscriptionProgressMessage("Transcription complete! Uploading audio to Convex storage...");
+      setSyncProgress({
+        percent: 60,
+        transferredMb: Math.round(file.size / 1000000),
+        attachments: 0,
+        audioHours: 0.5,
+      });
+
+      const transcription = await transcribeRes.json();
+
+      let storageId: string | undefined = undefined;
+      if (onGenerateUploadUrl) {
+        const uploadUrl = await onGenerateUploadUrl();
+        const uploadRes = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": file.type },
+          body: file,
+        });
+        if (uploadRes.ok) {
+          const json = await uploadRes.json();
+          storageId = json.storageId;
+        } else {
+          console.error("Failed to upload audio to Convex storage, continuing without file storage ID.");
+        }
+      }
+
+      setTranscriptionProgressMessage("Saving meeting record...");
+      setSyncProgress({
+        percent: 90,
+        transferredMb: Math.round(file.size / 1000000),
+        attachments: 0,
+        audioHours: 0.8,
+      });
+
+      if (onCreateMeetingWithAudio) {
+        const durationMin = transcription.segments.length > 0 
+          ? (transcription.segments[transcription.segments.length - 1].end / 60)
+          : 0;
+        const durationStr = durationMin > 0 
+          ? `${Math.round(durationMin)}m`
+          : "0m";
+
+        const meetingId = await onCreateMeetingWithAudio({
+          folderId,
+          title: file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " "),
+          transport: pendingTransport,
+          audioFileId: storageId,
+          audioFileName: file.name,
+          transcriptText: transcription.full_text,
+          transcriptJson: JSON.stringify(transcription),
+          durationLabel: durationStr,
+          transferredMb: Math.round(file.size / 1024 / 1024),
+          audioHours: Number((durationMin / 60).toFixed(2)),
+        });
+
+        if (meetingId) {
+          onSelectMeeting(meetingId);
+        }
+      }
+
+      setSyncProgress({
+        percent: 100,
+        transferredMb: Math.round(file.size / 1024 / 1024),
+        attachments: 0,
+        audioHours: 1.0,
+      });
+      closeNewRecording();
+    } catch (err) {
+      const error = err as Error;
+      console.error(error);
+      alert(error.message || "Failed to process transcription or upload. Make sure your local transcribe_server.py is running on port 8000!");
+      setNewRecordingState("connect");
+    } finally {
+      setIsTranscribing(false);
+      setTranscriptionProgressMessage("");
+    }
+  }
+
+  function handleAudioFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) {
+      void handleAudioFileSelect(file);
+    }
+  }
+
+  async function handleDemoManualImport() {
     const folderId = importFolderId || fallbackFolderId;
     if (!folderId) {
       return;
     }
 
-    setPendingTransport(transport);
+    setPendingTransport("manual");
     setSyncProgress({
       percent: 0,
       transferredMb: 0,
@@ -770,9 +923,9 @@ export function WorkspaceShell({
       audioHours: 0,
     });
     setNewRecordingState("syncing");
-
+    
     const [meetingId] = await Promise.all([
-      Promise.resolve(onConnectDevice(folderId, transport)),
+      Promise.resolve(onConnectDevice(folderId, "manual")),
       new Promise((resolve) => window.setTimeout(resolve, 900)),
     ]);
 
@@ -781,6 +934,14 @@ export function WorkspaceShell({
     }
 
     closeNewRecording();
+  }
+
+  function triggerAudioImport() {
+    if (mode === "demo") {
+      void handleDemoManualImport();
+    } else {
+      audioFileInputRef.current?.click();
+    }
   }
 
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
@@ -1162,6 +1323,13 @@ export function WorkspaceShell({
                 animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel",
               )}
             >
+              <input
+                ref={audioFileInputRef}
+                type="file"
+                className="sr-only"
+                onChange={handleAudioFileChange}
+                accept=".mp3,.wav,.m4a"
+              />
               {newRecordingState === "connect" ? (
                 <div id="nr-connect" className="flex h-full w-full flex-col items-center justify-center gap-8">
                   <RecordingOrb pulsing={puckState === "recording"} />
@@ -1170,183 +1338,253 @@ export function WorkspaceShell({
                       Connect SmartPuck
                     </h2>
                     <p className="font-display text-[11px] font-bold uppercase tracking-[0.25em] text-gray-400">
-                      Wi-Fi live recorder
+                      {pendingTransport === "wifi" ? "Wi-Fi live recorder" : pendingTransport === "usb" ? "USB Drive Ingestion" : "Bluetooth BLE Sync"}
                     </p>
                   </div>
 
                   <div className="w-full max-w-xl rounded-[2rem] border border-gray-200 bg-white p-5 shadow-sm">
-                    {showPuckAddressEditor ? (
-                      <div className="flex flex-col gap-3 sm:flex-row">
-                        <label className="min-w-0 flex-1">
-                          <span className="sr-only">SmartPuck address</span>
-                          <input
-                            type="text"
-                            value={puckAddress}
-                            onChange={(event) => setPuckAddress(event.target.value)}
-                            disabled={puckState === "recording"}
-                            placeholder="http://192.168.4.1"
-                            className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 font-mono text-sm text-gray-950 outline-none focus:border-gray-400 disabled:cursor-not-allowed disabled:text-gray-400"
-                          />
-                        </label>
+                    {/* Transport Tabs */}
+                    <div className="flex border-b border-gray-100 mb-5 justify-between">
+                      {(["wifi", "usb", "bluetooth"] as const).map((t) => (
                         <button
+                          key={t}
                           type="button"
                           onClick={() => {
-                            void checkPuckConnection();
+                            if (puckState !== "recording") {
+                              setPendingTransport(t);
+                            }
                           }}
-                          disabled={puckState === "checking" || puckState === "recording"}
-                          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-black px-5 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                          disabled={puckState === "recording"}
+                          className={clsx(
+                            "flex-1 pb-3 text-xs font-bold uppercase tracking-widest text-center border-b-2 transition-all",
+                            pendingTransport === t
+                              ? "border-black text-black"
+                              : "border-transparent text-gray-400 hover:text-black"
+                          )}
                         >
-                          <Wifi className="h-4 w-4" />
-                          Check
+                          {t === "wifi" ? "Wi-Fi Live" : t === "usb" ? "USB Drive" : "Bluetooth BLE"}
                         </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 sm:flex-row sm:items-center">
-                        <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white text-black shadow-sm">
-                            <Wifi className="h-4 w-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                              SmartPuck stream
-                            </p>
-                            <p className="truncate text-sm font-medium text-gray-700">
-                              {initialPuckAddress ? "Using saved Convex device address" : "Using default AP fallback"}
-                            </p>
+                      ))}
+                    </div>
+
+                    {pendingTransport === "wifi" ? (
+                      <>
+                        {showPuckAddressEditor ? (
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <label className="min-w-0 flex-1">
+                              <span className="sr-only">SmartPuck address</span>
+                              <input
+                                type="text"
+                                value={puckAddress}
+                                onChange={(event) => setPuckAddress(event.target.value)}
+                                disabled={puckState === "recording"}
+                                placeholder="http://192.168.4.1"
+                                className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 font-mono text-sm text-gray-950 outline-none focus:border-gray-400 disabled:cursor-not-allowed disabled:text-gray-400"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void checkPuckConnection();
+                              }}
+                              disabled={puckState === "checking" || puckState === "recording"}
+                              className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-black px-5 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                            >
+                              <Wifi className="h-4 w-4" />
+                              Check
+                            </button>
                           </div>
+                        ) : (
+                          <div className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 sm:flex-row sm:items-center">
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white text-black shadow-sm">
+                                <Wifi className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                                  SmartPuck stream
+                                </p>
+                                <p className="truncate text-sm font-medium text-gray-700">
+                                  {initialPuckAddress ? "Using saved Convex device address" : "Using default AP fallback"}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowPuckAddressEditor(true)}
+                                disabled={puckState === "recording"}
+                                className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
+                              >
+                                Change
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void checkPuckConnection();
+                                }}
+                                disabled={puckState === "checking" || puckState === "recording"}
+                                className="h-10 rounded-xl bg-black px-4 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                              >
+                                Check
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-4 flex items-start gap-3 rounded-2xl bg-gray-50 p-4">
+                          <span
+                            className={clsx(
+                              "mt-1 h-2.5 w-2.5 rounded-full",
+                              puckState === "recording"
+                                ? "bg-red-500"
+                                : puckState === "connected" || puckState === "listening"
+                                  ? "bg-emerald-500"
+                                  : puckState === "error"
+                                    ? "bg-amber-500"
+                                    : "bg-gray-300",
+                            )}
+                          />
+                          <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setShowPuckAddressEditor(true)}
-                            disabled={puckState === "recording"}
-                            className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
-                          >
-                            Change
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void checkPuckConnection();
-                            }}
-                            disabled={puckState === "checking" || puckState === "recording"}
-                            className="h-10 rounded-xl bg-black px-4 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-                          >
-                            Check
-                          </button>
-                        </div>
+                      </>
+                    ) : (
+                      <div
+                        onClick={triggerAudioImport}
+                        className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-2xl p-8 bg-gray-50 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                      >
+                        <Upload className="h-8 w-8 text-gray-400 mb-3" />
+                        <p className="text-sm font-semibold text-gray-700">Click to select audio recording file</p>
+                        <p className="text-xs text-gray-400 mt-1">Supports MP3 and WAV from your device</p>
                       </div>
                     )}
-
-                    <div className="mt-4 flex items-start gap-3 rounded-2xl bg-gray-50 p-4">
-                      <span
-                        className={clsx(
-                          "mt-1 h-2.5 w-2.5 rounded-full",
-                          puckState === "recording"
-                            ? "bg-red-500"
-                            : puckState === "connected" || puckState === "listening"
-                              ? "bg-emerald-500"
-                              : puckState === "error"
-                                ? "bg-amber-500"
-                                : "bg-gray-300",
-                        )}
-                      />
-                      <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
-                    </div>
 
                     <div className="mt-4">
                       <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
                         Save Session To Folder
                       </label>
-                      <select
-                        value={importFolderId}
-                        onChange={(e) => setImportFolderId(e.target.value)}
-                        className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-900 outline-none focus:border-gray-400"
-                      >
-                        {visibleFolders.map((folder) => (
-                          <option key={folder.id} value={folder.id}>
-                            {folder.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex gap-2">
+                        <select
+                          value={importFolderId}
+                          onChange={(e) => setImportFolderId(e.target.value)}
+                          className="h-12 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-900 outline-none focus:border-gray-400"
+                        >
+                          {visibleFolders.map((folder) => (
+                            <option key={folder.id} value={folder.id}>
+                              {folder.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setShowInlineFolderCreator(!showInlineFolderCreator)}
+                          className="h-12 px-4 rounded-xl border border-gray-200 bg-white text-xs font-bold uppercase tracking-widest text-gray-500 hover:text-black hover:bg-gray-50"
+                        >
+                          New Folder
+                        </button>
+                      </div>
+
+                      {showInlineFolderCreator ? (
+                        <div className="mt-3 flex gap-2 rounded-xl border border-gray-100 bg-gray-50 p-2.5">
+                          <input
+                            type="text"
+                            value={inlineFolderName}
+                            onChange={(e) => setInlineFolderName(e.target.value)}
+                            placeholder="Folder name (e.g. Finance)"
+                            className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-gray-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleCreateInlineFolder();
+                            }}
+                            disabled={!inlineFolderName.trim() || isMutating}
+                            className="rounded-lg bg-black px-4 py-2 text-xs font-bold uppercase tracking-wider text-white disabled:opacity-50"
+                          >
+                            Create
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
 
-                    <div className="mt-5 grid grid-cols-3 gap-3">
-                      <SyncStatCard label="Duration" value={formatDuration(recordingSeconds)} />
-                      <SyncStatCard label="Captured" value={formatBytes(recordingBytes)} />
-                      <SyncStatCard
-                        label="Rate"
-                        value={recordingBytes > 0 ? "16 kHz" : "Ready"}
-                      />
-                    </div>
+                    {pendingTransport === "wifi" ? (
+                      <>
+                        <div className="mt-5 grid grid-cols-3 gap-3">
+                          <SyncStatCard label="Duration" value={formatDuration(recordingSeconds)} />
+                          <SyncStatCard label="Captured" value={formatBytes(recordingBytes)} />
+                          <SyncStatCard
+                            label="Rate"
+                            value={recordingBytes > 0 ? "16 kHz" : "Ready"}
+                          />
+                        </div>
 
-                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                      {puckState !== "listening" && puckState !== "recording" ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void startLiveListeningOnly();
-                          }}
-                          disabled={puckState === "checking"}
-                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-black text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-                        >
-                          <Radio className="h-5 w-5" />
-                          Start Listening
-                        </button>
-                      ) : null}
+                        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                          {puckState !== "listening" && puckState !== "recording" ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void startLiveListeningOnly();
+                              }}
+                              disabled={puckState === "checking"}
+                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-black text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                            >
+                              <Radio className="h-5 w-5" />
+                              Start Listening
+                            </button>
+                          ) : null}
 
-                      {puckState === "listening" ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void startComputerRecording();
-                          }}
-                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
-                        >
-                          <Mic className="h-5 w-5" />
-                          Start Recording
-                        </button>
-                      ) : null}
+                          {puckState === "listening" ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void startComputerRecording();
+                              }}
+                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
+                            >
+                              <Mic className="h-5 w-5" />
+                              Start Recording
+                            </button>
+                          ) : null}
 
-                      {puckState === "recording" ? (
-                        <button
-                          type="button"
-                          onClick={stopComputerRecording}
-                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
-                        >
-                          <Square className="h-4 w-4 fill-current" />
-                          Stop & Save
-                        </button>
-                      ) : null}
+                          {puckState === "recording" ? (
+                            <button
+                              type="button"
+                              onClick={stopComputerRecording}
+                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
+                            >
+                              <Square className="h-4 w-4 fill-current" />
+                              Stop & Save
+                            </button>
+                          ) : null}
 
-                      {puckState === "listening" || puckState === "recording" ? (
-                        <button
-                          type="button"
-                          onClick={stopLiveListening}
-                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
-                        >
-                          <Square className="h-4 w-4" />
-                          Stop Listening
-                        </button>
-                      ) : null}
+                          {puckState === "listening" || puckState === "recording" ? (
+                            <button
+                              type="button"
+                              onClick={stopLiveListening}
+                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
+                            >
+                              <Square className="h-4 w-4" />
+                              Stop Listening
+                            </button>
+                          ) : null}
 
-                      {recordingDownloadUrl && recordingFileName ? (
-                        <a
-                          href={recordingDownloadUrl}
-                          download={recordingFileName}
-                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
-                        >
-                          <Download className="h-5 w-5" />
-                          Download WAV
-                        </a>
-                      ) : null}
-                    </div>
+                          {recordingDownloadUrl && recordingFileName ? (
+                            <a
+                              href={recordingDownloadUrl}
+                              download={recordingFileName}
+                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
+                            >
+                              <Download className="h-5 w-5" />
+                              Download WAV
+                            </a>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : null}
 
                     <button
                       type="button"
-                      onClick={() => {
-                        void handleDeviceConnect("manual");
-                      }}
+                      onClick={triggerAudioImport}
                       className="mt-4 flex w-full items-center justify-center gap-3 rounded-full border-2 border-dashed border-gray-300 py-4 text-sm font-bold uppercase tracking-widest text-gray-500 hover:border-gray-500 hover:text-black"
                     >
                       <Upload className="h-5 w-5" />
@@ -1368,17 +1606,17 @@ export function WorkspaceShell({
 
                   <div className="space-y-2 text-center">
                     <h2 className="font-display text-4xl font-bold tracking-tight text-black">
-                      Syncing Session
+                      {isTranscribing ? "Processing Session" : "Syncing Session"}
                     </h2>
                     <p className="font-display text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                      April 18, 2026 - Protocol: Ultra-Low Latency
+                      {isTranscribing ? transcriptionProgressMessage : "April 18, 2026 - Protocol: Ultra-Low Latency"}
                     </p>
                   </div>
 
                   <div className="w-full max-w-lg space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                        Active Uplink
+                        {isTranscribing ? "Progress" : "Active Uplink"}
                       </span>
                       <span className="font-display text-2xl font-light text-black">
                         {syncProgress.percent}
@@ -1613,6 +1851,28 @@ function DashboardTab({
       onDrop={handleDrop}
     >
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-gray-50 bg-white">
+        {renderedMeeting?.audioUrl ? (
+          <div className="flex-shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-white flex-shrink-0">
+                <Mic className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-gray-900">
+                  {renderedMeeting.audioFileName || "Session Audio"}
+                </p>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                  Local Playback Enabled
+                </p>
+              </div>
+            </div>
+            <audio
+              src={renderedMeeting.audioUrl}
+              controls
+              className="h-8 max-w-sm w-full focus:outline-none"
+            />
+          </div>
+        ) : null}
         <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto">
           <div
             key={renderedMeeting?.id ?? "empty"}
@@ -1829,10 +2089,10 @@ function TranscriptTab({ activeMeeting }: { activeMeeting: MeetingRecord | null 
           <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-black">
             {activeMeeting?.title ?? "No session selected"}
           </h2>
-          <p className="mt-6 max-w-4xl text-base leading-8 text-gray-600">
-            {activeMeeting?.transcriptPreview ??
+          <div className="mt-6 max-w-4xl text-base leading-8 text-gray-600 whitespace-pre-wrap font-sans bg-gray-50/50 p-6 rounded-2xl border border-gray-100/50">
+            {activeMeeting?.transcriptText || activeMeeting?.transcriptPreview ||
               "Transcript rendering is still a placeholder, but this panel is where the processed audio text will land."}
-          </p>
+          </div>
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[1.25fr_0.85fr]">
