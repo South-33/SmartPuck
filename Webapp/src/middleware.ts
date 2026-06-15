@@ -6,7 +6,7 @@ const isClerkConfigured = Boolean(
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
 );
 
-export default function proxy(request: NextRequest, event: NextFetchEvent) {
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
   if (!isClerkConfigured) {
     return NextResponse.next();
   }

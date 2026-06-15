@@ -10,7 +10,7 @@ import {
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { z } from "zod";
-import { generateText } from "ai";
+import { generateObject } from "ai";
 import { api, components, internal } from "./_generated/api";
 import { action, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
@@ -259,18 +259,6 @@ export const generatePinnedInsights = action({
       "These insights will be shown on the right-side panel as cards. You can return 1, 2, or 3 cards. If there are no meaningful insights to display, return an empty array.",
       "For each card, you must provide: a short ID, a title, a Lucide icon (one of: 'sparkles', 'grip', 'search', 'settings', 'help', 'alert'), and clean, styled HTML/Markdown content for the body.",
       "Keep the HTML body extremely clean, compact, and styled (e.g., using small lists, readable text classes). Do not wrap with standard html page structures, just raw clean tags.",
-      "Reply with a JSON object strictly matching this format:",
-      "{",
-      "  \"insights\": [",
-      "    {",
-      "      \"id\": \"unique-id\",",
-      "      \"title\": \"Key Decisions\",",
-      "      \"icon\": \"sparkles\",",
-      "      \"htmlContent\": \"<ul class='space-y-2'><li class='flex items-start gap-2'><span class='mt-1.5 h-1.5 w-1.5 rounded-full bg-gray-300'></span><span>First decision details</span></li></ul>\"",
-      "    }",
-      "  ]",
-      "}",
-      "Do not output markdown code blocks (like ```json), just raw JSON text.",
     ].join("\n");
 
     const promptText = [
@@ -285,36 +273,26 @@ export const generatePinnedInsights = action({
     }
 
     try {
-      const response = await generateText({
+      const { object } = await generateObject({
         model: google(model),
         system: systemPrompt,
         prompt: promptText,
+        schema: z.object({
+          insights: z.array(
+            z.object({
+              id: z.string(),
+              title: z.string(),
+              htmlContent: z.string(),
+              icon: z.string().optional(),
+            }),
+          ),
+        }),
       });
 
-      const parsed = JSON.parse(
-        response.text
-          .trim()
-          .replace(/^```json/, "")
-          .replace(/```$/, "")
-          .trim(),
-      ) as {
-        insights: Array<{
-          id: string;
-          title: string;
-          htmlContent: string;
-          icon?: string;
-        }>;
-      };
-
-      if (parsed && Array.isArray(parsed.insights)) {
+      if (object && Array.isArray(object.insights)) {
         await ctx.runMutation(internal.workspace.updateMeetingInsights, {
           meetingId: args.meetingId,
-          insights: parsed.insights.map((ins) => ({
-            id: ins.id,
-            title: ins.title,
-            htmlContent: ins.htmlContent,
-            icon: ins.icon,
-          })),
+          insights: object.insights,
         });
       }
     } catch (e) {

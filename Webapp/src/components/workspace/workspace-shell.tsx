@@ -16,6 +16,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import {
+  AlertCircle,
   Archive,
   ArrowRight,
   ArrowUp,
@@ -106,7 +107,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   search: <Search className="h-4 w-4 opacity-60" />,
   settings: <Settings className="h-4 w-4 opacity-60" />,
   help: <HelpCircle className="h-4 w-4 opacity-60" />,
-  alert: <CircleHelp className="h-4 w-4 opacity-60" />,
+  alert: <AlertCircle className="h-4 w-4 opacity-60 text-amber-500" />,
 };
 
 const LECTURE_CARDS = [
