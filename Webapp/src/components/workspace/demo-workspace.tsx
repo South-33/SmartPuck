@@ -10,7 +10,7 @@ export function DemoWorkspace() {
   const [isPending, startTransition] = useTransition();
 
   const fallbackFolderId = useMemo(
-    () => dashboard.activeMeeting?.folderId ?? dashboard.folders[0]?.id ?? null,
+    () => dashboard.folders[0]?.id ?? dashboard.activeMeeting?.folderId ?? null,
     [dashboard.activeMeeting?.folderId, dashboard.folders],
   );
 
@@ -88,20 +88,31 @@ export function DemoWorkspace() {
         const nextMeeting = {
           id,
           folderId,
-          title: transport === "usb" ? "Desk Sync Capture" : "Bluetooth Walk-In Capture",
-          durationLabel: "36m",
+          title:
+            transport === "usb"
+              ? "Desk Sync Capture"
+              : transport === "wifi"
+                ? "Wi-Fi Live Recording"
+                : transport === "manual"
+                  ? "Imported Recording"
+                  : "Bluetooth Walk-In Capture",
+          durationLabel: transport === "wifi" ? "0m" : "36m",
           status: "uploaded" as const,
           startedAtLabel: "Just now",
           sourceTransport: transport,
           summary:
-            "Session metadata uploaded. Audio processing is intentionally stubbed for now, but the meeting is ready for organization and follow-up chat.",
+            transport === "wifi"
+              ? "A live SmartPuck Wi-Fi recording was saved locally on this computer. The folder link is ready for the local transcription pipeline."
+              : "Session metadata uploaded. Audio processing is intentionally stubbed for now, but the meeting is ready for organization and follow-up chat.",
           transcriptPreview:
-            "Raw capture received from SmartPuck. Transcript generation will be attached later when the audio pipeline lands.",
+            transport === "wifi"
+              ? "Audio was captured from the device stream. Transcript generation will be attached later when the local audio pipeline lands."
+              : "Raw capture received from SmartPuck. Transcript generation will be attached later when the audio pipeline lands.",
           syncStats: {
             percent: 100,
-            transferredMb: transport === "usb" ? 128 : 76,
+            transferredMb: transport === "usb" ? 128 : transport === "wifi" ? 0 : 76,
             visuals: 0,
-            audioHours: transport === "usb" ? 1.9 : 1.2,
+            audioHours: transport === "usb" ? 1.9 : transport === "wifi" ? 0 : 1.2,
           },
           decisions: [
             "Upload transport is now stored with the meeting record for later pipeline routing.",
@@ -170,6 +181,25 @@ export function DemoWorkspace() {
     });
   }
 
+  function deleteFolder(folderId: string) {
+    startTransition(() => {
+      setDashboard((current) => {
+        const nextFolders = current.folders.filter((folder) => folder.id !== folderId);
+        const removedActiveMeeting = current.activeMeeting?.folderId === folderId;
+        const nextActiveMeeting = removedActiveMeeting
+          ? nextFolders.flatMap((folder) => folder.meetings)[0] ?? null
+          : current.activeMeeting;
+
+        return {
+          ...current,
+          folders: nextFolders,
+          activeMeetingId: removedActiveMeeting ? nextActiveMeeting?.id ?? null : current.activeMeetingId,
+          activeMeeting: nextActiveMeeting,
+        };
+      });
+    });
+  }
+
   function sendMessage(meetingId: string, body: string) {
     startTransition(() => {
       setDashboard((current) => {
@@ -222,6 +252,7 @@ export function DemoWorkspace() {
       isMutating={isPending}
       fallbackFolderId={fallbackFolderId}
       onCreateFolder={createFolder}
+      onDeleteFolder={deleteFolder}
       onCreateChat={createChat}
       onConnectDevice={connectDevice}
       onSelectMeeting={selectMeeting}

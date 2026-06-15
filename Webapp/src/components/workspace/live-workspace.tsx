@@ -29,10 +29,12 @@ function LiveWorkspaceContent() {
   const dashboard = useQuery(api.workspace.getDashboard, {
     selectedMeetingId: selectedMeetingId as Id<"meetings"> | null,
   });
+  const rememberedDevice = useQuery(api.workspace.getDefaultDevice, {});
 
   const seedDemoWorkspace = useMutation(api.workspace.seedDemoWorkspace);
   const createFolder = useMutation(api.workspace.createFolder);
   const createChatInFolder = useMutation(api.workspace.createChatInFolder);
+  const deleteFolder = useMutation(api.workspace.deleteFolder);
   const deleteMeeting = useMutation(api.workspace.deleteMeeting);
   const createMeetingFromDeviceSync = useMutation(api.workspace.createMeetingFromDeviceSync);
   const streamMeetingReply = useAction(api.smartpuckAgent.streamMeetingReply);
@@ -122,7 +124,7 @@ function LiveWorkspaceContent() {
   }, [dashboard]);
 
   const fallbackFolderId = useMemo(
-    () => displayDashboard?.activeMeeting?.folderId ?? displayDashboard?.folders[0]?.id ?? null,
+    () => displayDashboard?.folders[0]?.id ?? displayDashboard?.activeMeeting?.folderId ?? null,
     [displayDashboard?.activeMeeting?.folderId, displayDashboard?.folders],
   );
 
@@ -137,8 +139,17 @@ function LiveWorkspaceContent() {
       mode="live"
       isMutating={isMutating}
       fallbackFolderId={fallbackFolderId}
+      initialPuckAddress={rememberedDevice?.baseUrl ?? null}
       onCreateFolder={async (name) => {
         await runOperation(() => createFolder({ name }));
+      }}
+      onDeleteFolder={async (folderId) => {
+        const nextMeetingId = await runOperation(() =>
+          deleteFolder({
+            folderId: folderId as Id<"folders">,
+          }),
+        );
+        setSelectedMeetingId(nextMeetingId);
       }}
       onCreateChat={async (folderId) => {
         const meetingId = await runOperation(() =>

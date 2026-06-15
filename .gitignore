@@ -1,3 +1,10 @@
 .vercel
 .pio/
 .vscode/
+
+# RunLong CLI files
+.longrun/
+RUNLONG.md
+
+# Local firmware secrets
+Firmware/SmartPuckFirmware/local_config.h

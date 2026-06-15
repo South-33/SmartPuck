@@ -1,6 +1,6 @@
 export type WorkspaceShellMode = "demo" | "live";
 export type MeetingStatus = "uploaded" | "processing" | "ready";
-export type DeviceTransport = "usb" | "bluetooth" | "manual";
+export type DeviceTransport = "usb" | "bluetooth" | "wifi" | "manual";
 export type AccentTone = "silver" | "slate";
 export type MessageRole = "user" | "assistant" | "system";
 export type MessageStatus = "complete" | "streaming";

@@ -15,4 +15,5 @@ This is the project's AGENTS.md
 - Audio-first hardware shortlist favors LOLIN S3 Pro + INMP441 + PH2.0 LiPo -> onboard TF slot and battery port reduce wiring -> firmware is in Firmware/SmartPuckFirmware/ with verified pins.
 - Firmware is written for Arduino IDE -> LOLIN S3 Pro uses SD CS=46/SPI and I2S SCK=4, WS=5, SD=6 -> ESP32-CAM uses SD_MMC 1-bit mode and I2S SCK=12, WS=13, SD=3.
 - Web portal uses Web Audio API to play raw 16-bit 16kHz PCM chunks from `/stream` to bypass browser buffering latency; use `client.setNoDelay(true)` to disable TCP Nagling.
-
+- Firmware runs a dual-core FreeRTOS layout: Core 1 runs a high-priority task reading I2S and writing to SD (synchronized via `fileMutex`), while Core 0 runs button checking and WiFi Web Server loops.
+- Local AI target is a Python/FastAPI worker, not browser JS: faster-whisper + Whisper large-v3-turbo first, pyannote diarization later, then Gemini/local LLM chat over stored transcripts.

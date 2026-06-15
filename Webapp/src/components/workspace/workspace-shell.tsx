@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -18,10 +19,8 @@ import {
   Archive,
   ArrowRight,
   ArrowUp,
-  Bluetooth,
-  Cable,
-  ChevronDown,
   CircleHelp,
+  Download,
   FileText,
   Folder,
   GraduationCap,
@@ -31,12 +30,15 @@ import {
   MoreVertical,
   Paperclip,
   Plus,
+  Radio,
   Search,
   Settings,
   Share2,
   Sparkles,
+  Square,
   Trash2,
   Upload,
+  Wifi,
   X,
 } from "lucide-react";
 import type {
@@ -54,7 +56,9 @@ type WorkspaceShellProps = {
   mode: WorkspaceShellMode;
   isMutating: boolean;
   fallbackFolderId: string | null;
+  initialPuckAddress?: string | null;
   onCreateFolder: (name: string) => void | Promise<void>;
+  onDeleteFolder: (folderId: string) => void | Promise<void>;
   onCreateChat: (folderId: string) => Promise<string | void> | string | void;
   onConnectDevice: (
     folderId: string,
@@ -75,6 +79,8 @@ type WorkspaceView =
 
 type WorkspaceTab = "dashboard" | "transcripts" | "analytics";
 type NewRecordingState = "connect" | "syncing";
+type PuckConnectionState = "idle" | "checking" | "connected" | "listening" | "recording" | "error";
+const DEFAULT_PUCK_ADDRESS = "http://192.168.4.1";
 
 const ARCHIVE_ITEMS = [
   {
@@ -153,20 +159,15 @@ const MOTION_EXIT_MS = 120;
 const DRAFT_STORAGE_PREFIX = "smartpuck:chat-draft:";
 const REMOVED_STARTER_MESSAGE =
   "New chat saved. Ask me about SmartPuck's offline recorder, hardware prototype, transcript pipeline, image context, structured notes, or future roadmap.";
-const PROMPT_SUGGESTIONS = [
-  "Explain the hardware prototype",
-  "How does USB transfer work?",
-  "What is still not built?",
-  "Summarize the transcript pipeline",
-];
-
 export function WorkspaceShell({
   dashboard,
   liveMessages,
   mode,
   isMutating,
   fallbackFolderId,
+  initialPuckAddress,
   onCreateFolder,
+  onDeleteFolder,
   onCreateChat,
   onConnectDevice,
   onSelectMeeting,
@@ -182,6 +183,7 @@ export function WorkspaceShell({
   const [draftFolder, setDraftFolder] = useState("");
   const [creatingChatFolderId, setCreatingChatFolderId] = useState<string | null>(null);
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [pendingMessagesByMeeting, setPendingMessagesByMeeting] = useState<Record<string, MeetingMessage[]>>({});
   const [showFolderComposer, setShowFolderComposer] = useState(false);
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>(() => {
@@ -199,8 +201,26 @@ export function WorkspaceShell({
     attachments: 0,
     audioHours: 0,
   });
+  const [puckAddress, setPuckAddress] = useState(DEFAULT_PUCK_ADDRESS);
+  const [showPuckAddressEditor, setShowPuckAddressEditor] = useState(false);
+  const [puckState, setPuckState] = useState<PuckConnectionState>("idle");
+  const [puckStatus, setPuckStatus] = useState("Enter the SmartPuck IP address from Serial Monitor or AP mode.");
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingBytes, setRecordingBytes] = useState(0);
+  const [recordingDownloadUrl, setRecordingDownloadUrl] = useState<string | null>(null);
+  const [recordingFileName, setRecordingFileName] = useState<string | null>(null);
+  const [isLinkingRecording, setIsLinkingRecording] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isSendingRef = useRef(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const streamChunksRef = useRef<Uint8Array[]>([]);
+  const streamPcmBytesRef = useRef(0);
+  const streamHeaderBytesToSkipRef = useRef(44);
+  const recordingEnabledRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const nextPlaybackTimeRef = useRef(0);
+  const activeAudioSourcesRef = useRef<AudioBufferSourceNode[]>([]);
 
   const activeMeeting = dashboard.activeMeeting
     ? { ...dashboard.activeMeeting, messages: liveMessages ?? dashboard.activeMeeting.messages }
@@ -208,6 +228,48 @@ export function WorkspaceShell({
   const activeMeetingId = activeMeeting?.id ?? null;
   const activePendingMessages = activeMeetingId ? (pendingMessagesByMeeting[activeMeetingId] ?? []) : [];
   const visibleFolders = useMemo(() => dashboard.folders, [dashboard.folders]);
+  const autoCheckedPuckAddressRef = useRef<string | null>(null);
+
+  const normalizedPuckBaseUrl = useCallback(() => {
+    const trimmed = puckAddress.trim();
+    if (!trimmed) {
+      throw new Error("Enter the SmartPuck IP address first.");
+    }
+
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+    return withProtocol.replace(/\/+$/, "");
+  }, [puckAddress]);
+
+  const checkPuckConnection = useCallback(async () => {
+    setPuckState("checking");
+    setPuckStatus("Checking SmartPuck over Wi-Fi...");
+
+    try {
+      const baseUrl = normalizedPuckBaseUrl();
+      const response = await fetchWithTimeout(`${baseUrl}/status`, 5000);
+      if (!response.ok) {
+        throw new Error(`SmartPuck returned HTTP ${response.status}.`);
+      }
+
+      const status = (await response.json()) as {
+        recording?: boolean;
+        streaming?: boolean;
+        audioSize?: number;
+        network?: string;
+        storage?: string;
+      };
+      window.localStorage.setItem("smartpuck:puck-address", baseUrl);
+      setPuckAddress(baseUrl);
+      setShowPuckAddressEditor(false);
+      setPuckState("connected");
+      const statusText = `Connected. ${status.network ?? "SmartPuck Wi-Fi"} - ${status.storage ?? "audio stream ready"}.`;
+      setPuckStatus(statusText);
+    } catch (error) {
+      setPuckState("error");
+      setShowPuckAddressEditor(true);
+      setPuckStatus(error instanceof Error ? error.message : "Could not reach SmartPuck.");
+    }
+  }, [normalizedPuckBaseUrl]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -283,17 +345,75 @@ export function WorkspaceShell({
     return () => window.clearInterval(interval);
   }, [activeView, newRecordingState, pendingTransport]);
 
-  function isFolderOpen(folderId: string) {
-    if (activeMeeting?.folderId === folderId) {
-      return true;
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
     }
-    return openFolders[folderId] ?? false;
+    const saved = window.localStorage.getItem("smartpuck:puck-address");
+    const target = saved || initialPuckAddress || DEFAULT_PUCK_ADDRESS;
+    const timeout = setTimeout(() => {
+      setPuckAddress(target);
+    }, 0);
+    return () => clearTimeout(timeout);
+  }, [initialPuckAddress]);
+
+  useEffect(() => {
+    if (
+      activeView !== "new-recording" ||
+      puckState !== "idle" ||
+      !initialPuckAddress ||
+      puckAddress !== initialPuckAddress ||
+      autoCheckedPuckAddressRef.current === initialPuckAddress
+    ) {
+      return;
+    }
+
+    autoCheckedPuckAddressRef.current = initialPuckAddress;
+    void checkPuckConnection();
+  }, [activeView, initialPuckAddress, puckAddress, puckState, checkPuckConnection]);
+
+  useEffect(() => {
+    if (puckState !== "recording" || recordingStartedAt === null) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setRecordingSeconds(Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000)));
+      setRecordingBytes(streamPcmBytesRef.current);
+    }, 250);
+
+    return () => window.clearInterval(interval);
+  }, [puckState, recordingStartedAt]);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+      activeAudioSourcesRef.current.forEach((source) => {
+        try {
+          source.stop();
+        } catch {
+          // Sources may already have ended naturally.
+        }
+      });
+      void audioContextRef.current?.close();
+      if (recordingDownloadUrl) {
+        URL.revokeObjectURL(recordingDownloadUrl);
+      }
+    };
+  }, [recordingDownloadUrl]);
+
+  function isFolderOpen(folderId: string) {
+    if (openFolders[folderId] !== undefined) {
+      return openFolders[folderId];
+    }
+    const index = visibleFolders.findIndex((f) => f.id === folderId);
+    return folderId === dashboard.activeMeeting?.folderId || index === 0;
   }
 
   function toggleFolder(folderId: string) {
     setOpenFolders((current) => ({
       ...current,
-      [folderId]: !(current[folderId] ?? false),
+      [folderId]: !isFolderOpen(folderId),
     }));
   }
 
@@ -324,6 +444,20 @@ export function WorkspaceShell({
     }
   }
 
+  async function deleteFolder(folderId: string) {
+    setDeletingFolderId(folderId);
+    try {
+      await Promise.resolve(onDeleteFolder(folderId));
+      setOpenFolders((current) => {
+        const next = { ...current };
+        delete next[folderId];
+        return next;
+      });
+    } finally {
+      setDeletingFolderId(null);
+    }
+  }
+
   async function createChat(folderId: string) {
     setCreatingChatFolderId(folderId);
     setOpenFolders((current) => ({ ...current, [folderId]: true }));
@@ -347,9 +481,259 @@ export function WorkspaceShell({
   }
 
   function closeNewRecording() {
+    if (puckState === "recording") {
+      stopComputerRecording();
+    }
+    if (puckState === "listening") {
+      stopLiveListening();
+    }
     setActiveView("recent-sessions");
     setActiveTab("dashboard");
     setNewRecordingState("connect");
+  }
+
+
+
+  async function startLiveListening(recordImmediately = false) {
+    if (puckState === "listening" || puckState === "recording") {
+      return;
+    }
+
+    let abortController: AbortController | null = null;
+    try {
+      const baseUrl = normalizedPuckBaseUrl();
+      const controller = new AbortController();
+      abortController = controller;
+      streamAbortRef.current = abortController;
+      const connectTimeout = window.setTimeout(() => controller.abort(), 8000);
+      streamHeaderBytesToSkipRef.current = 44;
+      setPuckState(recordImmediately ? "recording" : "listening");
+      setPuckStatus(
+        recordImmediately
+          ? "Listening live and recording SmartPuck audio to this browser..."
+          : "Listening live to the SmartPuck Wi-Fi stream.",
+      );
+      window.localStorage.setItem("smartpuck:puck-address", baseUrl);
+      setPuckAddress(baseUrl);
+      await ensureAudioContext();
+
+      if (recordImmediately) {
+        beginRecordingBuffer();
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/stream`, {
+          cache: "no-store",
+          signal: abortController.signal,
+        });
+      } finally {
+        window.clearTimeout(connectTimeout);
+      }
+      if (!response.ok || !response.body) {
+        throw new Error(`Stream failed with HTTP ${response.status}.`);
+      }
+
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          processStreamChunk(value);
+        }
+      }
+
+      if (streamAbortRef.current === abortController) {
+        streamAbortRef.current = null;
+        if (recordingEnabledRef.current) {
+          stopComputerRecording();
+        }
+        setPuckState("connected");
+        setPuckStatus("SmartPuck stream ended.");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        if (abortController && streamAbortRef.current === abortController) {
+          streamAbortRef.current = null;
+          setPuckState("error");
+          setPuckStatus("SmartPuck did not answer in time. Check the IP address and Wi-Fi network.");
+        }
+        return;
+      }
+      setPuckState("error");
+      setPuckStatus(error instanceof Error ? error.message : "SmartPuck stream stopped unexpectedly.");
+    }
+  }
+
+  async function startLiveListeningOnly() {
+    await startLiveListening(false);
+  }
+
+  async function startComputerRecording() {
+    if (puckState === "recording") {
+      return;
+    }
+
+    if (puckState !== "listening") {
+      await startLiveListening(true);
+      return;
+    }
+
+    beginRecordingBuffer();
+    setPuckState("recording");
+    setPuckStatus("Recording the live SmartPuck stream to this browser...");
+  }
+
+  function beginRecordingBuffer() {
+    if (recordingDownloadUrl) {
+      URL.revokeObjectURL(recordingDownloadUrl);
+    }
+
+    recordingEnabledRef.current = true;
+    streamChunksRef.current = [];
+    streamPcmBytesRef.current = 0;
+    setRecordingDownloadUrl(null);
+    setRecordingFileName(null);
+    setRecordingBytes(0);
+    setRecordingSeconds(0);
+    setRecordingStartedAt(Date.now());
+  }
+
+  function processStreamChunk(chunk: Uint8Array) {
+    let start = 0;
+    if (streamHeaderBytesToSkipRef.current > 0) {
+      const skipped = Math.min(streamHeaderBytesToSkipRef.current, chunk.byteLength);
+      streamHeaderBytesToSkipRef.current -= skipped;
+      start = skipped;
+    }
+
+    if (start >= chunk.byteLength) {
+      return;
+    }
+
+    const pcmChunk = chunk.slice(start);
+    playPcmChunk(pcmChunk);
+    if (recordingEnabledRef.current) {
+      appendRecordingChunk(pcmChunk);
+    }
+  }
+
+  function appendRecordingChunk(pcmChunk: Uint8Array) {
+    streamChunksRef.current.push(pcmChunk);
+    streamPcmBytesRef.current += pcmChunk.byteLength;
+    setRecordingBytes(streamPcmBytesRef.current);
+  }
+
+  function stopComputerRecording() {
+    recordingEnabledRef.current = false;
+    setRecordingStartedAt(null);
+
+    const pcmBytes = streamPcmBytesRef.current;
+    if (pcmBytes <= 0) {
+      setPuckState(streamAbortRef.current ? "listening" : "connected");
+      setPuckStatus("Recording stopped before audio arrived.");
+      return;
+    }
+
+    const wavBlob = buildWavBlob(streamChunksRef.current, pcmBytes);
+    const url = URL.createObjectURL(wavBlob);
+    const fileName = `smartpuck-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+    setRecordingDownloadUrl(url);
+    setRecordingFileName(fileName);
+    setRecordingBytes(pcmBytes);
+    setPuckState(streamAbortRef.current ? "listening" : "connected");
+    setPuckStatus("Recording saved. Linking a Wi-Fi capture shell to the selected folder...");
+    void linkSavedRecordingToFolder();
+  }
+
+  async function linkSavedRecordingToFolder() {
+    if (!fallbackFolderId || isLinkingRecording) {
+      setPuckStatus("Recording saved. Download the WAV to keep it on this computer.");
+      return;
+    }
+
+    setIsLinkingRecording(true);
+    setOpenFolders((current) => ({ ...current, [fallbackFolderId]: true }));
+    try {
+      const meetingId = await Promise.resolve(onConnectDevice(fallbackFolderId, "wifi"));
+      if (typeof meetingId === "string") {
+        onSelectMeeting(meetingId);
+      }
+      setPuckStatus("Recording saved and linked to the selected folder. Download the WAV to keep it.");
+    } catch (error) {
+      setPuckStatus(
+        error instanceof Error
+          ? `Recording saved, but folder link failed: ${error.message}`
+          : "Recording saved, but folder link failed.",
+      );
+    } finally {
+      setIsLinkingRecording(false);
+    }
+  }
+
+  function stopLiveListening() {
+    if (puckState === "recording") {
+      stopComputerRecording();
+    }
+
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    activeAudioSourcesRef.current.forEach((source) => {
+      try {
+        source.stop();
+      } catch {
+        // Sources may already have ended naturally.
+      }
+    });
+    activeAudioSourcesRef.current = [];
+    nextPlaybackTimeRef.current = 0;
+    setPuckState("connected");
+    setPuckStatus("Live stream stopped.");
+  }
+
+  async function ensureAudioContext() {
+    const AudioContextConstructor =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) {
+      throw new Error("This browser does not support Web Audio playback.");
+    }
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextConstructor({ sampleRate: 16000 });
+      nextPlaybackTimeRef.current = audioContextRef.current.currentTime + 0.05;
+    }
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+  }
+
+  function playPcmChunk(pcmChunk: Uint8Array) {
+    const audioContext = audioContextRef.current;
+    if (!audioContext || pcmChunk.byteLength < 2) {
+      return;
+    }
+
+    const sampleCount = Math.floor(pcmChunk.byteLength / 2);
+    const audioBuffer = audioContext.createBuffer(1, sampleCount, 16000);
+    const channel = audioBuffer.getChannelData(0);
+    const view = new DataView(pcmChunk.buffer, pcmChunk.byteOffset, sampleCount * 2);
+
+    for (let i = 0; i < sampleCount; i += 1) {
+      channel[i] = view.getInt16(i * 2, true) / 32768;
+    }
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    const startAt = Math.max(audioContext.currentTime + 0.02, nextPlaybackTimeRef.current);
+    source.start(startAt);
+    nextPlaybackTimeRef.current = startAt + audioBuffer.duration;
+    activeAudioSourcesRef.current.push(source);
+    source.onended = () => {
+      activeAudioSourcesRef.current = activeAudioSourcesRef.current.filter((item) => item !== source);
+    };
   }
 
   async function handleDeviceConnect(transport: DeviceTransport) {
@@ -365,12 +749,6 @@ export function WorkspaceShell({
       audioHours: 0,
     });
     setNewRecordingState("syncing");
-
-    if (transport === "manual") {
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-      closeNewRecording();
-      return;
-    }
 
     const [meetingId] = await Promise.all([
       Promise.resolve(onConnectDevice(fallbackFolderId, transport)),
@@ -530,6 +908,7 @@ export function WorkspaceShell({
                   <button
                     type="button"
                     onClick={() => toggleFolder(folder.id)}
+                    aria-expanded={isFolderOpen(folder.id)}
                     className="group flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2.5 text-gray-700 hover:bg-white/60 hover:text-black"
                   >
                     <Folder className="h-4 w-4 flex-shrink-0 text-gray-400 transition-colors group-hover:text-black" />
@@ -551,16 +930,18 @@ export function WorkspaceShell({
                   </button>
                   <button
                     type="button"
-                    onClick={() => toggleFolder(folder.id)}
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-300 hover:bg-white hover:text-black"
-                    aria-label={`Toggle ${folder.name}`}
+                    onClick={() => {
+                      void deleteFolder(folder.id);
+                    }}
+                    disabled={deletingFolderId === folder.id || isMutating}
+                    className={clsx(
+                      "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-300 opacity-70 transition hover:bg-red-50 hover:text-red-500",
+                      deletingFolderId === folder.id ? "cursor-wait opacity-100" : "",
+                    )}
+                    aria-label={`Delete folder ${folder.name}`}
+                    title={`Delete folder ${folder.name}`}
                   >
-                    <ChevronDown
-                      className={clsx(
-                        "h-4 w-4 text-gray-300 transition-transform duration-200",
-                        isFolderOpen(folder.id) ? "rotate-0" : "-rotate-90",
-                      )}
-                    />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
@@ -761,44 +1142,166 @@ export function WorkspaceShell({
               )}
             >
               {newRecordingState === "connect" ? (
-                <div id="nr-connect" className="flex h-full w-full flex-col items-center justify-center gap-10">
-                  <RecordingOrb pulsing={false} />
+                <div id="nr-connect" className="flex h-full w-full flex-col items-center justify-center gap-8">
+                  <RecordingOrb pulsing={puckState === "recording"} />
                   <div className="space-y-2 text-center">
                     <h2 className="font-display text-4xl font-bold tracking-tight text-black">
                       Connect SmartPuck
                     </h2>
                     <p className="font-display text-[11px] font-bold uppercase tracking-[0.25em] text-gray-400">
-                      Place puck on charging base to begin
+                      Wi-Fi live recorder
                     </p>
                   </div>
 
-                  <div className="flex w-full max-w-md flex-col items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleDeviceConnect("usb");
-                      }}
-                      className="flex w-full items-center justify-center gap-3 rounded-full bg-black py-4 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-gray-800"
-                    >
-                      <Cable className="h-5 w-5" />
-                      Connect over USB
-                    </button>
+                  <div className="w-full max-w-xl rounded-[2rem] border border-gray-200 bg-white p-5 shadow-sm">
+                    {showPuckAddressEditor ? (
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <label className="min-w-0 flex-1">
+                          <span className="sr-only">SmartPuck address</span>
+                          <input
+                            type="text"
+                            value={puckAddress}
+                            onChange={(event) => setPuckAddress(event.target.value)}
+                            disabled={puckState === "recording"}
+                            placeholder="http://192.168.4.1"
+                            className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 font-mono text-sm text-gray-950 outline-none focus:border-gray-400 disabled:cursor-not-allowed disabled:text-gray-400"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void checkPuckConnection();
+                          }}
+                          disabled={puckState === "checking" || puckState === "recording"}
+                          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-black px-5 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                        >
+                          <Wifi className="h-4 w-4" />
+                          Check
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 sm:flex-row sm:items-center">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white text-black shadow-sm">
+                            <Wifi className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                              SmartPuck stream
+                            </p>
+                            <p className="truncate text-sm font-medium text-gray-700">
+                              {initialPuckAddress ? "Using saved Convex device address" : "Using default AP fallback"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowPuckAddressEditor(true)}
+                            disabled={puckState === "recording"}
+                            className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
+                          >
+                            Change
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void checkPuckConnection();
+                            }}
+                            disabled={puckState === "checking" || puckState === "recording"}
+                            className="h-10 rounded-xl bg-black px-4 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                          >
+                            Check
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleDeviceConnect("bluetooth");
-                      }}
-                      className="flex w-full items-center justify-center gap-3 rounded-full bg-black py-4 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-gray-800"
-                    >
-                      <Bluetooth className="h-5 w-5" />
-                      Connect over Bluetooth
-                    </button>
+                    <div className="mt-4 flex items-start gap-3 rounded-2xl bg-gray-50 p-4">
+                      <span
+                        className={clsx(
+                          "mt-1 h-2.5 w-2.5 rounded-full",
+                          puckState === "recording"
+                            ? "bg-red-500"
+                            : puckState === "connected" || puckState === "listening"
+                              ? "bg-emerald-500"
+                              : puckState === "error"
+                                ? "bg-amber-500"
+                                : "bg-gray-300",
+                        )}
+                      />
+                      <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
+                    </div>
 
-                    <div className="flex w-full items-center gap-4">
-                      <div className="h-px flex-1 bg-gray-200" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">or</span>
-                      <div className="h-px flex-1 bg-gray-200" />
+                    <div className="mt-5 grid grid-cols-3 gap-3">
+                      <SyncStatCard label="Duration" value={formatDuration(recordingSeconds)} />
+                      <SyncStatCard label="Captured" value={formatBytes(recordingBytes)} />
+                      <SyncStatCard
+                        label="Rate"
+                        value={recordingBytes > 0 ? "16 kHz" : "Ready"}
+                      />
+                    </div>
+
+                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                      {puckState !== "listening" && puckState !== "recording" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void startLiveListeningOnly();
+                          }}
+                          disabled={puckState === "checking"}
+                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-black text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                        >
+                          <Radio className="h-5 w-5" />
+                          Start Listening
+                        </button>
+                      ) : null}
+
+                      {puckState === "listening" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void startComputerRecording();
+                          }}
+                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
+                        >
+                          <Mic className="h-5 w-5" />
+                          Start Recording
+                        </button>
+                      ) : null}
+
+                      {puckState === "recording" ? (
+                        <button
+                          type="button"
+                          onClick={stopComputerRecording}
+                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
+                        >
+                          <Square className="h-4 w-4 fill-current" />
+                          Stop & Save
+                        </button>
+                      ) : null}
+
+                      {puckState === "listening" || puckState === "recording" ? (
+                        <button
+                          type="button"
+                          onClick={stopLiveListening}
+                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
+                        >
+                          <Square className="h-4 w-4" />
+                          Stop Listening
+                        </button>
+                      ) : null}
+
+                      {recordingDownloadUrl && recordingFileName ? (
+                        <a
+                          href={recordingDownloadUrl}
+                          download={recordingFileName}
+                          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
+                        >
+                          <Download className="h-5 w-5" />
+                          Download WAV
+                        </a>
+                      ) : null}
                     </div>
 
                     <button
@@ -806,10 +1309,10 @@ export function WorkspaceShell({
                       onClick={() => {
                         void handleDeviceConnect("manual");
                       }}
-                      className="flex w-full items-center justify-center gap-3 rounded-full border-2 border-dashed border-gray-300 py-4 text-sm font-bold uppercase tracking-widest text-gray-500 hover:border-gray-500 hover:text-black"
+                      className="mt-4 flex w-full items-center justify-center gap-3 rounded-full border-2 border-dashed border-gray-300 py-4 text-sm font-bold uppercase tracking-widest text-gray-500 hover:border-gray-500 hover:text-black"
                     >
                       <Upload className="h-5 w-5" />
-                      Upload Recording File
+                      Import Existing WAV
                     </button>
                   </div>
 
@@ -1185,23 +1688,6 @@ function DashboardTab({
                 </button>
               </div>
             </div>
-            {activeMeeting && messages.length === 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2 px-1">
-                {PROMPT_SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => {
-                      onDraftMessageChange(suggestion);
-                      requestAnimationFrame(() => textareaRef.current?.focus());
-                    }}
-                    className="rounded-full border border-gray-100 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-500 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-200 hover:text-black"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            ) : null}
             <div className="mt-3 flex items-center justify-between px-2 text-[10px] font-bold uppercase tracking-[0.22em] text-gray-300">
               <span>{draftAttachments.length > 0 ? `${draftAttachments.length} attached` : "Saved chat"}</span>
               <span>{isMutating ? "Streaming response" : "Enter to send - Shift+Enter for line break"}</span>
@@ -1746,6 +2232,69 @@ function formatBytes(size: number) {
     return `${(size / 1024).toFixed(1)} KB`;
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("SmartPuck did not answer in time. Check the IP address and Wi-Fi network.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function buildWavBlob(chunks: Uint8Array[], pcmBytes: number) {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const sampleRate = 16000;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + pcmBytes, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, pcmBytes, true);
+
+  const chunkParts = chunks.map((chunk) => {
+    const copy = new Uint8Array(chunk.byteLength);
+    copy.set(chunk);
+    return copy.buffer;
+  });
+
+  return new Blob([header, ...chunkParts], { type: "audio/wav" });
+}
+
+function writeAscii(view: DataView, offset: number, value: string) {
+  for (let i = 0; i < value.length; i += 1) {
+    view.setUint8(offset + i, value.charCodeAt(i));
+  }
 }
 
 function isRemovedStarterMessage(message: MeetingMessage) {

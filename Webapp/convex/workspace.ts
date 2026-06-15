@@ -15,6 +15,7 @@ import { STARTER_WORKSPACE } from "./smartpuckContext";
 const transportValidator = v.union(
   v.literal("usb"),
   v.literal("bluetooth"),
+  v.literal("wifi"),
   v.literal("manual"),
 );
 
@@ -215,6 +216,90 @@ export const seedDemoWorkspace = mutation({
   },
 });
 
+export const getDefaultDevice = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getViewerScope(ctx);
+    const userDevices = await ctx.db
+      .query("devices")
+      .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", viewer.scopeKey))
+      .order("desc")
+      .take(1);
+    const globalDevices = await ctx.db
+      .query("devices")
+      .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", "global-device"))
+      .order("desc")
+      .take(1);
+
+    const device = userDevices[0] ?? globalDevices[0];
+    if (!device) {
+      return null;
+    }
+
+    return {
+      id: device._id,
+      name: device.name,
+      baseUrl: device.baseUrl,
+      localIp: device.localIp ?? null,
+      mac: device.mac ?? null,
+      network: device.network ?? null,
+      mode: device.mode ?? null,
+      firmwareVersion: device.firmwareVersion ?? null,
+      lastStatus: device.lastStatus,
+      lastSeenAt: device.lastSeenAt,
+    };
+  },
+});
+
+export const recordDeviceHeartbeat = internalMutation({
+  args: {
+    baseUrl: v.string(),
+    localIp: v.optional(v.string()),
+    mac: v.optional(v.string()),
+    network: v.optional(v.string()),
+    mode: v.optional(v.string()),
+    firmwareVersion: v.optional(v.string()),
+    lastStatus: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const baseUrl = args.baseUrl.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\/[a-zA-Z0-9.:-]+$/.test(baseUrl)) {
+      throw new Error("Invalid SmartPuck address");
+    }
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("devices")
+      .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", "global-device"))
+      .order("desc")
+      .take(1);
+
+    const device = existing[0];
+    const patch = {
+      baseUrl,
+      localIp: args.localIp,
+      mac: args.mac,
+      network: args.network,
+      mode: args.mode,
+      firmwareVersion: args.firmwareVersion,
+      lastStatus: args.lastStatus.slice(0, 240),
+      lastSeenAt: now,
+      updatedAt: now,
+    };
+
+    if (device) {
+      await ctx.db.patch(device._id, patch);
+      return device._id;
+    }
+
+    return await ctx.db.insert("devices", {
+      scopeKey: "global-device",
+      name: "SmartPuck",
+      ...patch,
+    });
+  },
+});
+
 async function deleteScopedWorkspace(ctx: MutationCtx, scopeKey: string) {
   const folders = await ctx.db
     .query("folders")
@@ -409,6 +494,46 @@ export const deleteMeeting = mutation({
   },
 });
 
+export const deleteFolder = mutation({
+  args: {
+    folderId: v.id("folders"),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await getViewerScope(ctx);
+    const folder = await ensureFolderBelongsToScope(ctx, args.folderId, viewer.scopeKey);
+
+    const meetings = await ctx.db
+      .query("meetings")
+      .withIndex("by_scopeKey_and_folderId_and_updatedAt", (q) =>
+        q.eq("scopeKey", viewer.scopeKey).eq("folderId", folder._id),
+      )
+      .take(100);
+
+    for (const meeting of meetings) {
+      const messages = await ctx.db
+        .query("messages")
+        .withIndex("by_meetingId_and_createdAt", (q) => q.eq("meetingId", meeting._id))
+        .take(200);
+
+      for (const message of messages) {
+        await ctx.db.delete(message._id);
+      }
+
+      await ctx.db.delete(meeting._id);
+    }
+
+    await ctx.db.delete(folder._id);
+
+    const nextMeeting = await ctx.db
+      .query("meetings")
+      .withIndex("by_scopeKey_and_updatedAt", (q) => q.eq("scopeKey", viewer.scopeKey))
+      .order("desc")
+      .take(1);
+
+    return nextMeeting[0]?._id ?? null;
+  },
+});
+
 export const createMeetingFromDeviceSync = mutation({
   args: {
     folderId: v.id("folders"),
@@ -419,22 +544,53 @@ export const createMeetingFromDeviceSync = mutation({
     const folder = await ensureFolderBelongsToScope(ctx, args.folderId, viewer.scopeKey);
     const now = Date.now();
 
+    const transportLabels = {
+      usb: {
+        title: "Desk Sync Capture",
+        durationLabel: "41m",
+        transferredMb: 128,
+        audioHours: 1.9,
+      },
+      bluetooth: {
+        title: "Bluetooth Walk-In Capture",
+        durationLabel: "33m",
+        transferredMb: 74,
+        audioHours: 1.2,
+      },
+      wifi: {
+        title: "Wi-Fi Live Recording",
+        durationLabel: "0m",
+        transferredMb: 0,
+        audioHours: 0,
+      },
+      manual: {
+        title: "Imported Recording",
+        durationLabel: "0m",
+        transferredMb: 0,
+        audioHours: 0,
+      },
+    }[args.transport];
+
     const meetingId = await ctx.db.insert("meetings", {
       scopeKey: viewer.scopeKey,
       folderId: folder._id,
-      title: args.transport === "usb" ? "Desk Sync Capture" : "Bluetooth Walk-In Capture",
-      durationLabel: args.transport === "usb" ? "41m" : "33m",
+      title: transportLabels.title,
+      durationLabel: transportLabels.durationLabel,
       status: "uploaded",
       startedAtLabel: "Just now",
       sourceTransport: args.transport,
       summary:
-        "Meeting metadata uploaded from SmartPuck. The audio processing pipeline is intentionally not wired yet, but the session shell is ready for follow-up chat and folder organization.",
+        args.transport === "wifi"
+          ? "A live SmartPuck Wi-Fi recording was saved locally on this computer. The workspace shell is linked to this folder while durable upload and transcription jobs are added."
+          : "Meeting metadata uploaded from SmartPuck. The audio processing pipeline is intentionally not wired yet, but the session shell is ready for follow-up chat and folder organization.",
       transcriptPreview:
-        "Raw capture received. Transcript and summary generation will attach here once the processing backend exists.",
+        args.transport === "wifi"
+          ? "Audio was captured from the device stream. Transcript, speaker labels, and summary generation will attach here once the local processing backend exists."
+          : "Raw capture received. Transcript and summary generation will attach here once the processing backend exists.",
       syncPercent: 100,
-      syncTransferredMb: args.transport === "usb" ? 128 : 74,
+      syncTransferredMb: transportLabels.transferredMb,
       syncVisuals: 0,
-      syncAudioHours: args.transport === "usb" ? 1.9 : 1.2,
+      syncAudioHours: transportLabels.audioHours,
       decisions: [
         "Capture ingest metadata now so future background processing has stable inputs.",
         "Keep each upload attached to one folder to avoid cross-folder ambiguity.",

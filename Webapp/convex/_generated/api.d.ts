@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as http from "../http.js";
 import type * as smartpuckAgent from "../smartpuckAgent.js";
 import type * as smartpuckContext from "../smartpuckContext.js";
 import type * as workspace from "../workspace.js";
@@ -19,6 +20,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  http: typeof http;
   smartpuckAgent: typeof smartpuckAgent;
   smartpuckContext: typeof smartpuckContext;
   workspace: typeof workspace;

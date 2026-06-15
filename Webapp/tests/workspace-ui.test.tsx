@@ -31,21 +31,28 @@ describe("Demo workspace UI", () => {
     expect(screen.getByText("Customer Research")).toBeInTheDocument();
   });
 
-  test("opens the placeholder new recording flow and creates a synced meeting", async () => {
+  test("opens the Wi-Fi recording flow and creates an imported recording shell", async () => {
     const user = userEvent.setup();
 
     render(<DemoWorkspace />);
 
-    await user.click(screen.getByRole("button", { name: "New Recording" }));
-    expect(await screen.findByText(/Place puck on charging base to begin/i)).toBeInTheDocument();
+    const deviceToggle = screen.getByRole("button", { name: "Device Prototype" });
+    expect(deviceToggle).toHaveAttribute("aria-expanded", "true");
+    await user.click(deviceToggle);
+    expect(deviceToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Delete folder Device Prototype" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Connect over USB/i }));
+    await user.click(screen.getByRole("button", { name: "New Recording" }));
+    expect(await screen.findByText(/Wi-Fi live recorder/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Start Listening/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Import Existing WAV/i }));
 
     expect(
-      await screen.findByPlaceholderText(/Ask SmartPuck about "Desk Sync Capture"/i, {}, { timeout: 2000 }),
+      await screen.findByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i, {}, { timeout: 2000 }),
     ).toBeInTheDocument();
 
-    const prompt = screen.getByPlaceholderText(/Ask SmartPuck about "Desk Sync Capture"/i);
+    const prompt = screen.getByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i);
     await user.type(prompt, "Summarize the backend contract");
     await user.click(screen.getByRole("button", { name: "Send" }));
 

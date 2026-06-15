@@ -10,6 +10,7 @@ const meetingStatusValidator = v.union(
 const transportValidator = v.union(
   v.literal("usb"),
   v.literal("bluetooth"),
+  v.literal("wifi"),
   v.literal("manual"),
 );
 const messageRoleValidator = v.union(
@@ -66,4 +67,18 @@ export default defineSchema({
     status: v.optional(messageStatusValidator),
     createdAt: v.number(),
   }).index("by_meetingId_and_createdAt", ["meetingId", "createdAt"]),
+
+  devices: defineTable({
+    scopeKey: v.string(),
+    name: v.string(),
+    baseUrl: v.string(),
+    localIp: v.optional(v.string()),
+    mac: v.optional(v.string()),
+    network: v.optional(v.string()),
+    mode: v.optional(v.string()),
+    firmwareVersion: v.optional(v.string()),
+    lastStatus: v.string(),
+    lastSeenAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_scopeKey_and_updatedAt", ["scopeKey", "updatedAt"]),
 });
