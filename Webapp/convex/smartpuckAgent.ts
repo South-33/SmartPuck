@@ -200,12 +200,19 @@ export const streamMeetingReply = action({
       args.privateContext?.trim() ? `USER ATTACHMENTS:\n${args.privateContext.trim()}` : "",
     ].join("\n");
 
+    const promptWithContext = [
+      "System Context / Instructions:",
+      hiddenContext,
+      "",
+      "User Query:",
+      trimmed,
+    ].join("\n");
+
     const result = await smartpuckAgent.streamText(
       ctx,
       { threadId, userId: identity.tokenIdentifier },
       {
-        messages: [{ role: "system", content: hiddenContext }],
-        prompt: trimmed,
+        prompt: promptWithContext,
         promptMessageId: savedPrompt.messageId,
       },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
