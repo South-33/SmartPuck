@@ -2208,27 +2208,41 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
     );
   }
 
-  const isStreamingEmpty = message.status === "streaming" && !message.body.trim();
+  const isStreamingEmpty =
+    message.status === "streaming" && !message.body.trim() && !message.reasoning?.trim();
+  const hasReasoning = Boolean(message.reasoning?.trim());
 
   return (
-      <div className="group flex gap-8">
+    <div className="group flex gap-8">
       <div className="liquid-mercury-soft flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-white/50 shadow-lg">
         <Sparkles className="h-5 w-5 text-black" />
       </div>
-      <div className="space-y-5 pt-1">
+      <div className="flex-1 space-y-5 pt-1">
+        {hasReasoning && (
+          <div className="max-w-3xl rounded-2xl border border-gray-100 bg-gray-50/50 p-4">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-gray-500">
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+              <span>Thinking Process</span>
+            </div>
+            <p className="font-mono text-sm leading-relaxed text-gray-500 italic whitespace-pre-wrap">
+              {message.reasoning}
+            </p>
+          </div>
+        )}
+
         {isStreamingEmpty ? (
           <div className="flex items-center gap-2 pt-2 text-sm font-medium text-gray-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
             Preparing response...
           </div>
-        ) : (
+        ) : message.body.trim() ? (
           <Streamdown
             className="smartpuck-markdown max-w-3xl text-base leading-8 text-gray-900 lg:text-lg"
             skipHtml
           >
             {message.body}
           </Streamdown>
-        )}
+        ) : null}
         <p className="font-display text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">
           SmartPuck - {relativeLabel(message.createdAt)}
         </p>

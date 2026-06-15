@@ -26,6 +26,7 @@ export type MeetingMessage = {
   status?: MessageStatus;
   createdAt: string;
   attachments?: ChatAttachment[];
+  reasoning?: string;
 };
 
 export type MeetingRecord = {

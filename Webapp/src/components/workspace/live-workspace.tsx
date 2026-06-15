@@ -59,16 +59,30 @@ function LiveWorkspaceContent() {
       return null;
     }
 
-    const messages: MeetingMessage[] = agentMessages.results.map((message) => ({
-      id: message.key,
-      role: message.role === "assistant" ? "assistant" : "user",
-      body: message.text,
-      status: message.status === "streaming" ? "streaming" : "complete",
-      createdAt:
-        typeof message._creationTime === "number"
-          ? new Date(message._creationTime).toISOString()
-          : STREAMING_MESSAGE_CREATED_AT,
-    }));
+    const messages: MeetingMessage[] = agentMessages.results.map((message) => {
+      const reasoning = message.parts
+        ?.filter((part) => part.type === "reasoning")
+        .map((part) => {
+          if (part && typeof part === "object" && "text" in part) {
+            return (part as { text?: string }).text;
+          }
+          return "";
+        })
+        .join("")
+        .trim();
+
+      return {
+        id: message.key,
+        role: message.role === "assistant" ? "assistant" : "user",
+        body: message.text,
+        reasoning: reasoning || undefined,
+        status: message.status === "streaming" ? "streaming" : "complete",
+        createdAt:
+          typeof message._creationTime === "number"
+            ? new Date(message._creationTime).toISOString()
+            : STREAMING_MESSAGE_CREATED_AT,
+      };
+    });
 
     return messages.filter((message) => !isLeakedInternalPrompt(message.body));
   }, [activeAgentThreadId, agentMessages.results]);
