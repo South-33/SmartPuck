@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DemoWorkspace } from "@/components/workspace/demo-workspace";
 import { LiveWorkspace } from "@/components/workspace/live-workspace";
 import { appEnv } from "@/lib/env";
+import { AuthSync } from "@/components/auth-sync";
 
 export default async function Home() {
   if (!appEnv.hasConvex) {
@@ -55,6 +56,7 @@ export default async function Home() {
   if (!session.userId) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
+        <AuthSync />
         <section className="glass-panel metal-border w-full rounded-[2rem] p-8 sm:p-10">
           <p className="font-display text-[10px] uppercase tracking-[0.38em] text-sp-muted">
             Sign in required
