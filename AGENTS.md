@@ -8,7 +8,7 @@ This is the project's AGENTS.md
 - Live chat uses Convex Agent component (`@convex-dev/agent`) -> `meetings.agentThreadId` links workspace rows to Agent threads and `useUIMessages` renders streams -> run `pnpm convex:codegen` after component/schema edits.
 - Chat attachments are draft-time context only -> text-like files are read in-browser and appended to the Agent prompt, not stored in Convex -> add Convex file storage before promising durable uploads.
 - Clerk + Convex auth split envs -> Next.js needs Clerk publishable/secret keys but Convex only needs `CLERK_JWT_ISSUER_DOMAIN` in deployment env -> auth config and `pnpm convex:codegen` fail if the Convex env is missing.
-- Gemini chat replies run from Convex actions -> set `GEMINI_API_KEY` and optional `GEMINI_MODEL` in Convex env -> missing key intentionally falls back to local SmartPuck proposal context.
+- Gemini chat replies run from Convex actions -> set `GEMINI_API_KEY` and optional `GEMINI_MODEL` in Convex env -> missing key falls back to local proposal context. Gemini throws AI_UnsupportedFunctionalityError if system messages are sent in the middle of a thread; pass context in the prompt instead.
 - OV5640 module manual lists optimal image distance 20-250 cm -> keep whiteboard/TV captures within ~0.2-2.5 m or quality drops.
 - OV5640 module listings often mislabel USB/UVC in text -> verify DVP pinout (Y2-Y9, PCLK, VSYNC) before purchase to avoid incompatible modules.
 - Product direction may pivot audio-first -> treat onboard camera as optional/experimental visual context -> avoids overpromising whiteboard/slide capture on cheap OV5640 hardware.
