@@ -100,6 +100,15 @@ const ARCHIVE_ITEMS = [
   },
 ];
 
+const ICON_MAP: Record<string, React.ReactNode> = {
+  sparkles: <Sparkles className="h-4 w-4 opacity-60" />,
+  grip: <Grip className="h-4 w-4 opacity-60" />,
+  search: <Search className="h-4 w-4 opacity-60" />,
+  settings: <Settings className="h-4 w-4 opacity-60" />,
+  help: <HelpCircle className="h-4 w-4 opacity-60" />,
+  alert: <CircleHelp className="h-4 w-4 opacity-60" />,
+};
+
 const LECTURE_CARDS = [
   {
     title: "Navigating Market Shifts",
@@ -201,6 +210,12 @@ export function WorkspaceShell({
     attachments: 0,
     audioHours: 0,
   });
+  const [importFolderId, setImportFolderId] = useState(fallbackFolderId || "");
+  const [prevFallbackFolderId, setPrevFallbackFolderId] = useState(fallbackFolderId);
+  if (fallbackFolderId !== prevFallbackFolderId) {
+    setPrevFallbackFolderId(fallbackFolderId);
+    setImportFolderId(fallbackFolderId || "");
+  }
   const [puckAddress, setPuckAddress] = useState(DEFAULT_PUCK_ADDRESS);
   const [showPuckAddressEditor, setShowPuckAddressEditor] = useState(false);
   const [puckState, setPuckState] = useState<PuckConnectionState>("idle");
@@ -402,6 +417,8 @@ export function WorkspaceShell({
     };
   }, [recordingDownloadUrl]);
 
+
+
   function isFolderOpen(folderId: string) {
     if (openFolders[folderId] !== undefined) {
       return openFolders[folderId];
@@ -478,6 +495,7 @@ export function WorkspaceShell({
     setActiveView("new-recording");
     setNewRecordingState("connect");
     setPendingTransport("bluetooth");
+    setImportFolderId(fallbackFolderId || "");
   }
 
   function closeNewRecording() {
@@ -649,15 +667,16 @@ export function WorkspaceShell({
   }
 
   async function linkSavedRecordingToFolder() {
-    if (!fallbackFolderId || isLinkingRecording) {
+    const folderId = importFolderId || fallbackFolderId;
+    if (!folderId || isLinkingRecording) {
       setPuckStatus("Recording saved. Download the WAV to keep it on this computer.");
       return;
     }
 
     setIsLinkingRecording(true);
-    setOpenFolders((current) => ({ ...current, [fallbackFolderId]: true }));
+    setOpenFolders((current) => ({ ...current, [folderId]: true }));
     try {
-      const meetingId = await Promise.resolve(onConnectDevice(fallbackFolderId, "wifi"));
+      const meetingId = await Promise.resolve(onConnectDevice(folderId, "wifi"));
       if (typeof meetingId === "string") {
         onSelectMeeting(meetingId);
       }
@@ -737,7 +756,8 @@ export function WorkspaceShell({
   }
 
   async function handleDeviceConnect(transport: DeviceTransport) {
-    if (!fallbackFolderId) {
+    const folderId = importFolderId || fallbackFolderId;
+    if (!folderId) {
       return;
     }
 
@@ -751,7 +771,7 @@ export function WorkspaceShell({
     setNewRecordingState("syncing");
 
     const [meetingId] = await Promise.all([
-      Promise.resolve(onConnectDevice(fallbackFolderId, transport)),
+      Promise.resolve(onConnectDevice(folderId, transport)),
       new Promise((resolve) => window.setTimeout(resolve, 900)),
     ]);
 
@@ -1231,6 +1251,23 @@ export function WorkspaceShell({
                         )}
                       />
                       <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                        Save Session To Folder
+                      </label>
+                      <select
+                        value={importFolderId}
+                        onChange={(e) => setImportFolderId(e.target.value)}
+                        className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-900 outline-none focus:border-gray-400"
+                      >
+                        {visibleFolders.map((folder) => (
+                          <option key={folder.id} value={folder.id}>
+                            {folder.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
                     <div className="mt-5 grid grid-cols-3 gap-3">
@@ -1715,33 +1752,50 @@ function DashboardTab({
                 <h2 className="font-display text-4xl font-light mercury-text-soft">Pinned Insights</h2>
               </div>
 
-              <InsightCard title="Key Decisions" icon={<Sparkles className="h-4 w-4 opacity-60" />}>
-                <ul className="space-y-4">
-                  {renderedMeeting.decisions.map((decision) => (
-                    <li key={decision} className="flex items-start gap-4 text-sm leading-relaxed text-gray-700">
-                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-gray-300" />
-                      <span>{decision}</span>
-                    </li>
-                  ))}
-                </ul>
-              </InsightCard>
+              {renderedMeeting.pinnedInsights && renderedMeeting.pinnedInsights.length > 0 ? (
+                renderedMeeting.pinnedInsights.map((insight) => (
+                  <InsightCard
+                    key={insight.id}
+                    title={insight.title}
+                    icon={insight.icon ? ICON_MAP[insight.icon] || <Sparkles className="h-4 w-4 opacity-60" /> : undefined}
+                  >
+                    <div
+                      className="text-sm leading-relaxed text-gray-700"
+                      dangerouslySetInnerHTML={{ __html: insight.htmlContent }}
+                    />
+                  </InsightCard>
+                ))
+              ) : (
+                <>
+                  <InsightCard title="Key Decisions" icon={<Sparkles className="h-4 w-4 opacity-60" />}>
+                    <ul className="space-y-4">
+                      {renderedMeeting.decisions.map((decision) => (
+                        <li key={decision} className="flex items-start gap-4 text-sm leading-relaxed text-gray-700">
+                          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-gray-300" />
+                          <span>{decision}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </InsightCard>
 
-              <InsightCard title="Action Items" icon={<Grip className="h-4 w-4 opacity-60" />}>
-                <div className="space-y-3">
-                  {renderedMeeting.actions.map((action) => (
-                    <div key={action.id} className="rounded-2xl border border-gray-100 bg-white/70 p-4">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400">
-                        {action.owner}
-                      </p>
-                      <p className="mt-2 text-sm leading-relaxed text-gray-700">{action.label}</p>
+                  <InsightCard title="Action Items" icon={<Grip className="h-4 w-4 opacity-60" />}>
+                    <div className="space-y-3">
+                      {renderedMeeting.actions.map((action) => (
+                        <div key={action.id} className="rounded-2xl border border-gray-100 bg-white/70 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400">
+                            {action.owner}
+                          </p>
+                          <p className="mt-2 text-sm leading-relaxed text-gray-700">{action.label}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </InsightCard>
+                  </InsightCard>
 
-              <InsightCard title="Transcript Preview" icon={<Search className="h-4 w-4 opacity-60" />}>
-                <p className="text-sm leading-7 text-gray-700">{renderedMeeting.transcriptPreview}</p>
-              </InsightCard>
+                  <InsightCard title="Transcript Preview" icon={<Search className="h-4 w-4 opacity-60" />}>
+                    <p className="text-sm leading-7 text-gray-700">{renderedMeeting.transcriptPreview}</p>
+                  </InsightCard>
+                </>
+              )}
 
               <div className="rounded-[2.5rem] border border-gray-100 bg-gray-50 p-8 text-center">
                 <h4 className="text-lg font-bold text-black">Still need support?</h4>

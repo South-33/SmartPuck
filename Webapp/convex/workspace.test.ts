@@ -41,7 +41,7 @@ describe("workspace Convex functions", () => {
     expect(dashboard.folders).toHaveLength(2);
     expect(dashboard.activeMeeting?.title).toBe("Hardware MVP Review");
     expect(dashboard.activeMeeting?.messages).toHaveLength(1);
-    expect(dashboard.folders.map((folder) => folder.name)).toEqual([
+    expect(dashboard.folders.map((folder: { name: string }) => folder.name)).toEqual([
       "Device Prototype",
       "AI Processing",
     ]);
@@ -56,7 +56,7 @@ describe("workspace Convex functions", () => {
     const afterFolder = await t.query(api.workspace.getDashboard, {
       selectedMeetingId: null,
     });
-    const folder = afterFolder.folders.find((entry) => entry.name === "Test Folder");
+    const folder = afterFolder.folders.find((entry: { name: string }) => entry.name === "Test Folder");
 
     expect(folder).toBeTruthy();
 

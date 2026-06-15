@@ -54,10 +54,22 @@ export default defineSchema({
         label: v.string(),
       }),
     ),
+    transcriptText: v.optional(v.string()),
+    pinnedInsights: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          title: v.string(),
+          htmlContent: v.string(),
+          icon: v.optional(v.string()),
+        }),
+      ),
+    ),
     updatedAt: v.number(),
   })
     .index("by_scopeKey_and_updatedAt", ["scopeKey", "updatedAt"])
-    .index("by_scopeKey_and_folderId_and_updatedAt", ["scopeKey", "folderId", "updatedAt"]),
+    .index("by_scopeKey_and_folderId_and_updatedAt", ["scopeKey", "folderId", "updatedAt"])
+    .index("by_agentThreadId", ["agentThreadId"]),
 
   messages: defineTable({
     scopeKey: v.string(),

@@ -39,6 +39,16 @@ export const STARTER_WORKSPACE = [
         label: "Keep the target BOM below $50 and defer speaker diarisation to future scope.",
       },
     ],
+    transcriptText: `[10:00:05] Sarah (Product): Thanks for joining the hardware review today. Let's align on the MVP physical design and components.
+[10:00:15] John (Hardware): Right. The core directive is to keep the BOM under $50 USD. We've shortlisted the LOLIN S3 Pro ESP32-S3 board. It's affordable, has built-in battery charging, and has an onboard microSD slot.
+[10:01:00] Dave (Firmware): The onboard microSD CS pin is GPIO 46. I've tested write latency, and I2S DMA writes directly to it will run fine synchronized via a file mutex on Core 1.
+[10:01:45] Sarah (Product): Good. What microphone are we using for audio capture?
+[10:02:00] John (Hardware): The INMP441 MEMS microphone. It supports I2S protocol, giving us clean 16-bit 16kHz audio directly.
+[10:02:30] Dave (Firmware): For pins: SCK is GPIO 4, WS is GPIO 5, and SD is GPIO 6. This layout is locked in and tested.
+[10:03:10] Sarah (Product): What about the battery size?
+[10:03:20] John (Hardware): A 2000mAh 3.7V LiPo with a JST PH2.0 connector fits nicely inside our 3D printed puck enclosure. It should give us up to 8 hours of continuous offline recording.
+[10:04:00] Sarah (Product): Let's make sure we keep Wi-Fi and camera out of the first prototype.
+[10:04:15] John (Hardware): Agreed. Offline recording transferred over USB-C is the MVP focus. Wi-Fi sync and slide capture are deferred to v2.`,
     openingMessage:
       "I loaded the Hardware MVP Review. Ask me about device components, recording constraints, battery goals, USB transfer, or what should stay out of scope for the first SmartPuck prototype.",
   },
@@ -69,6 +79,14 @@ export const STARTER_WORKSPACE = [
         label: "Use Gemini for proposal-aware assistant replies while audio processing is stubbed.",
       },
     ],
+    transcriptText: `[14:00:10] Sarah (Product): Let's plan the Web app pipeline. When the puck is plugged in over USB, how does the session data transfer?
+[14:00:30] Alex (Frontend): The user plugs in the device, and the browser can read the microSD card directly. We can let the user import the raw 16-bit 16kHz PCM WAV files.
+[14:01:15] Elena (AI): Once imported, the backend passes the audio to speech-to-text. We'll use Whisper large-v3-turbo locally or a cloud STT API to generate timestamped transcripts.
+[14:02:00] Sarah (Product): After getting the transcript, how do we generate notes?
+[14:02:20] Elena (AI): We'll pass the transcript to Gemini with a structured prompt to extract the summary, decisions, and action items.
+[14:03:00] Alex (Frontend): In the workspace UI, users will see the folders list in the sidebar and meeting chat threads in the main area.
+[14:03:40] Sarah (Product): Excellent. Let's make sure we add Clerk + Convex auth integration before we release the public upload capabilities.
+[14:04:10] Alex (Frontend): I'll work on the folders UI and thread listing first, keeping the database schemas clean.`,
     openingMessage:
       "I loaded the Transcript and Notes Pipeline chat. Ask me about transcription, optional context attachments, structured notes, exports, or how the web app should process SmartPuck sessions.",
   },

@@ -87,7 +87,7 @@ function LiveWorkspaceContent() {
       return;
     }
 
-    const folderNames = dashboard.folders.map((folder) => folder.name);
+    const folderNames = dashboard.folders.map((folder: { name: string }) => folder.name);
     const shouldResetStarterWorkspace =
       dashboard.folders.length === 0 ||
       (dashboard.folders.length === 2 &&

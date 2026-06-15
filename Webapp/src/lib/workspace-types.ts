@@ -48,6 +48,13 @@ export type MeetingRecord = {
   decisions: string[];
   actions: MeetingAction[];
   messages: MeetingMessage[];
+  transcriptText?: string;
+  pinnedInsights?: Array<{
+    id: string;
+    title: string;
+    htmlContent: string;
+    icon?: string;
+  }>;
 };
 
 export type FolderRecord = {

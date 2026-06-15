@@ -363,6 +363,7 @@ async function insertStarterWorkspace(ctx: MutationCtx, scopeKey: string) {
         owner: action.owner,
         label: action.label,
       })),
+      transcriptText: starter.transcriptText,
       updatedAt: now - index * 1_000,
     });
 
@@ -571,6 +572,22 @@ export const createMeetingFromDeviceSync = mutation({
       },
     }[args.transport];
 
+    const mockTranscripts = {
+      wifi: `[15:10:02] Elena (AI): Starting the Wi-Fi live stream test. Can you hear the audio?
+[15:10:12] Alex (Frontend): Yes, the 16-bit 16kHz PCM stream is playing through the Web Audio API with very low latency—about 30 milliseconds.
+[15:10:30] Elena (AI): Great! The onboard SD card is recording in parallel.
+[15:10:45] Alex (Frontend): I can see the connection status is green, and I can download the WAV file now. Works perfectly.`,
+      usb: `[09:30:05] Sarah (Product): Let's verify the USB mass storage mode on the SmartPuck.
+[09:30:15] John (Hardware): When plugged in, the ESP32 MSC driver exposes the microSD card as a USB drive. The browser app reads it directly.
+[09:31:00] Dave (Firmware): I've verified the sector read/write speed. It's solid and works even if the partition format is corrupted because we expose raw block access.`,
+      bluetooth: `[11:00:10] John (Hardware): Testing Bluetooth connection. The puck is advertising its sync service.
+[11:00:30] Alex (Frontend): I'm able to pair with the puck from the browser using Web Bluetooth.
+[11:00:45] John (Hardware): Outstanding. We can sync metadata and trigger recording starts over BLE.`,
+      manual: `[13:00:05] Professor: Today we will cover design systems at scale.
+[13:00:20] Student: Can we import legacy CSS directly into Figma tokens?
+[13:01:00] Professor: Yes, we use automated style parsers to extract colors and typography, mapping them to variables.`,
+    }[args.transport];
+
     const meetingId = await ctx.db.insert("meetings", {
       scopeKey: viewer.scopeKey,
       folderId: folder._id,
@@ -607,6 +624,7 @@ export const createMeetingFromDeviceSync = mutation({
           label: "Pick auth provider before exposing uploads publicly",
         },
       ],
+      transcriptText: mockTranscripts,
       updatedAt: now,
     });
 
@@ -677,5 +695,130 @@ export const ensureMeetingAgentThread = internalMutation({
 
     await ctx.db.patch(meeting._id, { agentThreadId });
     return agentThreadId;
+  },
+});
+
+export const getMeetingByThread = internalQuery({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("meetings")
+      .withIndex("by_agentThreadId", (q) => q.eq("agentThreadId", args.threadId))
+      .unique();
+  },
+});
+
+export const listMeetingsInFolder = internalQuery({
+  args: {
+    folderId: v.id("folders"),
+  },
+  handler: async (ctx, args) => {
+    const folder = await ctx.db.get(args.folderId);
+    if (!folder) {
+      return [];
+    }
+
+    const scopedMeetings = await ctx.db
+      .query("meetings")
+      .withIndex("by_scopeKey_and_folderId_and_updatedAt", (q) =>
+        q.eq("scopeKey", folder.scopeKey).eq("folderId", args.folderId),
+      )
+      .collect();
+
+    return scopedMeetings.map((m) => ({
+      meetingId: m._id,
+      title: m.title,
+      startedAtLabel: m.startedAtLabel,
+      durationLabel: m.durationLabel,
+      summary: m.summary,
+    }));
+  },
+});
+
+export const searchTranscriptsInFolder = internalQuery({
+  args: {
+    folderId: v.id("folders"),
+    query: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const folder = await ctx.db.get(args.folderId);
+    if (!folder) {
+      return [];
+    }
+
+    const meetings = await ctx.db
+      .query("meetings")
+      .withIndex("by_scopeKey_and_folderId_and_updatedAt", (q) =>
+        q.eq("scopeKey", folder.scopeKey).eq("folderId", args.folderId),
+      )
+      .collect();
+
+    const searchLower = args.query.toLowerCase().trim();
+    if (!searchLower) {
+      return [];
+    }
+
+    const results: Array<{
+      meetingId: string;
+      meetingTitle: string;
+      line: string;
+    }> = [];
+
+    for (const meeting of meetings) {
+      const text = meeting.transcriptText;
+      if (!text) {
+        continue;
+      }
+
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (line.toLowerCase().includes(searchLower)) {
+          results.push({
+            meetingId: meeting._id,
+            meetingTitle: meeting.title,
+            line: line.trim(),
+          });
+        }
+      }
+    }
+
+    return results.slice(0, 30);
+  },
+});
+
+export const getMeetingTranscript = internalQuery({
+  args: {
+    meetingId: v.id("meetings"),
+  },
+  handler: async (ctx, args) => {
+    const meeting = await ctx.db.get(args.meetingId);
+    if (!meeting) {
+      return null;
+    }
+    return {
+      title: meeting.title,
+      transcriptText: meeting.transcriptText ?? "No transcript available.",
+    };
+  },
+});
+
+export const updateMeetingInsights = internalMutation({
+  args: {
+    meetingId: v.id("meetings"),
+    insights: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        htmlContent: v.string(),
+        icon: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.meetingId, {
+      pinnedInsights: args.insights,
+    });
   },
 });
