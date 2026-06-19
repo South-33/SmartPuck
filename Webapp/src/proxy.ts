@@ -3,7 +3,9 @@ import type { NextFetchEvent, NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 const isClerkConfigured = Boolean(
-  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
+  process.env.NEXT_PUBLIC_SMARTPUCK_DEMO !== "1" &&
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+    process.env.CLERK_SECRET_KEY,
 );
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
@@ -11,7 +13,7 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.next();
   }
 
-  return clerkMiddleware()(request, event);
+  return clerkMiddleware({ clockSkewInMs: 30000 })(request, event);
 }
 
 export const config = {

@@ -7,7 +7,8 @@ import type { ReactNode } from "react";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
+const forceDemo = process.env.NEXT_PUBLIC_SMARTPUCK_DEMO === "1";
+const convex = convexUrl && !forceDemo ? new ConvexReactClient(convexUrl) : null;
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   if (!convex) {
