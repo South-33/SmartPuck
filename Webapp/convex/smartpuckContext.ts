@@ -13,30 +13,30 @@ Future scope: optional visual attachments, Wi-Fi sync, wake word recording, spea
 
 export const STARTER_WORKSPACE = [
   {
-    folderName: "Device Prototype",
-    meetingTitle: "Hardware MVP Review",
+    folderName: "Demo",
+    meetingTitle: "Device Prototype Review",
     durationLabel: "42m",
     startedAtLabel: "Today",
     summary:
-      "Review of the SmartPuck hardware MVP: offline audio recording, LOLIN S3 Pro control board, INMP441 microphone, microSD storage, USB transfer, and the sub-$50 bill of materials target.",
+      "Demo review of the SmartPuck prototype: offline recording, LOLIN S3 Pro control board, INMP441 microphone, microSD storage, USB transfer, local transcription, and folder-based chat.",
     transcriptPreview:
-      "The team agreed the first hardware proof should focus on LOLIN S3 Pro, INMP441 audio, microSD storage, USB transfer, and a simple puck enclosure before Wi-Fi, camera, or mobile companion scope.",
+      "The team agreed the demo should focus on recording audio, importing it locally, transcribing on the laptop, saving the transcript to Convex, and asking folder-scoped chat questions.",
     syncTransferredMb: 83,
     syncVisuals: 0,
     syncAudioHours: 0.7,
     decisions: [
-      "Keep the first device offline during recording to avoid cloud or phone dependency.",
-      "Use USB transfer as the reliable MVP path before adding Wi-Fi sync.",
-      "Treat visual context as optional uploaded attachments, not a required camera feature.",
+      "Keep recording audio-first and reliable before adding visual capture.",
+      "Use local transcription so raw audio does not need to leave the laptop for the demo.",
+      "Save transcripts into the selected folder so chat can search and read them later.",
     ],
     actions: [
       {
         owner: "Hardware",
-        label: "Validate LOLIN S3 Pro, INMP441, microSD, PH2.0 LiPo, button, and LED wiring together.",
+        label: "Validate the LOLIN S3 Pro, INMP441, microSD, battery, button, and LED prototype together.",
       },
       {
         owner: "Product",
-        label: "Keep the target BOM below $50 and defer speaker diarisation to future scope.",
+        label: "Demo the folder chat against real transcript text before adding diarization.",
       },
     ],
     transcriptText: `[10:00:05] Sarah (Product): Thanks for joining the hardware review today. Let's align on the MVP physical design and components.
@@ -47,47 +47,9 @@ export const STARTER_WORKSPACE = [
 [10:02:30] Dave (Firmware): For pins: SCK is GPIO 4, WS is GPIO 5, and SD is GPIO 6. This layout is locked in and tested.
 [10:03:10] Sarah (Product): What about the battery size?
 [10:03:20] John (Hardware): A 2000mAh 3.7V LiPo with a JST PH2.0 connector fits nicely inside our 3D printed puck enclosure. It should give us up to 8 hours of continuous offline recording.
-[10:04:00] Sarah (Product): Let's make sure we keep Wi-Fi and camera out of the first prototype.
-[10:04:15] John (Hardware): Agreed. Offline recording transferred over USB-C is the MVP focus. Wi-Fi sync and slide capture are deferred to v2.`,
+[10:04:00] Sarah (Product): For the web demo, I want to import a recording, choose a folder, transcribe locally, and then ask chat what happened.
+[10:04:15] Alex (Frontend): That works. We'll store transcript text in Convex, keep the audio local, and let the agent search the selected folder instead of loading every transcript into the prompt.`,
     openingMessage:
-      "I loaded the Hardware MVP Review. Ask me about device components, recording constraints, battery goals, USB transfer, or what should stay out of scope for the first SmartPuck prototype.",
-  },
-  {
-    folderName: "AI Processing",
-    meetingTitle: "Transcript and Notes Pipeline",
-    durationLabel: "35m",
-    startedAtLabel: "Yesterday",
-    summary:
-      "Planning session for the SmartPuck web app pipeline: import audio session files, transcribe the recording, and generate structured notes and action items.",
-    transcriptPreview:
-      "The app should detect imported session directories, pass audio to speech-to-text, and prompt an LLM for summary, decisions, and action items. Uploaded slides or photos can be optional context later.",
-    syncTransferredMb: 52,
-    syncVisuals: 0,
-    syncAudioHours: 0.6,
-    decisions: [
-      "Use meeting chat threads as the product surface before the full audio processing pipeline is built.",
-      "Ground placeholder answers in the SmartPuck proposal so demos feel realistic.",
-      "Keep exports to Markdown, PDF, or clipboard as a later but visible product promise.",
-    ],
-    actions: [
-      {
-        owner: "Web",
-        label: "Add durable folders and saved chat threads before wiring real transcript jobs.",
-      },
-      {
-        owner: "AI",
-        label: "Use Gemini for proposal-aware assistant replies while audio processing is stubbed.",
-      },
-    ],
-    transcriptText: `[14:00:10] Sarah (Product): Let's plan the Web app pipeline. When the puck is plugged in over USB, how does the session data transfer?
-[14:00:30] Alex (Frontend): The user plugs in the device, and the browser can read the microSD card directly. We can let the user import the raw 16-bit 16kHz PCM WAV files.
-[14:01:15] Elena (AI): Once imported, the backend passes the audio to speech-to-text. We'll use Whisper large-v3-turbo locally or a cloud STT API to generate timestamped transcripts.
-[14:02:00] Sarah (Product): After getting the transcript, how do we generate notes?
-[14:02:20] Elena (AI): We'll pass the transcript to Gemini with a structured prompt to extract the summary, decisions, and action items.
-[14:03:00] Alex (Frontend): In the workspace UI, users will see the folders list in the sidebar and meeting chat threads in the main area.
-[14:03:40] Sarah (Product): Excellent. Let's make sure we add Clerk + Convex auth integration before we release the public upload capabilities.
-[14:04:10] Alex (Frontend): I'll work on the folders UI and thread listing first, keeping the database schemas clean.`,
-    openingMessage:
-      "I loaded the Transcript and Notes Pipeline chat. Ask me about transcription, optional context attachments, structured notes, exports, or how the web app should process SmartPuck sessions.",
+      "I loaded the demo meeting. Ask me about the prototype, local transcription flow, USB/Wi-Fi sync, battery goals, or what the team decided.",
   },
 ];

@@ -323,7 +323,7 @@ function buildFallbackReply(
   }
 
   if (lower.includes("transcript") || lower.includes("audio") || lower.includes("notes")) {
-    return "The planned pipeline imports the audio session over USB, sends audio to speech-to-text for timestamped transcripts, then asks an LLM to produce summaries, decisions, and action items. Optional uploaded slides or photos can become context later, but the real audio pipeline is still stubbed in this web app.";
+    return "SmartPuck imports audio from the device or a local file, sends it to the local faster-whisper transcription server, stores transcript text in Convex, and lets the chat search or read meeting transcripts through tools.";
   }
 
   if (lower.includes("scope") || lower.includes("future") || lower.includes("roadmap")) {

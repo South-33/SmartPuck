@@ -108,7 +108,10 @@ function LiveWorkspaceContent() {
       dashboard.folders.length === 0 ||
       (dashboard.folders.length === 2 &&
         folderNames.includes("Q3 Strategy") &&
-        folderNames.includes("Google Meetings"));
+        folderNames.includes("Google Meetings")) ||
+      (dashboard.folders.length === 2 &&
+        folderNames.includes("Device Prototype") &&
+        folderNames.includes("AI Processing"));
 
     if (!shouldResetStarterWorkspace) {
       return;

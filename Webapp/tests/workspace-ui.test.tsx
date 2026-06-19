@@ -3,15 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { DemoWorkspace } from "@/components/workspace/demo-workspace";
 
 describe("Demo workspace UI", () => {
-  test("starts with two SmartPuck demo folders and creates a saved chat inside a folder", async () => {
+  test("starts with the SmartPuck demo folder and creates a saved chat inside it", async () => {
     const user = userEvent.setup();
 
     render(<DemoWorkspace />);
 
-    expect(screen.getByText("Device Prototype")).toBeInTheDocument();
-    expect(screen.getByText("AI Processing")).toBeInTheDocument();
+    expect(screen.getByText("Demo")).toBeInTheDocument();
+    expect(screen.getByText("Device Prototype Review")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Start new chat in Device Prototype" }));
+    await user.click(screen.getByRole("button", { name: "Start new chat in Demo" }));
 
     expect(
       await screen.findByPlaceholderText(/Ask SmartPuck about "New SmartPuck Chat"/i),
@@ -36,11 +36,11 @@ describe("Demo workspace UI", () => {
 
     render(<DemoWorkspace />);
 
-    const deviceToggle = screen.getByRole("button", { name: "Device Prototype" });
+    const deviceToggle = screen.getByRole("button", { name: "Demo" });
     expect(deviceToggle).toHaveAttribute("aria-expanded", "true");
     await user.click(deviceToggle);
     expect(deviceToggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: "Delete folder Device Prototype" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete folder Demo" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "New Recording" }));
     expect(await screen.findByText(/Wi-Fi live recorder/i)).toBeInTheDocument();

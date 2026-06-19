@@ -443,7 +443,7 @@ export const createChatInFolder = mutation({
       userId: viewer.scopeKey,
       title,
       summary:
-        "Saved SmartPuck chat grounded in the proposal until transcript processing is connected.",
+        "Saved SmartPuck chat grounded in the meetings and transcripts inside this folder.",
     });
 
     const meetingId = await ctx.db.insert("meetings", {
@@ -456,15 +456,15 @@ export const createChatInFolder = mutation({
       startedAtLabel: "Just now",
       sourceTransport: "manual",
       summary:
-        "A saved chat thread for asking SmartPuck product, hardware, and meeting intelligence questions inside this folder.",
+        "A saved chat thread for asking questions about SmartPuck recordings, transcripts, and meeting decisions inside this folder.",
       transcriptPreview:
-        "This chat is grounded in the SmartPuck proposal until a real meeting transcript is uploaded.",
+        "Use this chat to ask about meetings in this folder. SmartPuck will search transcripts when it needs meeting details.",
       syncPercent: 100,
       syncTransferredMb: 0,
       syncVisuals: 0,
       syncAudioHours: 0,
       decisions: [
-        "Use this chat to explore SmartPuck capabilities before real audio processing is connected.",
+        "Use this chat to ask about recordings and transcripts saved in this folder.",
       ],
       actions: [
         {
@@ -619,18 +619,18 @@ export const createMeetingFromDeviceSync = mutation({
       sourceTransport: args.transport,
       summary:
         args.transport === "wifi"
-          ? "A live SmartPuck Wi-Fi recording was saved locally on this computer. The workspace shell is linked to this folder while durable upload and transcription jobs are added."
-          : "Meeting metadata uploaded from SmartPuck. The audio processing pipeline is intentionally not wired yet, but the session shell is ready for follow-up chat and folder organization.",
+          ? "A live SmartPuck Wi-Fi recording was saved locally on this computer and linked to the selected folder."
+          : "A SmartPuck recording was imported and linked to this folder for follow-up chat.",
       transcriptPreview:
         args.transport === "wifi"
-          ? "Audio was captured from the device stream. Transcript, speaker labels, and summary generation will attach here once the local processing backend exists."
-          : "Raw capture received. Transcript and summary generation will attach here once the processing backend exists.",
+          ? "Audio was captured from the device stream. Import the saved WAV when you want local transcription attached to this meeting."
+          : "Recording received. Import or transcribe audio locally to attach searchable transcript text.",
       syncPercent: 100,
       syncTransferredMb: transportLabels.transferredMb,
       syncVisuals: 0,
       syncAudioHours: transportLabels.audioHours,
       decisions: [
-        "Capture ingest metadata now so future background processing has stable inputs.",
+        "Keep each recording attached to the folder selected at ingest time.",
         "Keep each upload attached to one folder to avoid cross-folder ambiguity.",
       ],
       actions: [
@@ -656,7 +656,7 @@ export const createMeetingFromDeviceSync = mutation({
       meetingId,
       role: "assistant",
       body:
-        "The device sync completed and the meeting shell is created. Ask structural questions now, and transcript-grounded answers can plug in later.",
+        "The recording is linked to this folder. Import or transcribe the audio to make the chat answer from transcript text.",
       status: "complete",
       createdAt: now,
     });
@@ -884,7 +884,7 @@ export const createMeetingWithAudio = mutation({
       status: "ready",
       startedAtLabel: "Just now",
       sourceTransport: args.transport,
-      summary: "Local audio sync session transcribed on the laptop.",
+      summary: "Local audio session transcribed on the laptop and saved to this folder.",
       transcriptPreview,
       syncPercent: 100,
       syncTransferredMb: args.transferredMb,
@@ -892,7 +892,7 @@ export const createMeetingWithAudio = mutation({
       syncAudioHours: args.audioHours,
       decisions: [
         "Transcribe locally using Whisper to keep voice data private.",
-        "Store session files inside the selected folder."
+        "Store transcript text inside the selected folder."
       ],
       actions: [],
       transcriptText: args.transcriptText,
@@ -908,7 +908,7 @@ export const createMeetingWithAudio = mutation({
       scopeKey: viewer.scopeKey,
       meetingId,
       role: "assistant",
-      body: `The recording "${args.title}" has been successfully uploaded, transcribed locally, and saved. Ask me anything about this session!`,
+      body: `The recording "${args.title}" was transcribed locally and saved here. Ask me anything about this session.`,
       status: "complete",
       createdAt: now,
     });

@@ -38,13 +38,10 @@ describe("workspace Convex functions", () => {
 
     expect(seeded.firstMeetingId).toBeTruthy();
     expect(dashboard.viewer.isAuthenticated).toBe(true);
-    expect(dashboard.folders).toHaveLength(2);
-    expect(dashboard.activeMeeting?.title).toBe("Hardware MVP Review");
+    expect(dashboard.folders).toHaveLength(1);
+    expect(dashboard.activeMeeting?.title).toBe("Device Prototype Review");
     expect(dashboard.activeMeeting?.messages).toHaveLength(1);
-    expect(dashboard.folders.map((folder: { name: string }) => folder.name)).toEqual([
-      "Device Prototype",
-      "AI Processing",
-    ]);
+    expect(dashboard.folders.map((folder: { name: string }) => folder.name)).toEqual(["Demo"]);
   });
 
   test("creates folders, saved chats, and device-synced meetings inside one user scope", async () => {
@@ -81,7 +78,7 @@ describe("workspace Convex functions", () => {
 
     expect(afterSync.activeMeeting?.title).toBe("Desk Sync Capture");
     expect(afterSync.activeMeeting?.messages).toHaveLength(1);
-    expect(afterSync.activeMeeting?.messages[0]?.body).toMatch(/device sync completed/i);
+    expect(afterSync.activeMeeting?.messages[0]?.body).toMatch(/recording is linked/i);
 
     const nextMeetingId = await t.mutation(api.workspace.deleteMeeting, { meetingId });
     const afterDelete = await t.query(api.workspace.getDashboard, {
