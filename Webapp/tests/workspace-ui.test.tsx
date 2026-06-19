@@ -43,10 +43,10 @@ describe("Demo workspace UI", () => {
     expect(screen.getByRole("button", { name: "Delete folder Demo" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "New Recording" }));
-    expect(await screen.findByText(/Wi-Fi live recorder/i)).toBeInTheDocument();
+    expect(await screen.findByText(/SmartPuck auto-detect/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Start Listening/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Import Existing WAV/i }));
+    await user.click(screen.getByRole("button", { name: /Import Audio File/i }));
 
     expect(
       await screen.findByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i, {}, { timeout: 2000 }),
@@ -58,7 +58,7 @@ describe("Demo workspace UI", () => {
 
     expect(screen.getByText("Summarize the backend contract")).toBeInTheDocument();
     expect(
-      await screen.findByText(/Folder organization, meeting shells, and thread persistence are ready/i),
+      await screen.findByText(/Folder organization, local transcription, transcript search, and saved chat/i),
     ).toBeInTheDocument();
   });
 

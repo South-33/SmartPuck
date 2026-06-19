@@ -102,12 +102,12 @@ export function DemoWorkspace() {
           sourceTransport: transport,
           summary:
             transport === "wifi"
-              ? "A live SmartPuck Wi-Fi recording was saved locally on this computer. The folder link is ready for the local transcription pipeline."
-              : "Session metadata uploaded. Audio processing is intentionally stubbed for now, but the meeting is ready for organization and follow-up chat.",
+              ? "A live SmartPuck Wi-Fi recording was saved locally on this computer and linked to the selected folder."
+              : "A SmartPuck recording was imported and linked to this folder for follow-up chat.",
           transcriptPreview:
             transport === "wifi"
-              ? "Audio was captured from the device stream. Transcript generation will be attached later when the local audio pipeline lands."
-              : "Raw capture received from SmartPuck. Transcript generation will be attached later when the audio pipeline lands.",
+              ? "Audio was captured from the device stream. Import the saved WAV when you want local transcription attached to this meeting."
+              : "Recording received. Local transcription will attach searchable transcript text.",
           syncStats: {
             percent: 100,
             transferredMb: transport === "usb" ? 128 : transport === "wifi" ? 0 : 76,
@@ -115,19 +115,19 @@ export function DemoWorkspace() {
             audioHours: transport === "usb" ? 1.9 : transport === "wifi" ? 0 : 1.2,
           },
           decisions: [
-            "Upload transport is now stored with the meeting record for later pipeline routing.",
+            "Keep each recording attached to the folder selected at ingest time.",
             "Meeting artifacts stay attached to the folder selected at ingest time.",
           ],
           actions: [
-            { id: `${id}-1`, owner: "Product", label: "Choose the first production auth provider" },
-            { id: `${id}-2`, owner: "Backend", label: "Attach transcript + summary job after ingest" },
+            { id: `${id}-1`, owner: "Product", label: "Keep the demo flow simple: import, transcribe, chat." },
+            { id: `${id}-2`, owner: "AI", label: "Use transcript search tools for folder chat questions." },
           ],
           messages: [
             {
               id: `${id}-assistant`,
               role: "assistant" as const,
               body:
-                "I have the meeting shell ready. Once audio processing is added, this thread can answer against the transcript and extracted action items.",
+                "The recording is linked to this folder. Import or transcribe the audio to make the chat answer from transcript text.",
               status: "complete" as const,
               createdAt,
             },
@@ -215,7 +215,7 @@ export function DemoWorkspace() {
           id: `${meetingId}-assistant-${Date.now()}`,
           role: "assistant" as const,
           body:
-            "**SmartPuck demo:** Folder organization, meeting shells, and thread persistence are ready; transcript-grounded answers will plug in after the audio pipeline exists.",
+            "**SmartPuck demo:** Folder organization, local transcription, transcript search, and saved chat are the core flow.",
           status: "complete" as const,
           createdAt: timestamp,
         };

@@ -37,7 +37,6 @@ function LiveWorkspaceContent() {
   const deleteFolder = useMutation(api.workspace.deleteFolder);
   const deleteMeeting = useMutation(api.workspace.deleteMeeting);
   const createMeetingFromDeviceSync = useMutation(api.workspace.createMeetingFromDeviceSync);
-  const generateUploadUrl = useMutation(api.workspace.generateUploadUrl);
   const createMeetingWithAudio = useMutation(api.workspace.createMeetingWithAudio);
   const streamMeetingReply = useAction(api.smartpuckAgent.streamMeetingReply);
   const isMutating = pendingOperations > 0;
@@ -188,9 +187,6 @@ function LiveWorkspaceContent() {
         );
         setSelectedMeetingId(meetingId);
         return meetingId;
-      }}
-      onGenerateUploadUrl={async () => {
-        return await runOperation(() => generateUploadUrl());
       }}
       onCreateMeetingWithAudio={async (args) => {
         const meetingId = await runOperation(() =>

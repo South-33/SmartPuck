@@ -68,7 +68,6 @@ type WorkspaceShellProps = {
   onSelectMeeting: (meetingId: string) => void;
   onDeleteMeeting: (meetingId: string) => void | Promise<void>;
   onSendMessage: (meetingId: string, body: string, privateContext?: string) => void | Promise<void>;
-  onGenerateUploadUrl?: () => Promise<string>;
   onCreateMeetingWithAudio?: (args: {
     folderId: string;
     title: string;
@@ -91,7 +90,7 @@ type WorkspaceView =
   | "help"
   | "settings";
 
-type WorkspaceTab = "dashboard" | "transcripts" | "analytics";
+type WorkspaceTab = "dashboard" | "transcripts" | "device";
 type NewRecordingState = "connect" | "syncing";
 type PuckConnectionState = "idle" | "checking" | "connected" | "listening" | "recording" | "error";
 const DEFAULT_PUCK_ADDRESS = "http://192.168.4.1";
@@ -196,7 +195,6 @@ export function WorkspaceShell({
   onSelectMeeting,
   onDeleteMeeting,
   onSendMessage,
-  onGenerateUploadUrl,
   onCreateMeetingWithAudio,
 }: WorkspaceShellProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("recent-sessions");
@@ -240,7 +238,7 @@ export function WorkspaceShell({
   const [puckAddress, setPuckAddress] = useState(DEFAULT_PUCK_ADDRESS);
   const [showPuckAddressEditor, setShowPuckAddressEditor] = useState(false);
   const [puckState, setPuckState] = useState<PuckConnectionState>("idle");
-  const [puckStatus, setPuckStatus] = useState("Enter the SmartPuck IP address from Serial Monitor or AP mode.");
+  const [puckStatus, setPuckStatus] = useState("SmartPuck will be detected automatically when it is on the same network.");
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingBytes, setRecordingBytes] = useState(0);
@@ -306,6 +304,44 @@ export function WorkspaceShell({
       setPuckStatus(error instanceof Error ? error.message : "Could not reach SmartPuck.");
     }
   }, [normalizedPuckBaseUrl]);
+
+  const autoFindPuck = useCallback(async () => {
+    const candidates = [
+      initialPuckAddress,
+      typeof window !== "undefined" ? window.localStorage.getItem("smartpuck:puck-address") : null,
+      "http://smartpuck.local",
+      DEFAULT_PUCK_ADDRESS,
+    ].filter((candidate): candidate is string => Boolean(candidate));
+    const uniqueCandidates = Array.from(new Set(candidates.map((candidate) => candidate.replace(/\/+$/, ""))));
+
+    setPuckState("checking");
+    setPuckStatus("Looking for SmartPuck over local Wi-Fi...");
+
+    for (const candidate of uniqueCandidates) {
+      try {
+        const response = await fetchWithTimeout(`${candidate}/status`, 2500);
+        if (!response.ok) {
+          continue;
+        }
+
+        const status = (await response.json()) as {
+          network?: string;
+          storage?: string;
+        };
+        window.localStorage.setItem("smartpuck:puck-address", candidate);
+        setPuckAddress(candidate);
+        setShowPuckAddressEditor(false);
+        setPuckState("connected");
+        setPuckStatus(`SmartPuck found. ${status.network ?? "Local Wi-Fi"} - ${status.storage ?? "audio ready"}.`);
+        return;
+      } catch {
+        // Try the next known local address.
+      }
+    }
+
+    setPuckState("error");
+    setPuckStatus("No SmartPuck found yet. Import an audio file, or enter the device address manually.");
+  }, [initialPuckAddress]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -397,16 +433,14 @@ export function WorkspaceShell({
     if (
       activeView !== "new-recording" ||
       puckState !== "idle" ||
-      !initialPuckAddress ||
-      puckAddress !== initialPuckAddress ||
-      autoCheckedPuckAddressRef.current === initialPuckAddress
+      autoCheckedPuckAddressRef.current === "auto"
     ) {
       return;
     }
 
-    autoCheckedPuckAddressRef.current = initialPuckAddress;
-    void checkPuckConnection();
-  }, [activeView, initialPuckAddress, puckAddress, puckState, checkPuckConnection]);
+    autoCheckedPuckAddressRef.current = "auto";
+    void autoFindPuck();
+  }, [activeView, puckState, autoFindPuck]);
 
   useEffect(() => {
     if (puckState !== "recording" || recordingStartedAt === null) {
@@ -517,6 +551,9 @@ export function WorkspaceShell({
     setNewRecordingState("connect");
     setPendingTransport("wifi");
     setImportFolderId(fallbackFolderId || "");
+    setPuckState("idle");
+    setPuckStatus("SmartPuck will be detected automatically when it is on the same network.");
+    autoCheckedPuckAddressRef.current = null;
   }
 
   function closeNewRecording() {
@@ -824,7 +861,7 @@ export function WorkspaceShell({
         throw new Error(`Local transcription server returned ${transcribeRes.status}: ${await transcribeRes.text()}`);
       }
 
-      setTranscriptionProgressMessage("Transcription complete! Uploading audio to Convex storage...");
+      setTranscriptionProgressMessage("Transcription complete. Saving transcript...");
       setSyncProgress({
         percent: 60,
         transferredMb: Math.round(file.size / 1000000),
@@ -833,22 +870,7 @@ export function WorkspaceShell({
       });
 
       const transcription = await transcribeRes.json();
-
-      let storageId: string | undefined = undefined;
-      if (onGenerateUploadUrl) {
-        const uploadUrl = await onGenerateUploadUrl();
-        const uploadRes = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": file.type },
-          body: file,
-        });
-        if (uploadRes.ok) {
-          const json = await uploadRes.json();
-          storageId = json.storageId;
-        } else {
-          console.error("Failed to upload audio to Convex storage, continuing without file storage ID.");
-        }
-      }
+      const transcriptText = formatTranscriptionText(transcription);
 
       setTranscriptionProgressMessage("Saving meeting record...");
       setSyncProgress({
@@ -870,9 +892,8 @@ export function WorkspaceShell({
           folderId,
           title: file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " "),
           transport: pendingTransport,
-          audioFileId: storageId,
           audioFileName: file.name,
-          transcriptText: transcription.full_text,
+          transcriptText,
           transcriptJson: JSON.stringify(transcription),
           durationLabel: durationStr,
           transferredMb: Math.round(file.size / 1024 / 1024),
@@ -1234,18 +1255,18 @@ export function WorkspaceShell({
               <nav id="header-tabs" className="hidden items-center gap-8 md:flex">
                 <HeaderTab
                   active={activeTab === "dashboard"}
-                  label="Dashboard"
+                  label="Chat"
                   onClick={() => setActiveTab("dashboard")}
                 />
                 <HeaderTab
                   active={activeTab === "transcripts"}
-                  label="Transcripts"
+                  label="Transcription"
                   onClick={() => setActiveTab("transcripts")}
                 />
                 <HeaderTab
-                  active={activeTab === "analytics"}
-                  label="Analytics"
-                  onClick={() => setActiveTab("analytics")}
+                  active={activeTab === "device"}
+                  label="Device Battery"
+                  onClick={() => setActiveTab("device")}
                 />
               </nav>
             ) : (
@@ -1265,7 +1286,7 @@ export function WorkspaceShell({
               type="button"
               className="chrome-shimmer-border rounded-full bg-white px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-black hover:bg-gray-50 lg:px-6"
             >
-              Export Chrome
+              Export
             </button>
             <div className="flex gap-1">
               <button
@@ -1335,40 +1356,15 @@ export function WorkspaceShell({
                   <RecordingOrb pulsing={puckState === "recording"} />
                   <div className="space-y-2 text-center">
                     <h2 className="font-display text-4xl font-bold tracking-tight text-black">
-                      Connect SmartPuck
+                      New Recording
                     </h2>
                     <p className="font-display text-[11px] font-bold uppercase tracking-[0.25em] text-gray-400">
-                      {pendingTransport === "wifi" ? "Wi-Fi live recorder" : pendingTransport === "usb" ? "USB Drive Ingestion" : "Bluetooth BLE Sync"}
+                      SmartPuck auto-detect + local transcription
                     </p>
                   </div>
 
                   <div className="w-full max-w-xl rounded-[2rem] border border-gray-200 bg-white p-5 shadow-sm">
-                    {/* Transport Tabs */}
-                    <div className="flex border-b border-gray-100 mb-5 justify-between">
-                      {(["wifi", "usb", "bluetooth"] as const).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => {
-                            if (puckState !== "recording") {
-                              setPendingTransport(t);
-                            }
-                          }}
-                          disabled={puckState === "recording"}
-                          className={clsx(
-                            "flex-1 pb-3 text-xs font-bold uppercase tracking-widest text-center border-b-2 transition-all",
-                            pendingTransport === t
-                              ? "border-black text-black"
-                              : "border-transparent text-gray-400 hover:text-black"
-                          )}
-                        >
-                          {t === "wifi" ? "Wi-Fi Live" : t === "usb" ? "USB Drive" : "Bluetooth BLE"}
-                        </button>
-                      ))}
-                    </div>
-
-                    {pendingTransport === "wifi" ? (
-                      <>
+                    <div className="space-y-4">
                         {showPuckAddressEditor ? (
                           <div className="flex flex-col gap-3 sm:flex-row">
                             <label className="min-w-0 flex-1">
@@ -1416,17 +1412,17 @@ export function WorkspaceShell({
                                 disabled={puckState === "recording"}
                                 className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
                               >
-                                Change
+                                Manual
                               </button>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void checkPuckConnection();
+                                  void autoFindPuck();
                                 }}
                                 disabled={puckState === "checking" || puckState === "recording"}
                                 className="h-10 rounded-xl bg-black px-4 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
                               >
-                                Check
+                                Find
                               </button>
                             </div>
                           </div>
@@ -1447,17 +1443,16 @@ export function WorkspaceShell({
                           />
                           <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
                         </div>
-                      </>
-                    ) : (
+
                       <div
                         onClick={triggerAudioImport}
-                        className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-2xl p-8 bg-gray-50 text-center hover:border-gray-400 transition-colors cursor-pointer"
+                        className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-8 text-center transition-colors hover:border-gray-400"
                       >
-                        <Upload className="h-8 w-8 text-gray-400 mb-3" />
-                        <p className="text-sm font-semibold text-gray-700">Click to select audio recording file</p>
-                        <p className="text-xs text-gray-400 mt-1">Supports MP3 and WAV from your device</p>
+                        <Upload className="mb-3 h-8 w-8 text-gray-400" />
+                        <p className="text-sm font-semibold text-gray-700">Import audio from SmartPuck or this computer</p>
+                        <p className="mt-1 text-xs text-gray-400">WAV, MP3, or M4A. The laptop transcribes it locally.</p>
                       </div>
-                    )}
+                    </div>
 
                     <div className="mt-4">
                       <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
@@ -1507,8 +1502,6 @@ export function WorkspaceShell({
                       ) : null}
                     </div>
 
-                    {pendingTransport === "wifi" ? (
-                      <>
                         <div className="mt-5 grid grid-cols-3 gap-3">
                           <SyncStatCard label="Duration" value={formatDuration(recordingSeconds)} />
                           <SyncStatCard label="Captured" value={formatBytes(recordingBytes)} />
@@ -1579,8 +1572,6 @@ export function WorkspaceShell({
                             </a>
                           ) : null}
                         </div>
-                      </>
-                    ) : null}
 
                     <button
                       type="button"
@@ -1588,7 +1579,7 @@ export function WorkspaceShell({
                       className="mt-4 flex w-full items-center justify-center gap-3 rounded-full border-2 border-dashed border-gray-300 py-4 text-sm font-bold uppercase tracking-widest text-gray-500 hover:border-gray-500 hover:text-black"
                     >
                       <Upload className="h-5 w-5" />
-                      Import Existing WAV
+                      Import Audio File
                     </button>
                   </div>
 
@@ -1738,7 +1729,7 @@ function AnimatedTabPanel({
         />
       ) : null}
       {activeTab === "transcripts" ? <TranscriptTab activeMeeting={activeMeeting} /> : null}
-      {activeTab === "analytics" ? <AnalyticsTab activeMeeting={activeMeeting} mode={mode} /> : null}
+      {activeTab === "device" ? <DeviceStatusTab activeMeeting={activeMeeting} mode={mode} /> : null}
     </div>
   );
 }
@@ -2058,17 +2049,13 @@ function DashboardTab({
                 </>
               )}
 
-              <div className="rounded-[2.5rem] border border-gray-100 bg-gray-50 p-8 text-center">
-                <h4 className="text-lg font-bold text-black">Still need support?</h4>
-                <p className="mb-6 mt-2 text-sm text-gray-500">
-                  Our engineering team is available 24/7 to assist with critical workspace issues.
-                </p>
-                <button
-                  type="button"
-                  className="rounded-full bg-black px-6 py-3 text-xs font-bold uppercase tracking-widest text-white hover:bg-gray-800"
-                >
-                  Contact Support
-                </button>
+              <div className="rounded-[2.5rem] border border-gray-100 bg-gray-50 p-8">
+                <h4 className="text-lg font-bold text-black">Meeting Context</h4>
+                <div className="mt-5 space-y-3">
+                  <StatusRow label="Date" value={renderedMeeting.startedAtLabel} />
+                  <StatusRow label="Duration" value={renderedMeeting.durationLabel} />
+                  <StatusRow label="Source" value={sentenceCase(renderedMeeting.sourceTransport)} />
+                </div>
               </div>
             </div>
           ) : null}
@@ -2084,14 +2071,14 @@ function TranscriptTab({ activeMeeting }: { activeMeeting: MeetingRecord | null 
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <section className="glass-morphic-silver chrome-shimmer-border rounded-[2.5rem] p-8">
           <p className="font-display text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">
-            Transcript Surface
+            Transcript
           </p>
           <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-black">
             {activeMeeting?.title ?? "No session selected"}
           </h2>
           <div className="mt-6 max-w-4xl text-base leading-8 text-gray-600 whitespace-pre-wrap font-sans bg-gray-50/50 p-6 rounded-2xl border border-gray-100/50">
             {activeMeeting?.transcriptText || activeMeeting?.transcriptPreview ||
-              "Transcript rendering is still a placeholder, but this panel is where the processed audio text will land."}
+              "Import an audio file to create a local transcription for this folder."}
           </div>
         </section>
 
@@ -2102,7 +2089,7 @@ function TranscriptTab({ activeMeeting }: { activeMeeting: MeetingRecord | null 
             </p>
             <p className="mt-5 text-base leading-8 text-gray-700">
               {activeMeeting?.summary ??
-                "Summary generation is intentionally parked until the transcript pipeline is wired in."}
+                "Import an audio file or open a demo meeting to see the session summary."}
             </p>
           </section>
 
@@ -2125,7 +2112,7 @@ function TranscriptTab({ activeMeeting }: { activeMeeting: MeetingRecord | null 
   );
 }
 
-function AnalyticsTab({
+function DeviceStatusTab({
   activeMeeting,
   mode,
 }: {
@@ -2137,7 +2124,7 @@ function AnalyticsTab({
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <section className="glass-morphic-silver chrome-shimmer-border rounded-[2.5rem] p-8">
           <p className="font-display text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">
-            Sync Analytics
+            Device Status
           </p>
           <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -2145,7 +2132,7 @@ function AnalyticsTab({
                 {activeMeeting?.title ?? "No session selected"}
               </h2>
               <p className="mt-3 max-w-3xl text-base leading-8 text-gray-600">
-                The first milestone is audio-first. These cards track session transfer, optional context attachments, and recorded audio duration.
+                Simple demo health for the SmartPuck path: battery, local sync, and recorded audio.
               </p>
             </div>
             <div className="rounded-full border border-gray-200 bg-white px-5 py-3">
@@ -2161,15 +2148,15 @@ function AnalyticsTab({
 
         <div className="grid gap-6 md:grid-cols-3">
           <AnalyticsCard
-            label="Transfer"
+            label="Battery"
+            value="Unknown"
+          />
+          <AnalyticsCard
+            label="Local Sync"
             value={activeMeeting ? `${activeMeeting.syncStats.transferredMb} MB` : "0 MB"}
           />
           <AnalyticsCard
-            label="Attachments"
-            value={activeMeeting ? `${activeMeeting.syncStats.visuals}` : "0"}
-          />
-          <AnalyticsCard
-            label="Audio"
+            label="Audio Saved"
             value={activeMeeting ? `${activeMeeting.syncStats.audioHours.toFixed(1)} h` : "0.0 h"}
           />
         </div>
@@ -2567,6 +2554,26 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatTranscriptionText(transcription: {
+  full_text?: string;
+  segments?: Array<{ start: number; end: number; text: string }>;
+}) {
+  if (transcription.segments && transcription.segments.length > 0) {
+    return transcription.segments
+      .map((segment) => `[${formatTimestamp(segment.start)}] ${segment.text.trim()}`)
+      .join("\n");
+  }
+
+  return transcription.full_text?.trim() || "No transcript text returned.";
+}
+
+function formatTimestamp(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
 async function fetchWithTimeout(url: string, timeoutMs: number) {
