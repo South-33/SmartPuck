@@ -11,3 +11,6 @@
 // #define SMARTPUCK_WIFI_NETWORKS \
 //   {"Studio WiFi", "wifi-password"}, \
 //   {"Phone Hotspot", "hotspot-password"}
+
+// Optional: lower this if a specific card is unstable, raise only after testing.
+// #define SMARTPUCK_SD_SPI_FREQUENCY 20000000U

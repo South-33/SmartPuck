@@ -35,6 +35,9 @@
 #define SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING (64ULL * 1024ULL * 1024ULL)
 #define SMARTPUCK_MAX_SESSIONS_JSON 40
 #define SMARTPUCK_BUTTON_ARM_DELAY_MS 2000
+#ifndef SMARTPUCK_SD_SPI_FREQUENCY
+  #define SMARTPUCK_SD_SPI_FREQUENCY 20000000U
+#endif
 
 // ============================================================================
 // BOARD SELECTION - Uncomment ONLY the board you are using!
@@ -92,7 +95,7 @@
 #define SAMPLE_RATE         16000 // 16kHz is standard for Speech-to-Text models
 #define BITS_PER_SAMPLE     16    // 16-bit PCM
 #define CHANNEL_COUNT       1     // Mono
-#define I2S_BUFFER_SIZE     512  // Audio buffer size in bytes (128 samples of 32-bit data = 8ms)
+#define I2S_BUFFER_SIZE     1024 // Audio buffer size in bytes (256 samples of 32-bit data = 16ms)
 #define I2S_SHIFT_FACTOR    16    // Shift standard 24-bit MSB inside 32-bit slot down to 16-bit PCM
 
 // ============================================================================
@@ -144,6 +147,7 @@ String activeNetworkInfo = "Local Offline Mode";
 
 // Web Server
 WebServer server(80);
+const char* SMARTPUCK_HTTP_HEADERS[] = { "Range" };
 
 // ============================================================================
 // FUNCTION PROTOTYPES
@@ -154,6 +158,8 @@ String getNextSessionPath();
 bool initI2S();
 void startRecording();
 void stopRecording();
+void repairIncompleteSessions();
+bool repairWavHeader(String wavPath);
 void applyHPFBuffer(int16_t* buffer, size_t count);
 void writeWavHeader(File file, uint32_t totalAudioLen);
 void fillWavHeader(uint8_t* header, uint32_t totalAudioLen);
@@ -179,6 +185,10 @@ bool sessionHasUploadedMarker(String sessionPath);
 bool markSessionUploaded(String sessionPath);
 bool removeSessionRecursive(String sessionPath);
 void cleanupUploadedSessionsIfNeeded();
+bool parseRangeHeader(size_t fileSize, size_t& rangeStart, size_t& rangeEnd);
+void sendRangeHeaders(size_t fileSize, size_t rangeStart, size_t rangeEnd, bool partial);
+bool writeClientBytes(WiFiClient& client, const uint8_t* data, size_t bytesToWrite);
+void streamFileBytes(File& file, size_t bytesToSend);
 String buildStatusJson();
 String buildSessionsJson();
 uint64_t getTotalStorageBytes();
@@ -282,7 +292,7 @@ bool initSDCard() {
   Serial.println("Mounting microSD card...");
 #ifdef BOARD_LOLIN_S3_PRO
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  if (!SD.begin(SD_CS, SPI, 8000000U)) {
+  if (!SD.begin(SD_CS, SPI, SMARTPUCK_SD_SPI_FREQUENCY)) {
     Serial.println("ERROR: LOLIN S3 Pro MicroSD card mount failed!");
     return false;
   }
@@ -334,6 +344,65 @@ String getNextSessionPath() {
   return String(buf);
 }
 
+bool repairWavHeader(String wavPath) {
+  if (!isSafeAudioPath(wavPath) || !SD_DEVICE.exists(wavPath)) {
+    return false;
+  }
+
+  File wav = SD_DEVICE.open(wavPath, FILE_READ);
+  if (!wav) {
+    return false;
+  }
+  size_t fileSize = wav.size();
+  wav.close();
+
+  if (fileSize <= 44) {
+    return false;
+  }
+
+  wav = SD_DEVICE.open(wavPath, FILE_WRITE);
+  if (!wav) {
+    return false;
+  }
+  writeWavHeader(wav, fileSize - 44);
+  wav.flush();
+  wav.close();
+  return true;
+}
+
+void repairIncompleteSessions() {
+  if (!storageAvailable || usePsramFallback || !SD_DEVICE.exists("/sessions")) {
+    return;
+  }
+
+  int repaired = 0;
+  File root = SD_DEVICE.open("/sessions");
+  if (!root) {
+    return;
+  }
+
+  File entry = root.openNextFile();
+  while (entry) {
+    if (entry.isDirectory()) {
+      String sessionPath = entry.name();
+      if (!sessionPath.startsWith("/")) {
+        sessionPath = "/sessions/" + sessionPath;
+      }
+      if (isSafeSessionPath(sessionPath) && repairWavHeader(sessionPath + "/audio_000.wav")) {
+        repaired++;
+      }
+    }
+    entry.close();
+    entry = root.openNextFile();
+  }
+  root.close();
+
+  if (repaired > 0) {
+    Serial.print("[Storage] Repaired WAV headers for sessions: ");
+    Serial.println(repaired);
+  }
+}
+
 // I2S Microphone Initialization
 bool initI2S() {
   i2s_config_t i2s_config = {
@@ -344,7 +413,7 @@ bool initI2S() {
     .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = 8,
-    .dma_buf_len = 128,
+    .dma_buf_len = 256,
     .use_apll = false,
     .tx_desc_auto_clear = false,
     .fixed_mclk = 0
@@ -465,6 +534,7 @@ void stopRecording() {
   if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
     if (audioFile) {
       writeWavHeader(audioFile, audioSize);
+      audioFile.flush();
       audioFile.close();
       Serial.print("Stopped recording to SD. Total WAV size: ");
       Serial.print(audioSize);
@@ -769,6 +839,87 @@ void cleanupUploadedSessionsIfNeeded() {
     Serial.print("[Storage] Removing uploaded session to free space: ");
     Serial.println(oldestUploaded);
     removeSessionRecursive(oldestUploaded);
+  }
+}
+
+bool parseRangeHeader(size_t fileSize, size_t& rangeStart, size_t& rangeEnd) {
+  rangeStart = 0;
+  rangeEnd = fileSize > 0 ? fileSize - 1 : 0;
+
+  if (!server.hasHeader("Range")) {
+    return false;
+  }
+
+  String range = server.header("Range");
+  range.trim();
+  if (!range.startsWith("bytes=")) {
+    return false;
+  }
+
+  int dashIndex = range.indexOf('-');
+  if (dashIndex < 6) {
+    return false;
+  }
+
+  String startText = range.substring(6, dashIndex);
+  String endText = range.substring(dashIndex + 1);
+  if (startText.length() == 0) {
+    return false;
+  }
+
+  size_t requestedStart = (size_t)strtoull(startText.c_str(), NULL, 10);
+  size_t requestedEnd = endText.length() > 0 ? (size_t)strtoull(endText.c_str(), NULL, 10) : rangeEnd;
+  if (fileSize == 0 || requestedStart >= fileSize || requestedEnd < requestedStart) {
+    return false;
+  }
+
+  rangeStart = requestedStart;
+  rangeEnd = min(requestedEnd, fileSize - 1);
+  return true;
+}
+
+void sendRangeHeaders(size_t fileSize, size_t rangeStart, size_t rangeEnd, bool partial) {
+  size_t contentLength = rangeEnd >= rangeStart ? (rangeEnd - rangeStart + 1) : 0;
+  server.sendHeader("Accept-Ranges", "bytes");
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Content-Length", String(contentLength));
+  if (partial) {
+    server.sendHeader(
+      "Content-Range",
+      "bytes " + String(rangeStart) + "-" + String(rangeEnd) + "/" + String(fileSize)
+    );
+  }
+  server.setContentLength(contentLength);
+}
+
+bool writeClientBytes(WiFiClient& client, const uint8_t* data, size_t bytesToWrite) {
+  size_t offset = 0;
+  while (offset < bytesToWrite && client.connected()) {
+    size_t written = client.write(data + offset, bytesToWrite - offset);
+    if (written == 0) {
+      return false;
+    }
+    offset += written;
+    yield();
+  }
+  return offset == bytesToWrite;
+}
+
+void streamFileBytes(File& file, size_t bytesToSend) {
+  uint8_t buffer[4096];
+  WiFiClient client = server.client();
+  client.setNoDelay(true);
+
+  while (bytesToSend > 0 && client.connected()) {
+    size_t chunkSize = min(bytesToSend, sizeof(buffer));
+    int bytesRead = file.read(buffer, chunkSize);
+    if (bytesRead <= 0) {
+      break;
+    }
+    if (!writeClientBytes(client, buffer, bytesRead)) {
+      return;
+    }
+    bytesToSend -= bytesRead;
   }
 }
 
@@ -1350,14 +1501,38 @@ void handleDownload() {
       server.send(404, "text/plain", "No audio recorded in RAM yet");
       return;
     }
-    
-    server.setContentLength(44 + audioSize);
-    server.send(200, "audio/wav", "");
-    
+
+    size_t fileSize = 44 + audioSize;
+    size_t rangeStart = 0;
+    size_t rangeEnd = fileSize - 1;
+    bool partial = parseRangeHeader(fileSize, rangeStart, rangeEnd);
+    if (server.hasHeader("Range") && !partial) {
+      server.sendHeader("Content-Range", "bytes */" + String(fileSize));
+      server.send(416, "text/plain", "Requested Range Not Satisfiable");
+      return;
+    }
+
+    sendRangeHeaders(fileSize, rangeStart, rangeEnd, partial);
+    server.send(partial ? 206 : 200, "audio/wav", "");
+
     uint8_t header[44];
     fillWavHeader(header, audioSize);
-    server.client().write(header, 44);
-    server.client().write(psramBuffer, audioSize);
+    size_t bytesToSend = rangeEnd - rangeStart + 1;
+    WiFiClient client = server.client();
+    client.setNoDelay(true);
+    if (rangeStart < 44) {
+      size_t headerStart = rangeStart;
+      size_t headerBytes = min(bytesToSend, (size_t)(44 - headerStart));
+      if (!writeClientBytes(client, header + headerStart, headerBytes)) {
+        return;
+      }
+      bytesToSend -= headerBytes;
+      rangeStart += headerBytes;
+    }
+    if (bytesToSend > 0 && client.connected()) {
+      size_t psramOffset = rangeStart - 44;
+      writeClientBytes(client, psramBuffer + psramOffset, bytesToSend);
+    }
     return;
   }
 
@@ -1380,7 +1555,22 @@ void handleDownload() {
       return;
     }
 
-    server.streamFile(file, "audio/wav");
+    size_t fileSize = file.size();
+    size_t rangeStart = 0;
+    size_t rangeEnd = fileSize > 0 ? fileSize - 1 : 0;
+    bool partial = parseRangeHeader(fileSize, rangeStart, rangeEnd);
+    if (server.hasHeader("Range") && !partial) {
+      server.sendHeader("Content-Range", "bytes */" + String(fileSize));
+      server.send(416, "text/plain", "Requested Range Not Satisfiable");
+      file.close();
+      xSemaphoreGive(fileMutex);
+      return;
+    }
+
+    sendRangeHeaders(fileSize, rangeStart, rangeEnd, partial);
+    server.send(partial ? 206 : 200, "audio/wav", "");
+    file.seek(rangeStart);
+    streamFileBytes(file, rangeEnd - rangeStart + 1);
     file.close();
     xSemaphoreGive(fileMutex);
   } else {
@@ -1719,6 +1909,8 @@ void setup() {
     if (!usePsramFallback) {
       Serial.println("WARNING: No writable recording storage. Live audio streaming and status API will still run.");
     }
+  } else {
+    repairIncompleteSessions();
   }
 
   // Install I2S Microphone
@@ -1759,6 +1951,7 @@ void setup() {
   initWiFi();
 
   // Initialize Web Portal Endpoints
+  server.collectHeaders(SMARTPUCK_HTTP_HEADERS, 1);
   server.on("/", handleRoot);
   server.on("/status", HTTP_OPTIONS, handleCorsOptions);
   server.on("/sessions", HTTP_OPTIONS, handleCorsOptions);

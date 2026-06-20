@@ -1052,15 +1052,19 @@ export function WorkspaceShell({
     });
 
     try {
-      const response = await fetchWithTimeout(
-        `${baseUrl}/download?path=${encodeURIComponent(session.audioPath)}`,
-        20000,
-      );
-      if (!response.ok) {
-        throw new Error(`SmartPuck could not download this recording (${response.status}).`);
-      }
-
-      const blob = await response.blob();
+      const blob = await downloadPuckSessionBlob({
+        baseUrl,
+        session,
+        onProgress: (downloadedBytes, totalBytes) => {
+          setTranscriptionProgressMessage("Downloading recording from SmartPuck...");
+          setSyncProgress({
+            percent: Math.max(8, Math.min(45, Math.round((downloadedBytes / Math.max(totalBytes, 1)) * 45))),
+            transferredMb: Math.max(1, Math.round(downloadedBytes / 1024 / 1024)),
+            attachments: 0,
+            audioHours: Number((session.durationSeconds / 3600).toFixed(2)),
+          });
+        },
+      });
       const fileName = `${session.name || "smartpuck-session"}.wav`;
       const file = new File([blob], fileName, { type: "audio/wav" });
       await handleAudioFileSelect(file, { baseUrl, sessionPath: session.sessionPath });
@@ -2813,6 +2817,76 @@ async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestIn
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function downloadPuckSessionBlob({
+  baseUrl,
+  session,
+  onProgress,
+}: {
+  baseUrl: string;
+  session: SmartPuckSession;
+  onProgress: (downloadedBytes: number, totalBytes: number) => void;
+}) {
+  const chunks: Uint8Array[] = [];
+  const expectedBytes = Math.max(session.sizeBytes, 0);
+  let downloadedBytes = 0;
+  let attempts = 0;
+  const maxAttempts = 5;
+  const downloadUrl = `${baseUrl}/download?path=${encodeURIComponent(session.audioPath)}`;
+
+  while (downloadedBytes < expectedBytes || (expectedBytes === 0 && attempts === 0)) {
+    attempts += 1;
+    if (attempts > maxAttempts) {
+      throw new Error("SmartPuck transfer kept dropping. Move closer to the device and try again.");
+    }
+
+    try {
+      const response = await fetchWithTimeout(downloadUrl, 120000, {
+        headers: downloadedBytes > 0 ? { Range: `bytes=${downloadedBytes}-` } : undefined,
+      });
+
+      if (downloadedBytes > 0 && response.status !== 206) {
+        throw new Error("SmartPuck did not resume the transfer.");
+      }
+      if (!response.ok && response.status !== 206) {
+        throw new Error(`SmartPuck could not download this recording (${response.status}).`);
+      }
+
+      if (!response.body) {
+        const fallback = new Uint8Array(await response.arrayBuffer());
+        chunks.push(fallback);
+        downloadedBytes += fallback.byteLength;
+        onProgress(downloadedBytes, expectedBytes || downloadedBytes);
+        break;
+      }
+
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        chunks.push(value);
+        downloadedBytes += value.byteLength;
+        onProgress(downloadedBytes, expectedBytes || downloadedBytes);
+      }
+    } catch (error) {
+      if (attempts >= maxAttempts) {
+        throw error;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 700 * attempts));
+    }
+  }
+
+  const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const merged = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new Blob([merged], { type: "audio/wav" });
 }
 
 function buildWavBlob(chunks: Uint8Array[], pcmBytes: number) {
