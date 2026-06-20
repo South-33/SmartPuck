@@ -45,6 +45,8 @@ describe("Demo workspace UI", () => {
     await user.click(screen.getByRole("button", { name: "New Recording" }));
     expect(await screen.findByText(/SmartPuck auto-detect/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Start Listening/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^USB$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Bluetooth$/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Import Audio File/i }));
 
