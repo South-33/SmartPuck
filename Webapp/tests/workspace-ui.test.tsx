@@ -130,6 +130,44 @@ describe("Demo workspace UI", () => {
     expect(await screen.findByText(/SmartPuck ran into an error: Gemini API key missing/i)).toBeInTheDocument();
   });
 
+  test("shows a sending state while the chat request is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveSend: () => void = () => undefined;
+    const sendPromise = new Promise<void>((resolve) => {
+      resolveSend = resolve;
+    });
+
+    render(
+      <WorkspaceShell
+        dashboard={demoWorkspace}
+        mode="live"
+        isMutating={false}
+        fallbackFolderId={demoWorkspace.folders[0]?.id ?? null}
+        onCreateFolder={() => undefined}
+        onDeleteFolder={() => undefined}
+        onCreateChat={() => undefined}
+        onConnectDevice={() => undefined}
+        onSelectMeeting={() => undefined}
+        onDeleteMeeting={() => undefined}
+        onSendMessage={() => sendPromise}
+      />,
+    );
+
+    const prompt = screen.getByPlaceholderText(/Ask SmartPuck about/i);
+    await user.type(prompt, "what happened in the meeting");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("button", { name: "Sending" })).toBeDisabled();
+    expect(screen.getByText("SmartPuck is thinking")).toBeInTheDocument();
+    expect(screen.getByText("Working")).toBeInTheDocument();
+
+    resolveSend();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+    });
+  });
+
   test("restores the old secondary pages from the sidebar", async () => {
     const user = userEvent.setup();
 

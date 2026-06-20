@@ -52,6 +52,15 @@ import type {
   WorkspaceShellMode,
 } from "@/lib/workspace-types";
 import {
+  buildOptimisticChatTurn,
+  deriveComposerSendState,
+  deriveMeetingStatusPill,
+  mergeServerAndOptimisticMessages,
+  removeOptimisticChatTurn,
+  settleOptimisticChatTurnWithError,
+  type MeetingStatusPill,
+} from "@/lib/smartpuck-chat";
+import {
   downloadPuckSessionBlob,
   fetchWithTimeout,
   formatTranscriptionText,
@@ -196,7 +205,6 @@ const MOTION_EXIT_MS = 120;
 const DRAFT_STORAGE_PREFIX = "smartpuck:chat-draft:";
 const REMOVED_STARTER_MESSAGE =
   "New chat saved. Ask me about SmartPuck's offline recorder, hardware prototype, transcript pipeline, image context, structured notes, or future roadmap.";
-const ASSISTANT_THINKING_BODY = "Checking the meeting context...";
 export function WorkspaceShell({
   dashboard,
   liveMessages,
@@ -224,6 +232,7 @@ export function WorkspaceShell({
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [pendingMessagesByMeeting, setPendingMessagesByMeeting] = useState<Record<string, MeetingMessage[]>>({});
+  const [sendingMeetingId, setSendingMeetingId] = useState<string | null>(null);
   const [showFolderComposer, setShowFolderComposer] = useState(false);
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
@@ -1111,33 +1120,17 @@ export function WorkspaceShell({
     const attachments = draftAttachments;
     setDraftAttachments([]);
     const privateAttachmentContext = buildAttachmentContext(attachments);
-    const nowIso = new Date().toISOString();
-    const optimisticTurnId = `optimistic-${activeMeeting.id}-${Date.now()}`;
-    const optimisticMessage: MeetingMessage = {
-      id: `${optimisticTurnId}-user`,
-      role: "user",
+    const optimisticTurn = buildOptimisticChatTurn({
+      meetingId: activeMeeting.id,
       body: trimmed || "Attached context",
-      status: "complete",
-      createdAt: nowIso,
       attachments,
-    };
-    const optimisticAssistantMessage: MeetingMessage = {
-      id: `${optimisticTurnId}-assistant`,
-      role: "assistant",
-      body: "",
-      status: "streaming",
-      createdAt: nowIso,
-      reasoning: ASSISTANT_THINKING_BODY,
-    };
+    });
     setPendingMessagesByMeeting((current) => ({
       ...current,
-      [activeMeeting.id]: [
-        ...(current[activeMeeting.id] ?? []),
-        optimisticMessage,
-        optimisticAssistantMessage,
-      ],
+      [activeMeeting.id]: [...(current[activeMeeting.id] ?? []), ...optimisticTurn.messages],
     }));
     isSendingRef.current = true;
+    setSendingMeetingId(activeMeeting.id);
     try {
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${activeMeeting.id}`);
@@ -1145,29 +1138,20 @@ export function WorkspaceShell({
       await onSendMessage(activeMeeting.id, trimmed || "Attached context", privateAttachmentContext);
       setPendingMessagesByMeeting((current) => ({
         ...current,
-        [activeMeeting.id]: (current[activeMeeting.id] ?? []).filter(
-          (message) =>
-            message.id !== optimisticMessage.id && message.id !== optimisticAssistantMessage.id,
-        ),
+        [activeMeeting.id]: removeOptimisticChatTurn(current[activeMeeting.id] ?? [], optimisticTurn),
       }));
     } catch (error) {
-      const errorMessage =
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : "The SmartPuck chat API did not return a response.";
       setPendingMessagesByMeeting((current) => ({
         ...current,
-        [activeMeeting.id]: (current[activeMeeting.id] ?? [])
-          .filter((message) => message.id !== optimisticAssistantMessage.id)
-          .concat({
-            ...optimisticAssistantMessage,
-            body: `SmartPuck ran into an error: ${errorMessage}`,
-            status: "error",
-            reasoning: undefined,
-          }),
+        [activeMeeting.id]: settleOptimisticChatTurnWithError({
+          messages: current[activeMeeting.id] ?? [],
+          turn: optimisticTurn,
+          error,
+        }),
       }));
     } finally {
       isSendingRef.current = false;
+      setSendingMeetingId(null);
     }
   }
 
@@ -1330,6 +1314,10 @@ export function WorkspaceShell({
                     {folder.meetings.map((meeting) => {
                       const isActive =
                         dashboard.activeMeetingId === meeting.id && activeView === "recent-sessions";
+                      const statusPill = deriveMeetingStatusPill(
+                        meeting,
+                        pendingMessagesByMeeting[meeting.id] ?? [],
+                      );
 
                       return (
                         <div
@@ -1353,7 +1341,11 @@ export function WorkspaceShell({
                               )}
                             />
                             <span className="flex-1 truncate text-[11px] font-medium">{meeting.title}</span>
-                            <span className="font-display text-[9px] text-gray-300">{meeting.durationLabel}</span>
+                            {statusPill ? (
+                              <MeetingStatusBadge pill={statusPill} />
+                            ) : (
+                              <span className="font-display text-[9px] text-gray-300">{meeting.durationLabel}</span>
+                            )}
                           </button>
                           <button
                             type="button"
@@ -1490,6 +1482,7 @@ export function WorkspaceShell({
                 onRemoveDraftAttachment={removeDraftAttachment}
                 onSubmitMessage={submitMessage}
                 isMutating={isMutating}
+                isSending={sendingMeetingId === activeMeetingId}
                 fileInputRef={fileInputRef}
                 mode={mode}
               />
@@ -1917,6 +1910,7 @@ function AnimatedTabPanel({
   onRemoveDraftAttachment,
   onSubmitMessage,
   isMutating,
+  isSending,
   fileInputRef,
   mode,
 }: {
@@ -1934,6 +1928,7 @@ function AnimatedTabPanel({
   onRemoveDraftAttachment: (id: string) => void;
   onSubmitMessage: (event: FormEvent<HTMLFormElement>) => void;
   isMutating: boolean;
+  isSending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
   mode: WorkspaceShellMode;
 }) {
@@ -1955,6 +1950,7 @@ function AnimatedTabPanel({
           onRemoveDraftAttachment={onRemoveDraftAttachment}
           onSubmitMessage={onSubmitMessage}
           isMutating={isMutating}
+          isSending={isSending}
           fileInputRef={fileInputRef}
         />
       ) : null}
@@ -1978,6 +1974,7 @@ function DashboardTab({
   onRemoveDraftAttachment,
   onSubmitMessage,
   isMutating,
+  isSending,
   fileInputRef,
 }: {
   activeMeeting: MeetingRecord | null;
@@ -1991,6 +1988,7 @@ function DashboardTab({
   onRemoveDraftAttachment: (id: string) => void;
   onSubmitMessage: (event: FormEvent<HTMLFormElement>) => void;
   isMutating: boolean;
+  isSending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
 }) {
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -2006,6 +2004,12 @@ function DashboardTab({
     [renderedMeeting?.messages, pendingMessages],
   );
   const messageCount = messages.length;
+  const composerSendState = deriveComposerSendState({
+    draftMessage,
+    attachmentCount: draftAttachments.length,
+    hasActiveMeeting: Boolean(activeMeeting),
+    isSending,
+  });
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView?.({ block: "end" });
@@ -2173,7 +2177,7 @@ function DashboardTab({
                 <button
                   type="button"
                   onClick={onAttachClick}
-                  disabled={!activeMeeting || isMutating}
+                  disabled={!activeMeeting || isMutating || isSending}
                   className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl text-gray-400 hover:bg-gray-50 hover:text-black disabled:opacity-40"
                   aria-label="Attach files"
                   title="Attach files"
@@ -2201,17 +2205,21 @@ function DashboardTab({
                 />
                 <button
                   type="submit"
-                  disabled={(!draftMessage.trim() && draftAttachments.length === 0) || !activeMeeting || isMutating}
+                  disabled={composerSendState.disabled || isMutating}
                   className="liquid-mercury-soft flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl border border-white/40 text-black shadow-lg disabled:opacity-50"
-                  aria-label="Send"
+                  aria-label={composerSendState.ariaLabel}
                 >
-                  <ArrowUp className="relative z-10 h-4 w-4" />
+                  {composerSendState.isSending ? (
+                    <LoaderCircle className="relative z-10 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUp className="relative z-10 h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
             <div className="mt-3 flex items-center justify-between px-2 text-[10px] font-bold uppercase tracking-[0.22em] text-gray-300">
               <span>{draftAttachments.length > 0 ? `${draftAttachments.length} attached` : "Saved chat"}</span>
-              <span>{isMutating ? "Streaming response" : "Enter to send - Shift+Enter for line break"}</span>
+              <span>{isMutating ? "Streaming response" : composerSendState.footerCopy}</span>
             </div>
           </form>
         </div>
@@ -2849,32 +2857,30 @@ function isRemovedStarterMessage(message: MeetingMessage) {
   return message.role === "assistant" && message.body.trim() === REMOVED_STARTER_MESSAGE;
 }
 
-function mergeServerAndOptimisticMessages(
-  serverMessages: MeetingMessage[],
-  optimisticMessages: MeetingMessage[],
-) {
-  const visibleMessages = [...serverMessages];
-  const serverUserBodies = new Set(
-    serverMessages
-      .filter((message) => message.role === "user")
-      .map((message) => normalizeMessageBody(message.body)),
+function MeetingStatusBadge({ pill }: { pill: MeetingStatusPill }) {
+  return (
+    <span
+      className={clsx(
+        "ml-1 inline-flex flex-shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em]",
+        meetingStatusToneClass(pill.tone),
+      )}
+    >
+      <span className={clsx("h-1.5 w-1.5 rounded-full", pill.pulse ? "animate-pulse" : "")} />
+      {pill.label}
+    </span>
   );
-
-  for (const optimisticMessage of optimisticMessages) {
-    const isSavedOnServer =
-      optimisticMessage.role === "user" &&
-      serverUserBodies.has(normalizeMessageBody(optimisticMessage.body));
-
-    if (!isSavedOnServer) {
-      visibleMessages.push(optimisticMessage);
-    }
-  }
-
-  return visibleMessages;
 }
 
-function normalizeMessageBody(body: string) {
-  return body.trim().replace(/\s+/g, " ");
+function meetingStatusToneClass(tone: MeetingStatusPill["tone"]) {
+  switch (tone) {
+    case "red":
+      return "[&>span]:bg-red-500 bg-red-50 text-red-600";
+    case "amber":
+      return "[&>span]:bg-amber-500 bg-amber-50 text-amber-700";
+    case "sky":
+    default:
+      return "[&>span]:bg-sky-500 bg-sky-50 text-sky-700";
+  }
 }
 
 function useAnimatedValue<T>(value: T, exitMs: number, key: string = String(value)) {
