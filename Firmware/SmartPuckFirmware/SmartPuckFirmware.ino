@@ -32,6 +32,9 @@
 #endif
 
 #define SMARTPUCK_FIRMWARE_VERSION "0.1.0"
+#define SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING (64ULL * 1024ULL * 1024ULL)
+#define SMARTPUCK_MAX_SESSIONS_JSON 40
+#define SMARTPUCK_BUTTON_ARM_DELAY_MS 2000
 
 // ============================================================================
 // BOARD SELECTION - Uncomment ONLY the board you are using!
@@ -100,12 +103,17 @@ struct WifiCredential {
   const char* password;
 };
 
+#ifdef SMARTPUCK_WIFI_NETWORKS
 WifiCredential knownNetworks[] = {
-  {"NUM2 STUDENT", "student@2024"},
-  {"STUDENT", "student@2024"},
-  {"Rith", "29051995"}
+  SMARTPUCK_WIFI_NETWORKS
 };
 const int knownNetworksCount = sizeof(knownNetworks) / sizeof(knownNetworks[0]);
+#else
+WifiCredential knownNetworks[] = {
+  {nullptr, nullptr}
+};
+const int knownNetworksCount = 0;
+#endif
 
 // ============================================================================
 // GLOBAL SYSTEM VARIABLES
@@ -116,6 +124,8 @@ volatile bool isStreaming = false;
 volatile uint32_t audioSize = 0;
 String currentSessionDir = "";
 String currentWavPath = "";
+bool storageAvailable = false;
+String lastRecordingError = "";
 
 // PSRAM Fallback State
 bool usePsramFallback = false;
@@ -151,6 +161,9 @@ void startAP();
 void initWiFi();
 void handleRoot();
 void handleDownload();
+void handleSessions();
+void handleSessionUploaded();
+void handleDeleteSession();
 void handleStream();
 void handleStartRecord();
 void handleStopRecord();
@@ -159,6 +172,19 @@ void sendCorsHeaders();
 void handleCorsOptions();
 void sendConvexHeartbeat(const char* reason);
 String jsonEscape(String value);
+String urlDecode(String value);
+bool isSafeSessionPath(String path);
+bool isSafeAudioPath(String path);
+bool sessionHasUploadedMarker(String sessionPath);
+bool markSessionUploaded(String sessionPath);
+bool removeSessionRecursive(String sessionPath);
+void cleanupUploadedSessionsIfNeeded();
+String buildStatusJson();
+String buildSessionsJson();
+uint64_t getTotalStorageBytes();
+uint64_t getUsedStorageBytes();
+uint64_t getFreeStorageBytes();
+String formatStorageSummary();
 void checkButton();
 void updateLED();
 void audioTask(void* pvParameters);
@@ -348,11 +374,30 @@ bool initI2S() {
 // Start Recording
 void startRecording() {
   if (isRecording) return;
+  lastRecordingError = "";
 
   if (usePsramFallback) {
+    if (psramBuffer == NULL) {
+      lastRecordingError = "PSRAM fallback is not available";
+      Serial.println("ERROR: PSRAM fallback is not available.");
+      return;
+    }
     audioSize = 0;
     isRecording = true;
     Serial.println("Started recording to PSRAM buffer (Fallback Mode)...");
+    return;
+  }
+
+  if (!storageAvailable) {
+    lastRecordingError = "No writable storage. Insert a working microSD card or use live stream.";
+    Serial.println("ERROR: No writable storage available.");
+    return;
+  }
+
+  cleanupUploadedSessionsIfNeeded();
+  if (getFreeStorageBytes() < SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING) {
+    lastRecordingError = "microSD is low on space and no uploaded sessions can be removed.";
+    Serial.println("ERROR: microSD low on space and no uploaded sessions can be removed.");
     return;
   }
 
@@ -362,6 +407,7 @@ void startRecording() {
     Serial.println(currentSessionDir);
     
     if (!SD_DEVICE.mkdir(currentSessionDir)) {
+      lastRecordingError = "Failed to create session directory.";
       Serial.println("ERROR: Failed to create session directory!");
       xSemaphoreGive(fileMutex);
       return;
@@ -381,6 +427,7 @@ void startRecording() {
     currentWavPath = currentSessionDir + "/audio_000.wav";
     audioFile = SD_DEVICE.open(currentWavPath, FILE_WRITE);
     if (!audioFile) {
+      lastRecordingError = "Failed to open audio file for writing.";
       Serial.println("ERROR: Failed to open audio file for writing!");
       xSemaphoreGive(fileMutex);
       return;
@@ -396,6 +443,8 @@ void startRecording() {
     Serial.println(currentWavPath);
 
     xSemaphoreGive(fileMutex);
+  } else {
+    lastRecordingError = "Storage is busy. Try again.";
   }
 }
 
@@ -578,6 +627,151 @@ String jsonEscape(String value) {
   return value;
 }
 
+String urlDecode(String value) {
+  value.replace("+", " ");
+  String decoded = "";
+  char temp[] = "0x00";
+  unsigned int len = value.length();
+  for (unsigned int i = 0; i < len; i++) {
+    if (value[i] == '%' && i + 2 < len) {
+      temp[2] = value[i + 1];
+      temp[3] = value[i + 2];
+      decoded += char(strtol(temp, NULL, 16));
+      i += 2;
+    } else {
+      decoded += value[i];
+    }
+  }
+  return decoded;
+}
+
+bool isSafeSessionPath(String path) {
+  path = urlDecode(path);
+  if (!path.startsWith("/sessions/session_")) return false;
+  if (path.indexOf("..") >= 0) return false;
+  if (path.indexOf("//") >= 0) return false;
+  return path.indexOf('/', String("/sessions/session_").length()) < 0;
+}
+
+bool isSafeAudioPath(String path) {
+  path = urlDecode(path);
+  if (path == "psram") return usePsramFallback;
+  if (!path.startsWith("/sessions/session_")) return false;
+  if (!path.endsWith("/audio_000.wav")) return false;
+  if (path.indexOf("..") >= 0) return false;
+  if (path.indexOf("//") >= 0) return false;
+  return true;
+}
+
+bool sessionHasUploadedMarker(String sessionPath) {
+  if (!storageAvailable || usePsramFallback || !isSafeSessionPath(sessionPath)) return false;
+  return SD_DEVICE.exists(sessionPath + "/uploaded.marker");
+}
+
+bool markSessionUploaded(String sessionPath) {
+  if (!storageAvailable || usePsramFallback || !isSafeSessionPath(sessionPath)) return false;
+  File marker = SD_DEVICE.open(sessionPath + "/uploaded.marker", FILE_WRITE);
+  if (!marker) return false;
+  marker.println(String(millis()));
+  marker.close();
+  return true;
+}
+
+bool removeSessionRecursive(String sessionPath) {
+  if (!storageAvailable || usePsramFallback || !isSafeSessionPath(sessionPath)) return false;
+
+  File dir = SD_DEVICE.open(sessionPath);
+  if (!dir || !dir.isDirectory()) {
+    if (dir) dir.close();
+    return false;
+  }
+
+  File entry = dir.openNextFile();
+  while (entry) {
+    String childPath = entry.name();
+    if (!childPath.startsWith("/")) {
+      childPath = sessionPath + "/" + childPath;
+    }
+    entry.close();
+    SD_DEVICE.remove(childPath);
+    entry = dir.openNextFile();
+  }
+  dir.close();
+  return SD_DEVICE.rmdir(sessionPath);
+}
+
+uint64_t getTotalStorageBytes() {
+  if (!storageAvailable || usePsramFallback) return 0;
+#ifdef BOARD_LOLIN_S3_PRO
+  return SD_DEVICE.totalBytes();
+#else
+  return SD_DEVICE.totalBytes();
+#endif
+}
+
+uint64_t getUsedStorageBytes() {
+  if (!storageAvailable || usePsramFallback) return 0;
+#ifdef BOARD_LOLIN_S3_PRO
+  return SD_DEVICE.usedBytes();
+#else
+  return SD_DEVICE.usedBytes();
+#endif
+}
+
+uint64_t getFreeStorageBytes() {
+  uint64_t total = getTotalStorageBytes();
+  uint64_t used = getUsedStorageBytes();
+  if (total <= used) return 0;
+  return total - used;
+}
+
+String formatStorageSummary() {
+  if (usePsramFallback) {
+    return "PSRAM fallback";
+  }
+  if (!storageAvailable) {
+    return "No writable storage";
+  }
+
+  uint64_t totalMb = getTotalStorageBytes() / 1024ULL / 1024ULL;
+  uint64_t freeMb = getFreeStorageBytes() / 1024ULL / 1024ULL;
+  return "microSD " + String((unsigned long)freeMb) + "MB free / " + String((unsigned long)totalMb) + "MB";
+}
+
+void cleanupUploadedSessionsIfNeeded() {
+  if (!storageAvailable || usePsramFallback) return;
+  if (getFreeStorageBytes() >= SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING) return;
+
+  for (int pass = 0; pass < 8 && getFreeStorageBytes() < SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING; pass++) {
+    File root = SD_DEVICE.open("/sessions");
+    if (!root) return;
+
+    String oldestUploaded = "";
+    File entry = root.openNextFile();
+    while (entry) {
+      if (entry.isDirectory()) {
+        String path = entry.name();
+        if (!path.startsWith("/")) {
+          path = "/sessions/" + path;
+        }
+        if (sessionHasUploadedMarker(path) && (oldestUploaded == "" || path < oldestUploaded)) {
+          oldestUploaded = path;
+        }
+      }
+      entry.close();
+      entry = root.openNextFile();
+    }
+    root.close();
+
+    if (oldestUploaded == "") {
+      return;
+    }
+    Serial.print("[Storage] Removing uploaded session to free space: ");
+    Serial.println(oldestUploaded);
+    removeSessionRecursive(oldestUploaded);
+  }
+}
+
 void sendConvexHeartbeat(const char* reason) {
   if (apModeActive || WiFi.status() != WL_CONNECTED) {
     Serial.println("[Convex] Skipping heartbeat; station Wi-Fi is not connected.");
@@ -611,6 +805,11 @@ void sendConvexHeartbeat(const char* reason) {
   body += "\"network\":\"" + jsonEscape(WiFi.SSID()) + "\",";
   body += "\"mode\":\"station\",";
   body += "\"firmwareVersion\":\"" SMARTPUCK_FIRMWARE_VERSION "\",";
+  body += "\"storage\":\"" + jsonEscape(formatStorageSummary()) + "\",";
+  body += "\"storageReady\":" + String((storageAvailable || usePsramFallback) ? "true" : "false") + ",";
+  body += "\"storageMode\":\"" + String(usePsramFallback ? "psram" : storageAvailable ? "microsd" : "none") + "\",";
+  body += "\"storageFreeBytes\":" + String((unsigned long long)getFreeStorageBytes()) + ",";
+  body += "\"storageTotalBytes\":" + String((unsigned long long)getTotalStorageBytes()) + ",";
   body += "\"lastStatus\":\"" + jsonEscape(status) + "\"";
   body += "}";
 
@@ -1140,7 +1339,11 @@ void handleDownload() {
     return;
   }
   
-  String path = server.arg("path");
+  String path = urlDecode(server.arg("path"));
+  if (!isSafeAudioPath(path)) {
+    server.send(400, "text/plain", "Bad Request: Invalid audio path");
+    return;
+  }
 
   if (usePsramFallback && path == "psram") {
     if (audioSize == 0) {
@@ -1155,6 +1358,11 @@ void handleDownload() {
     fillWavHeader(header, audioSize);
     server.client().write(header, 44);
     server.client().write(psramBuffer, audioSize);
+    return;
+  }
+
+  if (!storageAvailable) {
+    server.send(404, "text/plain", "No microSD storage available");
     return;
   }
 
@@ -1240,7 +1448,11 @@ void handleStartRecord() {
 
   if (!isRecording) {
     startRecording();
-    server.send(200, "application/json", "{\"status\":\"started\"}");
+    if (isRecording) {
+      server.send(200, "application/json", "{\"status\":\"started\"}");
+    } else {
+      server.send(409, "application/json", "{\"status\":\"failed\",\"error\":\"" + jsonEscape(lastRecordingError) + "\"}");
+    }
   } else {
     server.send(200, "application/json", "{\"status\":\"already_recording\"}");
   }
@@ -1257,18 +1469,159 @@ void handleStopRecord() {
   }
 }
 
-// JSON Status endpoint
-void handleStatus() {
-  sendCorsHeaders();
-
+String buildStatusJson() {
   String json = "{";
   json += "\"recording\":" + String(isRecording ? "true" : "false") + ",";
   json += "\"streaming\":" + String(isStreaming ? "true" : "false") + ",";
   json += "\"audioSize\":" + String(audioSize) + ",";
-  json += "\"network\":\"" + activeNetworkInfo + "\",";
-  json += "\"storage\":\"" + String(usePsramFallback ? "PSRAM (RAM)" : "microSD Card") + "\"";
+  json += "\"network\":\"" + jsonEscape(activeNetworkInfo) + "\",";
+  json += "\"storage\":\"" + jsonEscape(formatStorageSummary()) + "\",";
+  json += "\"storageReady\":" + String((storageAvailable || usePsramFallback) ? "true" : "false") + ",";
+  json += "\"storageMode\":\"" + String(usePsramFallback ? "psram" : storageAvailable ? "microsd" : "none") + "\",";
+  json += "\"storageFreeBytes\":" + String((unsigned long long)getFreeStorageBytes()) + ",";
+  json += "\"storageTotalBytes\":" + String((unsigned long long)getTotalStorageBytes()) + ",";
+  json += "\"batteryPercent\":null,";
+  json += "\"batteryCharging\":null,";
+  json += "\"firmwareVersion\":\"" SMARTPUCK_FIRMWARE_VERSION "\",";
+  json += "\"lastError\":\"" + jsonEscape(lastRecordingError) + "\"";
   json += "}";
-  server.send(200, "application/json", json);
+  return json;
+}
+
+String buildSessionsJson() {
+  String json = "{\"sessions\":[";
+
+  if (usePsramFallback) {
+    if (audioSize > 0) {
+      json += "{\"sessionPath\":\"psram\",\"audioPath\":\"psram\",\"name\":\"temporary_psram_session\",";
+      json += "\"sizeBytes\":" + String(audioSize + 44) + ",\"durationSeconds\":" + String(audioSize / 32000) + ",";
+      json += "\"uploaded\":false,\"storageMode\":\"psram\"}";
+    }
+    json += "]}";
+    return json;
+  }
+
+  if (!storageAvailable) {
+    json += "]}";
+    return json;
+  }
+
+  String sessionPaths[SMARTPUCK_MAX_SESSIONS_JSON];
+  int count = 0;
+
+  File root = SD_DEVICE.open("/sessions");
+  if (root) {
+    File entry = root.openNextFile();
+    while (entry && count < SMARTPUCK_MAX_SESSIONS_JSON) {
+      if (entry.isDirectory()) {
+        String path = entry.name();
+        if (!path.startsWith("/")) {
+          path = "/sessions/" + path;
+        }
+        if (isSafeSessionPath(path)) {
+          int insertAt = count;
+          while (insertAt > 0 && sessionPaths[insertAt - 1] < path) {
+            sessionPaths[insertAt] = sessionPaths[insertAt - 1];
+            insertAt--;
+          }
+          sessionPaths[insertAt] = path;
+          count++;
+        }
+      }
+      entry.close();
+      entry = root.openNextFile();
+    }
+    root.close();
+  }
+
+  for (int i = 0; i < count; i++) {
+    String sessionPath = sessionPaths[i];
+    String audioPath = sessionPath + "/audio_000.wav";
+    String name = sessionPath.substring(sessionPath.lastIndexOf('/') + 1);
+    size_t sizeBytes = 0;
+    File wav = SD_DEVICE.open(audioPath, FILE_READ);
+    if (wav) {
+      sizeBytes = wav.size();
+      wav.close();
+    }
+
+    if (i > 0) json += ",";
+    json += "{\"sessionPath\":\"" + jsonEscape(sessionPath) + "\",";
+    json += "\"audioPath\":\"" + jsonEscape(audioPath) + "\",";
+    json += "\"name\":\"" + jsonEscape(name) + "\",";
+    json += "\"sizeBytes\":" + String(sizeBytes) + ",";
+    json += "\"durationSeconds\":" + String(sizeBytes > 44 ? (sizeBytes - 44) / 32000 : 0) + ",";
+    json += "\"uploaded\":" + String(sessionHasUploadedMarker(sessionPath) ? "true" : "false") + ",";
+    json += "\"storageMode\":\"microsd\"}";
+  }
+
+  json += "]}";
+  return json;
+}
+
+void handleSessions() {
+  sendCorsHeaders();
+  if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
+    server.send(200, "application/json", buildSessionsJson());
+    xSemaphoreGive(fileMutex);
+  } else {
+    server.send(503, "application/json", "{\"sessions\":[],\"error\":\"Storage busy\"}");
+  }
+}
+
+void handleSessionUploaded() {
+  sendCorsHeaders();
+  if (!server.hasArg("path")) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Missing path\"}");
+    return;
+  }
+
+  String path = urlDecode(server.arg("path"));
+  if (!isSafeSessionPath(path)) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid session path\"}");
+    return;
+  }
+
+  if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
+    bool ok = markSessionUploaded(path);
+    xSemaphoreGive(fileMutex);
+    server.send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Could not mark uploaded\"}");
+  } else {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"Storage busy\"}");
+  }
+}
+
+void handleDeleteSession() {
+  sendCorsHeaders();
+  if (!server.hasArg("path")) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Missing path\"}");
+    return;
+  }
+
+  String path = urlDecode(server.arg("path"));
+  if (!isSafeSessionPath(path)) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid session path\"}");
+    return;
+  }
+
+  if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
+    if (!sessionHasUploadedMarker(path)) {
+      xSemaphoreGive(fileMutex);
+      server.send(409, "application/json", "{\"ok\":false,\"error\":\"Session has not been uploaded\"}");
+      return;
+    }
+    bool ok = removeSessionRecursive(path);
+    xSemaphoreGive(fileMutex);
+    server.send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Could not delete session\"}");
+  } else {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"Storage busy\"}");
+  }
+}
+
+// JSON Status endpoint
+void handleStatus() {
+  sendCorsHeaders();
+  server.send(200, "application/json", buildStatusJson());
 }
 
 void sendCorsHeaders() {
@@ -1286,7 +1639,16 @@ void handleCorsOptions() {
 // Unified button check and debouncing
 void checkButton() {
   static bool lastButtonState = HIGH;
+  static bool buttonArmed = false;
   bool currentButtonState = digitalRead(BUTTON_PIN);
+
+  if (!buttonArmed) {
+    lastButtonState = currentButtonState;
+    if (millis() > SMARTPUCK_BUTTON_ARM_DELAY_MS && currentButtonState == HIGH) {
+      buttonArmed = true;
+    }
+    return;
+  }
 
   if (lastButtonState == HIGH && currentButtonState == LOW) {
     delay(50); // Debounce
@@ -1339,6 +1701,7 @@ void setup() {
 
   // Mount SD Card
   bool sdCardOk = initSDCard();
+  storageAvailable = sdCardOk;
   if (!sdCardOk) {
     Serial.println("MicroSD card not found. Attempting to fall back to PSRAM buffer mode...");
     if (psramFound()) {
@@ -1354,13 +1717,7 @@ void setup() {
     }
 
     if (!usePsramFallback) {
-      // Flash LED Red rapidly to signal fatal storage failure (both SD and PSRAM failed)
-      while (true) {
-        setStatusLED(50, 0, 0);
-        delay(100);
-        setStatusLED(0, 0, 0);
-        delay(100);
-      }
+      Serial.println("WARNING: No writable recording storage. Live audio streaming and status API will still run.");
     }
   }
 
@@ -1404,11 +1761,17 @@ void setup() {
   // Initialize Web Portal Endpoints
   server.on("/", handleRoot);
   server.on("/status", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/sessions", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/session_uploaded", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/session", HTTP_OPTIONS, handleCorsOptions);
   server.on("/stream", HTTP_OPTIONS, handleCorsOptions);
   server.on("/download", HTTP_OPTIONS, handleCorsOptions);
   server.on("/start_record", HTTP_OPTIONS, handleCorsOptions);
   server.on("/stop_record", HTTP_OPTIONS, handleCorsOptions);
   server.on("/download", handleDownload);
+  server.on("/sessions", handleSessions);
+  server.on("/session_uploaded", HTTP_POST, handleSessionUploaded);
+  server.on("/session", HTTP_DELETE, handleDeleteSession);
   server.on("/stream", handleStream);
   server.on("/start_record", handleStartRecord);
   server.on("/stop_record", handleStopRecord);

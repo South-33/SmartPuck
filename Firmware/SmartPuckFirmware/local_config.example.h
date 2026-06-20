@@ -5,3 +5,9 @@
 
 #define CONVEX_SITE_URL "https://your-convex-deployment.convex.site"
 #define SMARTPUCK_DEVICE_TOKEN "replace-with-convex-device-token"
+
+// Optional: add local Wi-Fi networks here, not in the tracked sketch.
+// Example:
+// #define SMARTPUCK_WIFI_NETWORKS \
+//   {"Studio WiFi", "wifi-password"}, \
+//   {"Phone Hotspot", "hotspot-password"}

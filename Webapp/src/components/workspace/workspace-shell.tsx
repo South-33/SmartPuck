@@ -95,6 +95,32 @@ type NewRecordingState = "connect" | "syncing";
 type PuckConnectionState = "idle" | "checking" | "connected" | "listening" | "recording" | "error";
 const DEFAULT_PUCK_ADDRESS = "http://192.168.4.1";
 
+type SmartPuckStatus = {
+  recording?: boolean;
+  streaming?: boolean;
+  audioSize?: number;
+  network?: string;
+  storage?: string;
+  storageReady?: boolean;
+  storageMode?: "microsd" | "psram" | "none" | string;
+  storageFreeBytes?: number;
+  storageTotalBytes?: number;
+  batteryPercent?: number | null;
+  batteryCharging?: boolean | null;
+  firmwareVersion?: string;
+  lastError?: string;
+};
+
+type SmartPuckSession = {
+  sessionPath: string;
+  audioPath: string;
+  name: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  uploaded: boolean;
+  storageMode: "microsd" | "psram" | string;
+};
+
 const ARCHIVE_ITEMS = [
   {
     icon: "folder" as const,
@@ -239,12 +265,17 @@ export function WorkspaceShell({
   const [showPuckAddressEditor, setShowPuckAddressEditor] = useState(false);
   const [puckState, setPuckState] = useState<PuckConnectionState>("idle");
   const [puckStatus, setPuckStatus] = useState("SmartPuck will be detected automatically when it is on the same network.");
+  const [latestPuckStatus, setLatestPuckStatus] = useState<SmartPuckStatus | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingBytes, setRecordingBytes] = useState(0);
   const [recordingDownloadUrl, setRecordingDownloadUrl] = useState<string | null>(null);
   const [recordingFileName, setRecordingFileName] = useState<string | null>(null);
   const [isLinkingRecording, setIsLinkingRecording] = useState(false);
+  const [puckSessions, setPuckSessions] = useState<SmartPuckSession[]>([]);
+  const [isLoadingPuckSessions, setIsLoadingPuckSessions] = useState(false);
+  const [importingSessionPath, setImportingSessionPath] = useState<string | null>(null);
+  const [importedSessionKeys, setImportedSessionKeys] = useState<Set<string>>(() => new Set());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isSendingRef = useRef(false);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -260,6 +291,14 @@ export function WorkspaceShell({
     ? { ...dashboard.activeMeeting, messages: liveMessages ?? dashboard.activeMeeting.messages }
     : null;
   const activeMeetingId = activeMeeting?.id ?? null;
+  const currentPuckBaseUrl = useMemo(() => {
+    const trimmed = puckAddress.trim();
+    if (!trimmed) {
+      return DEFAULT_PUCK_ADDRESS;
+    }
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+    return withProtocol.replace(/\/+$/, "");
+  }, [puckAddress]);
   const activePendingMessages = activeMeetingId ? (pendingMessagesByMeeting[activeMeetingId] ?? []) : [];
   const visibleFolders = useMemo(() => dashboard.folders, [dashboard.folders]);
   const autoCheckedPuckAddressRef = useRef<string | null>(null);
@@ -270,9 +309,53 @@ export function WorkspaceShell({
       throw new Error("Enter the SmartPuck IP address first.");
     }
 
-    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-    return withProtocol.replace(/\/+$/, "");
-  }, [puckAddress]);
+    return currentPuckBaseUrl;
+  }, [currentPuckBaseUrl, puckAddress]);
+
+  const getSessionImportKey = useCallback((baseUrl: string, sessionPath: string) => {
+    return `smartpuck:uploaded-session:${baseUrl.replace(/\/+$/, "")}:${sessionPath}`;
+  }, []);
+
+  const rememberImportedSession = useCallback(
+    (baseUrl: string, sessionPath: string) => {
+      const key = getSessionImportKey(baseUrl, sessionPath);
+      window.localStorage.setItem(key, "1");
+      setImportedSessionKeys((current) => new Set(current).add(key));
+    },
+    [getSessionImportKey],
+  );
+
+  const refreshPuckSessions = useCallback(
+    async (baseUrl: string) => {
+      setIsLoadingPuckSessions(true);
+      try {
+        const response = await fetchWithTimeout(`${baseUrl}/sessions`, 4000);
+        if (!response.ok) {
+          setPuckSessions([]);
+          return;
+        }
+
+        const payload = (await response.json()) as { sessions?: SmartPuckSession[] };
+        const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        setPuckSessions(sessions);
+        setImportedSessionKeys(() => {
+          const next = new Set<string>();
+          sessions.forEach((session) => {
+            const key = getSessionImportKey(baseUrl, session.sessionPath);
+            if (session.uploaded || window.localStorage.getItem(key) === "1") {
+              next.add(key);
+            }
+          });
+          return next;
+        });
+      } catch {
+        setPuckSessions([]);
+      } finally {
+        setIsLoadingPuckSessions(false);
+      }
+    },
+    [getSessionImportKey],
+  );
 
   const checkPuckConnection = useCallback(async () => {
     setPuckState("checking");
@@ -285,25 +368,21 @@ export function WorkspaceShell({
         throw new Error(`SmartPuck returned HTTP ${response.status}.`);
       }
 
-      const status = (await response.json()) as {
-        recording?: boolean;
-        streaming?: boolean;
-        audioSize?: number;
-        network?: string;
-        storage?: string;
-      };
+      const status = (await response.json()) as SmartPuckStatus;
       window.localStorage.setItem("smartpuck:puck-address", baseUrl);
+      setLatestPuckStatus(status);
       setPuckAddress(baseUrl);
       setShowPuckAddressEditor(false);
       setPuckState("connected");
       const statusText = `Connected. ${status.network ?? "SmartPuck Wi-Fi"} - ${status.storage ?? "audio stream ready"}.`;
       setPuckStatus(statusText);
+      await refreshPuckSessions(baseUrl);
     } catch (error) {
       setPuckState("error");
       setShowPuckAddressEditor(true);
       setPuckStatus(error instanceof Error ? error.message : "Could not reach SmartPuck.");
     }
-  }, [normalizedPuckBaseUrl]);
+  }, [normalizedPuckBaseUrl, refreshPuckSessions]);
 
   const autoFindPuck = useCallback(async () => {
     const candidates = [
@@ -324,15 +403,14 @@ export function WorkspaceShell({
           continue;
         }
 
-        const status = (await response.json()) as {
-          network?: string;
-          storage?: string;
-        };
+        const status = (await response.json()) as SmartPuckStatus;
         window.localStorage.setItem("smartpuck:puck-address", candidate);
+        setLatestPuckStatus(status);
         setPuckAddress(candidate);
         setShowPuckAddressEditor(false);
         setPuckState("connected");
         setPuckStatus(`SmartPuck found. ${status.network ?? "Local Wi-Fi"} - ${status.storage ?? "audio ready"}.`);
+        await refreshPuckSessions(candidate);
         return;
       } catch {
         // Try the next known local address.
@@ -341,7 +419,7 @@ export function WorkspaceShell({
 
     setPuckState("error");
     setPuckStatus("No SmartPuck found yet. Import an audio file, or enter the device address manually.");
-  }, [initialPuckAddress]);
+  }, [initialPuckAddress, refreshPuckSessions]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -831,7 +909,10 @@ export function WorkspaceShell({
     }
   }
 
-  async function handleAudioFileSelect(file: File) {
+  async function handleAudioFileSelect(
+    file: File,
+    sourceSession?: { baseUrl: string; sessionPath: string },
+  ) {
     const folderId = importFolderId || fallbackFolderId;
     if (!folderId) {
       alert("Please select or create a folder to save this recording to.");
@@ -905,6 +986,20 @@ export function WorkspaceShell({
         }
       }
 
+      if (sourceSession) {
+        rememberImportedSession(sourceSession.baseUrl, sourceSession.sessionPath);
+        try {
+          await fetchWithTimeout(
+            `${sourceSession.baseUrl}/session_uploaded?path=${encodeURIComponent(sourceSession.sessionPath)}`,
+            3000,
+            { method: "POST" },
+          );
+        } catch {
+          // The local browser memory still prevents accidental double-imports if the marker write fails.
+        }
+        await refreshPuckSessions(sourceSession.baseUrl);
+      }
+
       setSyncProgress({
         percent: 100,
         transferredMb: Math.round(file.size / 1024 / 1024),
@@ -919,14 +1014,61 @@ export function WorkspaceShell({
       setNewRecordingState("connect");
     } finally {
       setIsTranscribing(false);
+      setImportingSessionPath(null);
       setTranscriptionProgressMessage("");
     }
   }
 
   function handleAudioFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = "";
     if (file) {
       void handleAudioFileSelect(file);
+    }
+  }
+
+  async function importPuckSession(session: SmartPuckSession) {
+    const folderId = importFolderId || fallbackFolderId;
+    if (!folderId || isTranscribing || importingSessionPath) {
+      return;
+    }
+
+    const baseUrl = normalizedPuckBaseUrl();
+    const importKey = getSessionImportKey(baseUrl, session.sessionPath);
+    if (session.uploaded || importedSessionKeys.has(importKey)) {
+      setPuckStatus("That SmartPuck session is already imported.");
+      return;
+    }
+
+    setPendingTransport("wifi");
+    setImportingSessionPath(session.sessionPath);
+    setTranscriptionProgressMessage("Downloading recording from SmartPuck...");
+    setSyncProgress({
+      percent: 8,
+      transferredMb: Math.max(1, Math.round(session.sizeBytes / 1024 / 1024)),
+      attachments: 0,
+      audioHours: Number((session.durationSeconds / 3600).toFixed(2)),
+    });
+
+    try {
+      const response = await fetchWithTimeout(
+        `${baseUrl}/download?path=${encodeURIComponent(session.audioPath)}`,
+        20000,
+      );
+      if (!response.ok) {
+        throw new Error(`SmartPuck could not download this recording (${response.status}).`);
+      }
+
+      const blob = await response.blob();
+      const fileName = `${session.name || "smartpuck-session"}.wav`;
+      const file = new File([blob], fileName, { type: "audio/wav" });
+      await handleAudioFileSelect(file, { baseUrl, sessionPath: session.sessionPath });
+    } catch (error) {
+      setImportingSessionPath(null);
+      setIsTranscribing(false);
+      setNewRecordingState("connect");
+      setTranscriptionProgressMessage("");
+      alert(error instanceof Error ? error.message : "Failed to import the SmartPuck recording.");
     }
   }
 
@@ -1320,6 +1462,7 @@ export function WorkspaceShell({
                 activeTab={animatedTab.value}
                 isExiting={animatedTab.isExiting}
                 activeMeeting={activeMeeting}
+                puckStatus={latestPuckStatus}
                 draftMessage={draftMessage}
                 draftAttachments={draftAttachments}
                 pendingMessages={activePendingMessages}
@@ -1452,6 +1595,74 @@ export function WorkspaceShell({
                         <p className="text-sm font-semibold text-gray-700">Import audio from SmartPuck or this computer</p>
                         <p className="mt-1 text-xs text-gray-400">WAV, MP3, or M4A. The laptop transcribes it locally.</p>
                       </div>
+
+                      {puckState === "connected" || puckState === "listening" || puckState === "recording" ? (
+                        <div className="rounded-2xl border border-gray-100 bg-white">
+                          <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                            <div>
+                              <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                                Device recordings
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {isLoadingPuckSessions
+                                  ? "Checking SmartPuck..."
+                                  : puckSessions.length > 0
+                                    ? "Import once, then chat from the saved transcript."
+                                    : "No saved recordings found on the device."}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void refreshPuckSessions(currentPuckBaseUrl);
+                              }}
+                              disabled={isLoadingPuckSessions || isTranscribing}
+                              className="h-9 rounded-xl border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
+                            >
+                              Refresh
+                            </button>
+                          </div>
+                          {puckSessions.length > 0 ? (
+                            <div className="max-h-48 overflow-y-auto p-2">
+                              {puckSessions.map((session) => {
+                                const importKey = getSessionImportKey(currentPuckBaseUrl, session.sessionPath);
+                                const alreadyImported = session.uploaded || importedSessionKeys.has(importKey);
+                                const isImportingThis = importingSessionPath === session.sessionPath;
+                                const canImport = !alreadyImported && !isTranscribing && !importingSessionPath && session.sizeBytes > 44;
+
+                                return (
+                                  <div
+                                    key={session.sessionPath}
+                                    className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-gray-50"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-semibold text-gray-900">{session.name}</p>
+                                      <p className="text-xs text-gray-400">
+                                        {formatDuration(session.durationSeconds)} - {formatBytes(session.sizeBytes)}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void importPuckSession(session);
+                                      }}
+                                      disabled={!canImport}
+                                      className={clsx(
+                                        "h-9 rounded-xl px-3 text-[10px] font-bold uppercase tracking-widest",
+                                        alreadyImported
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300",
+                                      )}
+                                    >
+                                      {isImportingThis ? "Importing" : alreadyImported ? "Imported" : "Import"}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="mt-4">
@@ -1678,6 +1889,7 @@ function AnimatedTabPanel({
   activeTab,
   isExiting,
   activeMeeting,
+  puckStatus,
   draftMessage,
   draftAttachments,
   pendingMessages,
@@ -1694,6 +1906,7 @@ function AnimatedTabPanel({
   activeTab: WorkspaceTab;
   isExiting: boolean;
   activeMeeting: MeetingRecord | null;
+  puckStatus: SmartPuckStatus | null;
   draftMessage: string;
   draftAttachments: ChatAttachment[];
   pendingMessages: MeetingMessage[];
@@ -1729,7 +1942,9 @@ function AnimatedTabPanel({
         />
       ) : null}
       {activeTab === "transcripts" ? <TranscriptTab activeMeeting={activeMeeting} /> : null}
-      {activeTab === "device" ? <DeviceStatusTab activeMeeting={activeMeeting} mode={mode} /> : null}
+      {activeTab === "device" ? (
+        <DeviceStatusTab activeMeeting={activeMeeting} mode={mode} puckStatus={puckStatus} />
+      ) : null}
     </div>
   );
 }
@@ -2115,10 +2330,19 @@ function TranscriptTab({ activeMeeting }: { activeMeeting: MeetingRecord | null 
 function DeviceStatusTab({
   activeMeeting,
   mode,
+  puckStatus,
 }: {
   activeMeeting: MeetingRecord | null;
   mode: WorkspaceShellMode;
+  puckStatus: SmartPuckStatus | null;
 }) {
+  const batteryValue =
+    typeof puckStatus?.batteryPercent === "number"
+      ? `${Math.round(puckStatus.batteryPercent)}%`
+      : "Not wired yet";
+  const storageValue = puckStatus?.storage ?? "Waiting for device";
+  const syncValue = activeMeeting ? `${activeMeeting.syncStats.transferredMb} MB` : "0 MB";
+
   return (
     <div className="scrollbar-subtle h-full w-full overflow-y-auto bg-[#fafbfc] p-8 lg:p-12">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
@@ -2132,7 +2356,7 @@ function DeviceStatusTab({
                 {activeMeeting?.title ?? "No session selected"}
               </h2>
               <p className="mt-3 max-w-3xl text-base leading-8 text-gray-600">
-                Simple demo health for the SmartPuck path: battery, local sync, and recorded audio.
+                Simple device health for the SmartPuck path: storage, battery readiness, and the current folder sync.
               </p>
             </div>
             <div className="rounded-full border border-gray-200 bg-white px-5 py-3">
@@ -2147,17 +2371,11 @@ function DeviceStatusTab({
         </section>
 
         <div className="grid gap-6 md:grid-cols-3">
-          <AnalyticsCard
-            label="Battery"
-            value="Unknown"
-          />
+          <AnalyticsCard label="Battery" value={batteryValue} />
+          <AnalyticsCard label="Storage" value={storageValue} />
           <AnalyticsCard
             label="Local Sync"
-            value={activeMeeting ? `${activeMeeting.syncStats.transferredMb} MB` : "0 MB"}
-          />
-          <AnalyticsCard
-            label="Audio Saved"
-            value={activeMeeting ? `${activeMeeting.syncStats.audioHours.toFixed(1)} h` : "0.0 h"}
+            value={syncValue}
           />
         </div>
       </div>
@@ -2576,12 +2794,13 @@ function formatTimestamp(seconds: number) {
   return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number) {
+async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(url, {
+      ...init,
       cache: "no-store",
       signal: controller.signal,
     });
@@ -2806,7 +3025,7 @@ function AnalyticsCard({
       <p className="font-display text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">
         {label}
       </p>
-      <p className="mt-4 font-display text-4xl font-light text-black">{value}</p>
+      <p className="mt-4 break-words font-display text-3xl font-light leading-tight text-black">{value}</p>
     </div>
   );
 }

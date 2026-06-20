@@ -21,6 +21,13 @@ http.route({
       network?: string;
       mode?: string;
       firmwareVersion?: string;
+      storage?: string;
+      storageReady?: boolean;
+      storageMode?: string;
+      storageFreeBytes?: number;
+      storageTotalBytes?: number;
+      batteryPercent?: number | null;
+      batteryCharging?: boolean | null;
       lastStatus?: string;
     };
 
@@ -38,6 +45,13 @@ http.route({
       network: body.network,
       mode: body.mode,
       firmwareVersion: body.firmwareVersion,
+      storage: body.storage,
+      storageReady: body.storageReady,
+      storageMode: body.storageMode,
+      storageFreeBytes: body.storageFreeBytes,
+      storageTotalBytes: body.storageTotalBytes,
+      batteryPercent: body.batteryPercent ?? undefined,
+      batteryCharging: body.batteryCharging ?? undefined,
       lastStatus: body.lastStatus ?? "SmartPuck online",
     });
 
