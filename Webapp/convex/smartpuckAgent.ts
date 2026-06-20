@@ -22,7 +22,7 @@ const google = createGoogleGenerativeAI({
 });
 
 const listFolderMeetings = createTool({
-  description: "Lists all meetings/transcripts in the current folder (giving title, date, summary, and meetingId) so you can see what files are available to search or read.",
+  description: "Lists all chats and meetings in the current folder, including whether each one has transcript text available. Use this before claiming a latest meeting exists.",
   inputSchema: z.object({}),
   execute: async (ctx) => {
     if (!ctx.threadId) {
@@ -85,7 +85,8 @@ export const smartpuckAgent: Agent<any, any> = new Agent(components.agent, {
     "You are SmartPuck Companion AI. Answer as a concise meeting and product assistant.",
     "Ground every answer in the SmartPuck proposal context and this chat's meeting context.",
     "You have tools to list, search, and read transcripts of meetings in the current folder. Use these tools (like listFolderMeetings, searchMeetingTranscripts, and readMeetingTranscript) when the user asks what was said, what decisions were made in past sessions, or asks for specific quotes.",
-    "If the user asks for transcript details and your search/read tools return empty or show no matching records, say transcript details are not available and answer from the proposal context.",
+    "If the user asks about a meeting but the folder has no records with hasTranscript=true, say there is no recorded meeting transcript in this folder yet and tell them to start New Recording or import audio.",
+    "If transcript search/read tools return empty or show no matching records, say transcript details are not available and keep the next step simple.",
     "Keep answers practical, specific, and under 180 words unless the user asks for detail.",
   ].join("\n"),
   tools: {
@@ -159,6 +160,25 @@ export const streamMeetingReply = action({
       scopeKey: identity.tokenIdentifier,
     });
 
+    if (shouldAnswerNoTranscriptYet(trimmed, context.folderTranscriptCount)) {
+      await saveMessage(ctx, components.agent, {
+        threadId,
+        userId: identity.tokenIdentifier,
+        prompt: trimmed,
+        agentName: "SmartPuck",
+      });
+      await saveMessage(ctx, components.agent, {
+        threadId,
+        userId: identity.tokenIdentifier,
+        message: {
+          role: "assistant",
+          content: buildNoTranscriptReply(context.folderName),
+        },
+        agentName: "SmartPuck",
+      });
+      return null;
+    }
+
     if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
       await saveMessage(ctx, components.agent, {
         threadId,
@@ -193,6 +213,8 @@ export const streamMeetingReply = action({
       "",
       `FOLDER: ${context.folderName}`,
       `CHAT: ${context.meetingTitle}`,
+      `CURRENT CHAT HAS TRANSCRIPT: ${context.hasTranscript ? "yes" : "no"}`,
+      `TRANSCRIPTS IN THIS FOLDER: ${context.folderTranscriptCount}`,
       `SUMMARY: ${context.summary}`,
       `TRANSCRIPT PREVIEW: ${context.transcriptPreview}`,
       `DECISIONS: ${context.decisions.join("; ")}`,
@@ -331,4 +353,27 @@ function buildFallbackReply(
   }
 
   return `For "${context.meetingTitle}", the key SmartPuck idea is an offline puck-sized recorder that captures reliable far-field audio, then uses the web app to turn sessions into transcripts, summaries, decisions, and action items. Ask me about hardware, pipeline, workflow, budget, or roadmap.`;
+}
+
+function shouldAnswerNoTranscriptYet(userMessage: string, folderTranscriptCount: number) {
+  if (folderTranscriptCount > 0) {
+    return false;
+  }
+
+  const lower = userMessage.toLowerCase();
+  return [
+    "meeting",
+    "transcript",
+    "latest",
+    "notes",
+    "summarize",
+    "decision",
+    "action item",
+    "what happened",
+    "check my",
+  ].some((phrase) => lower.includes(phrase));
+}
+
+function buildNoTranscriptReply(folderName: string) {
+  return `I don't have a recorded meeting transcript in "${folderName}" yet. Start a New Recording or import an audio file, then I can summarize it, search it, and answer questions from it here.`;
 }

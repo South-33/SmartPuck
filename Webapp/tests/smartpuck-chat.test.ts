@@ -71,6 +71,32 @@ describe("smartpuck chat lifecycle helpers", () => {
     expect(merged.map((message) => message.id)).toEqual(["server-user", turn.assistantMessageId]);
   });
 
+  test("does not duplicate the assistant loading row after the server starts streaming", () => {
+    const turn = buildOptimisticChatTurn({
+      meetingId: "meeting-1",
+      body: "hello",
+      attachments: [],
+      nowIso: "2026-06-20T00:00:00.000Z",
+      seed: "streaming",
+    });
+
+    const merged = mergeServerAndOptimisticMessages(
+      [
+        { ...turn.messages[0], id: "server-user" },
+        {
+          id: "server-assistant",
+          role: "assistant",
+          body: "",
+          status: "streaming",
+          createdAt: "2026-06-20T00:00:01.000Z",
+        },
+      ],
+      turn.messages,
+    );
+
+    expect(merged.map((message) => message.id)).toEqual(["server-user", "server-assistant"]);
+  });
+
   test("settles a failed turn into an assistant error and status pill", () => {
     const turn = buildOptimisticChatTurn({
       meetingId: "meeting-1",

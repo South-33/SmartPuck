@@ -2702,6 +2702,8 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
     message.status === "streaming" && !message.body.trim() && !message.reasoning?.trim();
   const hasReasoning = Boolean(message.reasoning?.trim());
   const isError = message.status === "error";
+  const isEmptyCompleteAssistant =
+    message.status !== "streaming" && !isError && !message.body.trim() && !hasReasoning;
 
   return (
     <div className="group flex gap-8">
@@ -2740,6 +2742,11 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
           <div className="flex items-center gap-2 pt-2 text-sm font-medium text-gray-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
             Preparing response...
+          </div>
+        ) : isEmptyCompleteAssistant ? (
+          <div className="max-w-3xl rounded-2xl border border-gray-100 bg-gray-50/70 px-5 py-4 text-sm leading-6 text-gray-600">
+            I don&apos;t have a recorded meeting transcript in this chat yet. Start a New Recording or
+            import an audio file, then I can answer from it here.
           </div>
         ) : message.body.trim() ? (
           <Streamdown

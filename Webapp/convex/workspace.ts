@@ -68,6 +68,21 @@ async function ensureMeetingBelongsToScope(
   return meeting;
 }
 
+async function countFolderTranscripts(
+  ctx: QueryCtx,
+  folderId: Id<"folders">,
+  scopeKey: string,
+) {
+  const meetings = await ctx.db
+    .query("meetings")
+    .withIndex("by_scopeKey_and_folderId_and_updatedAt", (q) =>
+      q.eq("scopeKey", scopeKey).eq("folderId", folderId),
+    )
+    .collect();
+
+  return meetings.filter((meeting) => meeting.transcriptText?.trim()).length;
+}
+
 export const getDashboard = query({
   args: {
     selectedMeetingId: v.union(v.id("meetings"), v.null()),
@@ -714,6 +729,8 @@ export const getMeetingContext = internalQuery({
       meetingTitle: meeting.title,
       summary: meeting.summary,
       transcriptPreview: meeting.transcriptPreview,
+      hasTranscript: Boolean(meeting.transcriptText?.trim()),
+      folderTranscriptCount: await countFolderTranscripts(ctx, meeting.folderId, meeting.scopeKey),
       decisions: meeting.decisions,
       actions: meeting.actions,
       recentMessages: messages.map((message) => ({
@@ -781,6 +798,8 @@ export const listMeetingsInFolder = internalQuery({
       startedAtLabel: m.startedAtLabel,
       durationLabel: m.durationLabel,
       summary: m.summary,
+      hasTranscript: Boolean(m.transcriptText?.trim()),
+      transcriptPreview: m.transcriptPreview,
     }));
   },
 });

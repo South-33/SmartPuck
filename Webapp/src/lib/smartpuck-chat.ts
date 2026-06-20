@@ -115,18 +115,36 @@ export function mergeServerAndOptimisticMessages(
   optimisticMessages: MeetingMessage[],
 ) {
   const visibleMessages = [...serverMessages];
-  const serverUserBodies = new Set(
-    serverMessages
-      .filter((message) => message.role === "user")
-      .map((message) => normalizeMessageBody(message.body)),
-  );
+  const savedOptimisticTurnPrefixes = new Set<string>();
 
   for (const optimisticMessage of optimisticMessages) {
+    if (optimisticMessage.role !== "user") {
+      continue;
+    }
+
+    const matchingServerUserIndex = findServerUserIndex(serverMessages, optimisticMessage.body);
+    if (matchingServerUserIndex === -1) {
+      continue;
+    }
+
+    const turnPrefix = getOptimisticTurnPrefix(optimisticMessage.id, "user");
+    if (turnPrefix && hasAssistantAfter(serverMessages, matchingServerUserIndex)) {
+      savedOptimisticTurnPrefixes.add(turnPrefix);
+    }
+  }
+
+  for (const optimisticMessage of optimisticMessages) {
+    const turnPrefix =
+      optimisticMessage.role === "assistant"
+        ? getOptimisticTurnPrefix(optimisticMessage.id, "assistant")
+        : null;
+    const isCoveredByServerAssistant =
+      turnPrefix !== null && savedOptimisticTurnPrefixes.has(turnPrefix);
     const isSavedOnServer =
       optimisticMessage.role === "user" &&
-      serverUserBodies.has(normalizeMessageBody(optimisticMessage.body));
+      findServerUserIndex(serverMessages, optimisticMessage.body) !== -1;
 
-    if (!isSavedOnServer) {
+    if (!isSavedOnServer && !isCoveredByServerAssistant) {
       visibleMessages.push(optimisticMessage);
     }
   }
@@ -159,4 +177,20 @@ export function deriveMeetingStatusPill(
 
 function normalizeMessageBody(body: string) {
   return body.trim().replace(/\s+/g, " ");
+}
+
+function findServerUserIndex(serverMessages: MeetingMessage[], body: string) {
+  const normalizedBody = normalizeMessageBody(body);
+  return serverMessages.findIndex(
+    (message) => message.role === "user" && normalizeMessageBody(message.body) === normalizedBody,
+  );
+}
+
+function hasAssistantAfter(messages: MeetingMessage[], startIndex: number) {
+  return messages.slice(startIndex + 1).some((message) => message.role === "assistant");
+}
+
+function getOptimisticTurnPrefix(id: string, role: "user" | "assistant") {
+  const suffix = `-${role}`;
+  return id.endsWith(suffix) ? id.slice(0, -suffix.length) : null;
 }

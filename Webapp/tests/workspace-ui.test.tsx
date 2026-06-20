@@ -168,6 +168,62 @@ describe("Demo workspace UI", () => {
     });
   });
 
+  test("renders a simple fallback instead of a blank completed assistant message", () => {
+    const activeMeeting = demoWorkspace.activeMeeting!;
+    const dashboardWithEmptyAssistant = {
+      ...demoWorkspace,
+      activeMeeting: {
+        ...activeMeeting,
+        messages: [
+          {
+            id: "empty-assistant",
+            role: "assistant" as const,
+            body: "",
+            status: "complete" as const,
+            createdAt: "2026-06-20T00:00:00.000Z",
+          },
+        ],
+      },
+      folders: demoWorkspace.folders.map((folder) => ({
+        ...folder,
+        meetings: folder.meetings.map((meeting) =>
+          meeting.id === activeMeeting.id
+            ? {
+                ...meeting,
+                messages: [
+                  {
+                    id: "empty-assistant",
+                    role: "assistant" as const,
+                    body: "",
+                    status: "complete" as const,
+                    createdAt: "2026-06-20T00:00:00.000Z",
+                  },
+                ],
+              }
+            : meeting,
+        ),
+      })),
+    };
+
+    render(
+      <WorkspaceShell
+        dashboard={dashboardWithEmptyAssistant}
+        mode="live"
+        isMutating={false}
+        fallbackFolderId={demoWorkspace.folders[0]?.id ?? null}
+        onCreateFolder={() => undefined}
+        onDeleteFolder={() => undefined}
+        onCreateChat={() => undefined}
+        onConnectDevice={() => undefined}
+        onSelectMeeting={() => undefined}
+        onDeleteMeeting={() => undefined}
+        onSendMessage={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText(/I don't have a recorded meeting transcript/i)).toBeInTheDocument();
+  });
+
   test("restores the old secondary pages from the sidebar", async () => {
     const user = userEvent.setup();
 
