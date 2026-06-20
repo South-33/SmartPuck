@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DemoWorkspace } from "@/components/workspace/demo-workspace";
+import { WorkspaceShell } from "@/components/workspace/workspace-shell";
+import { demoWorkspace } from "@/lib/demo-workspace";
 
 describe("Demo workspace UI", () => {
   test("starts with the SmartPuck demo folder and creates a saved chat inside it", async () => {
@@ -97,6 +99,35 @@ describe("Demo workspace UI", () => {
     await user.click(screen.getByRole("button", { name: "Remove notes.txt" }));
 
     expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+  });
+
+  test("shows a visible assistant error when chat generation fails", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <WorkspaceShell
+        dashboard={demoWorkspace}
+        mode="live"
+        isMutating={false}
+        fallbackFolderId={demoWorkspace.folders[0]?.id ?? null}
+        onCreateFolder={() => undefined}
+        onDeleteFolder={() => undefined}
+        onCreateChat={() => undefined}
+        onConnectDevice={() => undefined}
+        onSelectMeeting={() => undefined}
+        onDeleteMeeting={() => undefined}
+        onSendMessage={async () => {
+          throw new Error("Gemini API key missing");
+        }}
+      />,
+    );
+
+    const prompt = screen.getByPlaceholderText(/Ask SmartPuck about/i);
+    await user.type(prompt, "can u check my meetings");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("can u check my meetings")).toBeInTheDocument();
+    expect(await screen.findByText(/SmartPuck ran into an error: Gemini API key missing/i)).toBeInTheDocument();
   });
 
   test("restores the old secondary pages from the sidebar", async () => {

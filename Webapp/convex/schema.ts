@@ -18,7 +18,11 @@ const messageRoleValidator = v.union(
   v.literal("assistant"),
   v.literal("system"),
 );
-const messageStatusValidator = v.union(v.literal("complete"), v.literal("streaming"));
+const messageStatusValidator = v.union(
+  v.literal("complete"),
+  v.literal("streaming"),
+  v.literal("error"),
+);
 
 export default defineSchema({
   folders: defineTable({

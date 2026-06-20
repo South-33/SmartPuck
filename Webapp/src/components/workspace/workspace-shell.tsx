@@ -27,6 +27,7 @@ import {
   GraduationCap,
   Grip,
   HelpCircle,
+  LoaderCircle,
   Mic,
   MoreVertical,
   Paperclip,
@@ -195,6 +196,7 @@ const MOTION_EXIT_MS = 120;
 const DRAFT_STORAGE_PREFIX = "smartpuck:chat-draft:";
 const REMOVED_STARTER_MESSAGE =
   "New chat saved. Ask me about SmartPuck's offline recorder, hardware prototype, transcript pipeline, image context, structured notes, or future roadmap.";
+const ASSISTANT_THINKING_BODY = "Checking the meeting context...";
 export function WorkspaceShell({
   dashboard,
   liveMessages,
@@ -1109,17 +1111,31 @@ export function WorkspaceShell({
     const attachments = draftAttachments;
     setDraftAttachments([]);
     const privateAttachmentContext = buildAttachmentContext(attachments);
+    const nowIso = new Date().toISOString();
+    const optimisticTurnId = `optimistic-${activeMeeting.id}-${Date.now()}`;
     const optimisticMessage: MeetingMessage = {
-      id: `optimistic-${activeMeeting.id}-${Date.now()}`,
+      id: `${optimisticTurnId}-user`,
       role: "user",
       body: trimmed || "Attached context",
       status: "complete",
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
       attachments,
+    };
+    const optimisticAssistantMessage: MeetingMessage = {
+      id: `${optimisticTurnId}-assistant`,
+      role: "assistant",
+      body: "",
+      status: "streaming",
+      createdAt: nowIso,
+      reasoning: ASSISTANT_THINKING_BODY,
     };
     setPendingMessagesByMeeting((current) => ({
       ...current,
-      [activeMeeting.id]: [...(current[activeMeeting.id] ?? []), optimisticMessage],
+      [activeMeeting.id]: [
+        ...(current[activeMeeting.id] ?? []),
+        optimisticMessage,
+        optimisticAssistantMessage,
+      ],
     }));
     isSendingRef.current = true;
     try {
@@ -1127,13 +1143,30 @@ export function WorkspaceShell({
         window.localStorage.removeItem(`${DRAFT_STORAGE_PREFIX}${activeMeeting.id}`);
       }
       await onSendMessage(activeMeeting.id, trimmed || "Attached context", privateAttachmentContext);
-    } finally {
       setPendingMessagesByMeeting((current) => ({
         ...current,
         [activeMeeting.id]: (current[activeMeeting.id] ?? []).filter(
-          (message) => message.id !== optimisticMessage.id,
+          (message) =>
+            message.id !== optimisticMessage.id && message.id !== optimisticAssistantMessage.id,
         ),
       }));
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "The SmartPuck chat API did not return a response.";
+      setPendingMessagesByMeeting((current) => ({
+        ...current,
+        [activeMeeting.id]: (current[activeMeeting.id] ?? [])
+          .filter((message) => message.id !== optimisticAssistantMessage.id)
+          .concat({
+            ...optimisticAssistantMessage,
+            body: `SmartPuck ran into an error: ${errorMessage}`,
+            status: "error",
+            reasoning: undefined,
+          }),
+      }));
+    } finally {
       isSendingRef.current = false;
     }
   }
@@ -2660,11 +2693,23 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
   const isStreamingEmpty =
     message.status === "streaming" && !message.body.trim() && !message.reasoning?.trim();
   const hasReasoning = Boolean(message.reasoning?.trim());
+  const isError = message.status === "error";
 
   return (
     <div className="group flex gap-8">
-      <div className="liquid-mercury-soft flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-white/50 shadow-lg">
-        <Sparkles className="h-5 w-5 text-black" />
+      <div
+        className={clsx(
+          "liquid-mercury-soft flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-white/50 shadow-lg",
+          isError ? "bg-red-50 text-red-700" : "",
+        )}
+      >
+        {message.status === "streaming" ? (
+          <LoaderCircle className="h-5 w-5 animate-spin text-black" />
+        ) : isError ? (
+          <AlertCircle className="h-5 w-5 text-red-600" />
+        ) : (
+          <Sparkles className="h-5 w-5 text-black" />
+        )}
       </div>
       <div className="flex-1 space-y-5 pt-1">
         {hasReasoning && (
@@ -2679,7 +2724,11 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
           </div>
         )}
 
-        {isStreamingEmpty ? (
+        {isError ? (
+          <div className="max-w-3xl rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm leading-6 text-red-700">
+            {message.body}
+          </div>
+        ) : isStreamingEmpty ? (
           <div className="flex items-center gap-2 pt-2 text-sm font-medium text-gray-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
             Preparing response...
