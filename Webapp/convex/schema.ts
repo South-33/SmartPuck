@@ -58,6 +58,8 @@ export default defineSchema({
     audioFileId: v.optional(v.id("_storage")),
     audioFileName: v.optional(v.string()),
     transcriptJson: v.optional(v.string()),
+    deviceSessionKey: v.optional(v.string()),
+    deviceSessionPath: v.optional(v.string()),
     pinnedInsights: v.optional(
       v.array(
         v.object({
@@ -72,6 +74,7 @@ export default defineSchema({
   })
     .index("by_scopeKey_and_updatedAt", ["scopeKey", "updatedAt"])
     .index("by_scopeKey_and_folderId_and_updatedAt", ["scopeKey", "folderId", "updatedAt"])
+    .index("by_scopeKey_and_deviceSessionKey", ["scopeKey", "deviceSessionKey"])
     .index("by_agentThreadId", ["agentThreadId"]),
 
   messages: defineTable({

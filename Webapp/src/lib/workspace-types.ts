@@ -54,6 +54,8 @@ export type MeetingRecord = {
   audioFileName?: string;
   audioUrl?: string;
   transcriptJson?: string;
+  deviceSessionKey?: string;
+  deviceSessionPath?: string;
   pinnedInsights?: Array<{
     id: string;
     title: string;

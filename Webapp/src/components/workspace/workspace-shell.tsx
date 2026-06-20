@@ -50,6 +50,18 @@ import type {
   MeetingRecord,
   WorkspaceShellMode,
 } from "@/lib/workspace-types";
+import {
+  downloadPuckSessionBlob,
+  fetchWithTimeout,
+  formatTranscriptionText,
+  getDeviceSessionKey,
+  getSessionImportKey,
+  getTranscriptionDurationMinutes,
+  normalizePuckBaseUrl,
+  normalizeSmartPuckSessions,
+  type SmartPuckSession,
+  type SmartPuckStatus,
+} from "@/lib/smartpuck-device";
 
 type WorkspaceShellProps = {
   dashboard: DashboardData;
@@ -76,6 +88,8 @@ type WorkspaceShellProps = {
     audioFileName?: string;
     transcriptText: string;
     transcriptJson?: string;
+    deviceSessionKey?: string;
+    deviceSessionPath?: string;
     durationLabel: string;
     transferredMb: number;
     audioHours: number;
@@ -94,32 +108,6 @@ type WorkspaceTab = "dashboard" | "transcripts" | "device";
 type NewRecordingState = "connect" | "syncing";
 type PuckConnectionState = "idle" | "checking" | "connected" | "listening" | "recording" | "error";
 const DEFAULT_PUCK_ADDRESS = "http://192.168.4.1";
-
-type SmartPuckStatus = {
-  recording?: boolean;
-  streaming?: boolean;
-  audioSize?: number;
-  network?: string;
-  storage?: string;
-  storageReady?: boolean;
-  storageMode?: "microsd" | "psram" | "none" | string;
-  storageFreeBytes?: number;
-  storageTotalBytes?: number;
-  batteryPercent?: number | null;
-  batteryCharging?: boolean | null;
-  firmwareVersion?: string;
-  lastError?: string;
-};
-
-type SmartPuckSession = {
-  sessionPath: string;
-  audioPath: string;
-  name: string;
-  sizeBytes: number;
-  durationSeconds: number;
-  uploaded: boolean;
-  storageMode: "microsd" | "psram" | string;
-};
 
 const ARCHIVE_ITEMS = [
   {
@@ -292,12 +280,7 @@ export function WorkspaceShell({
     : null;
   const activeMeetingId = activeMeeting?.id ?? null;
   const currentPuckBaseUrl = useMemo(() => {
-    const trimmed = puckAddress.trim();
-    if (!trimmed) {
-      return DEFAULT_PUCK_ADDRESS;
-    }
-    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-    return withProtocol.replace(/\/+$/, "");
+    return normalizePuckBaseUrl(puckAddress, DEFAULT_PUCK_ADDRESS);
   }, [puckAddress]);
   const activePendingMessages = activeMeetingId ? (pendingMessagesByMeeting[activeMeetingId] ?? []) : [];
   const visibleFolders = useMemo(() => dashboard.folders, [dashboard.folders]);
@@ -312,17 +295,13 @@ export function WorkspaceShell({
     return currentPuckBaseUrl;
   }, [currentPuckBaseUrl, puckAddress]);
 
-  const getSessionImportKey = useCallback((baseUrl: string, sessionPath: string) => {
-    return `smartpuck:uploaded-session:${baseUrl.replace(/\/+$/, "")}:${sessionPath}`;
-  }, []);
-
   const rememberImportedSession = useCallback(
     (baseUrl: string, sessionPath: string) => {
       const key = getSessionImportKey(baseUrl, sessionPath);
       window.localStorage.setItem(key, "1");
       setImportedSessionKeys((current) => new Set(current).add(key));
     },
-    [getSessionImportKey],
+    [],
   );
 
   const refreshPuckSessions = useCallback(
@@ -335,8 +314,7 @@ export function WorkspaceShell({
           return;
         }
 
-        const payload = (await response.json()) as { sessions?: SmartPuckSession[] };
-        const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        const sessions = normalizeSmartPuckSessions(await response.json());
         setPuckSessions(sessions);
         setImportedSessionKeys(() => {
           const next = new Set<string>();
@@ -354,7 +332,7 @@ export function WorkspaceShell({
         setIsLoadingPuckSessions(false);
       }
     },
-    [getSessionImportKey],
+    [],
   );
 
   const checkPuckConnection = useCallback(async () => {
@@ -962,10 +940,7 @@ export function WorkspaceShell({
       });
 
       if (onCreateMeetingWithAudio) {
-        const segments = Array.isArray(transcription.segments) ? transcription.segments : [];
-        const durationMin = segments.length > 0
-          ? (segments[segments.length - 1].end / 60)
-          : 0;
+        const durationMin = getTranscriptionDurationMinutes(transcription);
         const durationStr = durationMin > 0 
           ? `${Math.round(durationMin)}m`
           : "0m";
@@ -977,6 +952,10 @@ export function WorkspaceShell({
           audioFileName: file.name,
           transcriptText,
           transcriptJson: JSON.stringify(transcription),
+          deviceSessionKey: sourceSession
+            ? getDeviceSessionKey(sourceSession.baseUrl, sourceSession.sessionPath)
+            : undefined,
+          deviceSessionPath: sourceSession?.sessionPath,
           durationLabel: durationStr,
           transferredMb: Math.round(file.size / 1024 / 1024),
           audioHours: Number((durationMin / 60).toFixed(2)),
@@ -2777,116 +2756,6 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function formatTranscriptionText(transcription: {
-  full_text?: string;
-  segments?: Array<{ start: number; end: number; text: string }>;
-}) {
-  if (transcription.segments && transcription.segments.length > 0) {
-    return transcription.segments
-      .map((segment) => `[${formatTimestamp(segment.start)}] ${segment.text.trim()}`)
-      .join("\n");
-  }
-
-  return transcription.full_text?.trim() || "No transcript text returned.";
-}
-
-function formatTimestamp(seconds: number) {
-  const safeSeconds = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainingSeconds = safeSeconds % 60;
-  return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
-}
-
-async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...init,
-      cache: "no-store",
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("SmartPuck did not answer in time. Check the IP address and Wi-Fi network.");
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-async function downloadPuckSessionBlob({
-  baseUrl,
-  session,
-  onProgress,
-}: {
-  baseUrl: string;
-  session: SmartPuckSession;
-  onProgress: (downloadedBytes: number, totalBytes: number) => void;
-}) {
-  const chunks: Uint8Array[] = [];
-  const expectedBytes = Math.max(session.sizeBytes, 0);
-  let downloadedBytes = 0;
-  let attempts = 0;
-  const maxAttempts = 5;
-  const downloadUrl = `${baseUrl}/download?path=${encodeURIComponent(session.audioPath)}`;
-
-  while (downloadedBytes < expectedBytes || (expectedBytes === 0 && attempts === 0)) {
-    attempts += 1;
-    if (attempts > maxAttempts) {
-      throw new Error("SmartPuck transfer kept dropping. Move closer to the device and try again.");
-    }
-
-    try {
-      const response = await fetchWithTimeout(downloadUrl, 120000, {
-        headers: downloadedBytes > 0 ? { Range: `bytes=${downloadedBytes}-` } : undefined,
-      });
-
-      if (downloadedBytes > 0 && response.status !== 206) {
-        throw new Error("SmartPuck did not resume the transfer.");
-      }
-      if (!response.ok && response.status !== 206) {
-        throw new Error(`SmartPuck could not download this recording (${response.status}).`);
-      }
-
-      if (!response.body) {
-        const fallback = new Uint8Array(await response.arrayBuffer());
-        chunks.push(fallback);
-        downloadedBytes += fallback.byteLength;
-        onProgress(downloadedBytes, expectedBytes || downloadedBytes);
-        break;
-      }
-
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        chunks.push(value);
-        downloadedBytes += value.byteLength;
-        onProgress(downloadedBytes, expectedBytes || downloadedBytes);
-      }
-    } catch (error) {
-      if (attempts >= maxAttempts) {
-        throw error;
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 700 * attempts));
-    }
-  }
-
-  const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  const merged = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new Blob([merged], { type: "audio/wav" });
 }
 
 function buildWavBlob(chunks: Uint8Array[], pcmBytes: number) {

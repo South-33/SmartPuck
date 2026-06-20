@@ -119,6 +119,9 @@ export const getDashboard = query({
               audioFileName: meeting.audioFileName,
               audioUrl: audioUrl ?? undefined,
               transcriptText: meeting.transcriptText,
+              transcriptJson: meeting.transcriptJson,
+              deviceSessionKey: meeting.deviceSessionKey,
+              deviceSessionPath: meeting.deviceSessionPath,
             };
           }),
         );
@@ -185,6 +188,9 @@ export const getDashboard = query({
           audioFileName: meetingDoc.audioFileName,
           audioUrl: audioUrl ?? undefined,
           transcriptText: meetingDoc.transcriptText,
+          transcriptJson: meetingDoc.transcriptJson,
+          deviceSessionKey: meetingDoc.deviceSessionKey,
+          deviceSessionPath: meetingDoc.deviceSessionPath,
         };
       }
     }
@@ -885,6 +891,8 @@ export const createMeetingWithAudio = mutation({
     audioFileName: v.optional(v.string()),
     transcriptText: v.string(),
     transcriptJson: v.optional(v.string()),
+    deviceSessionKey: v.optional(v.string()),
+    deviceSessionPath: v.optional(v.string()),
     durationLabel: v.string(),
     transferredMb: v.number(),
     audioHours: v.number(),
@@ -893,6 +901,21 @@ export const createMeetingWithAudio = mutation({
     const viewer = await getViewerScope(ctx);
     const folder = await ensureFolderBelongsToScope(ctx, args.folderId, viewer.scopeKey);
     const now = Date.now();
+    const deviceSessionKey = args.deviceSessionKey?.trim();
+
+    if (deviceSessionKey) {
+      const existing = await ctx.db
+        .query("meetings")
+        .withIndex("by_scopeKey_and_deviceSessionKey", (q) =>
+          q.eq("scopeKey", viewer.scopeKey).eq("deviceSessionKey", deviceSessionKey),
+        )
+        .order("desc")
+        .take(1);
+      if (existing[0]) {
+        await ctx.db.patch(existing[0]._id, { updatedAt: now });
+        return existing[0]._id;
+      }
+    }
 
     const lines = args.transcriptText.split("\n");
     const transcriptPreview = lines.slice(0, 3).join("\n") || "No preview available.";
@@ -920,6 +943,8 @@ export const createMeetingWithAudio = mutation({
       audioFileId: args.audioFileId,
       audioFileName: args.audioFileName,
       transcriptJson: args.transcriptJson,
+      deviceSessionKey,
+      deviceSessionPath: args.deviceSessionPath,
       updatedAt: now,
     });
 

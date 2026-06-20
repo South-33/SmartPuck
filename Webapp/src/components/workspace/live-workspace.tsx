@@ -198,6 +198,8 @@ function LiveWorkspaceContent() {
             audioFileName: args.audioFileName,
             transcriptText: args.transcriptText,
             transcriptJson: args.transcriptJson,
+            deviceSessionKey: args.deviceSessionKey,
+            deviceSessionPath: args.deviceSessionPath,
             durationLabel: args.durationLabel,
             transferredMb: args.transferredMb,
             audioHours: args.audioHours,

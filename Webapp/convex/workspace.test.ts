@@ -87,4 +87,44 @@ describe("workspace Convex functions", () => {
 
     expect(afterDelete.activeMeeting?.id).not.toBe(meetingId);
   });
+
+  test("deduplicates imported audio by device session key", async () => {
+    const t = authedTest();
+
+    await t.mutation(api.workspace.seedDemoWorkspace, {});
+    const dashboard = await t.query(api.workspace.getDashboard, {
+      selectedMeetingId: null,
+    });
+    const folderId = dashboard.folders[0].id;
+
+    const firstMeetingId = await t.mutation(api.workspace.createMeetingWithAudio, {
+      folderId,
+      title: "session 001",
+      transport: "wifi",
+      audioFileName: "session_001.wav",
+      transcriptText: "[00:00] First import",
+      transcriptJson: "{}",
+      deviceSessionKey: "http://192.168.4.1:/sessions/session_001",
+      deviceSessionPath: "/sessions/session_001",
+      durationLabel: "1m",
+      transferredMb: 1,
+      audioHours: 0.02,
+    });
+
+    const secondMeetingId = await t.mutation(api.workspace.createMeetingWithAudio, {
+      folderId,
+      title: "session 001 duplicate",
+      transport: "wifi",
+      audioFileName: "session_001.wav",
+      transcriptText: "[00:00] Duplicate import",
+      transcriptJson: "{}",
+      deviceSessionKey: "http://192.168.4.1:/sessions/session_001",
+      deviceSessionPath: "/sessions/session_001",
+      durationLabel: "1m",
+      transferredMb: 1,
+      audioHours: 0.02,
+    });
+
+    expect(secondMeetingId).toBe(firstMeetingId);
+  });
 });
