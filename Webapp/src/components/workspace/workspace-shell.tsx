@@ -962,8 +962,9 @@ export function WorkspaceShell({
       });
 
       if (onCreateMeetingWithAudio) {
-        const durationMin = transcription.segments.length > 0 
-          ? (transcription.segments[transcription.segments.length - 1].end / 60)
+        const segments = Array.isArray(transcription.segments) ? transcription.segments : [];
+        const durationMin = segments.length > 0
+          ? (segments[segments.length - 1].end / 60)
           : 0;
         const durationStr = durationMin > 0 
           ? `${Math.round(durationMin)}m`
