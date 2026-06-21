@@ -2,6 +2,7 @@ import {
   downloadPuckSessionBlob,
   formatTranscriptionText,
   getTranscriptionDurationMinutes,
+  normalizeSmartPuckWifiConfig,
   normalizePuckBaseUrl,
   normalizeSmartPuckSessions,
 } from "@/lib/smartpuck-device";
@@ -47,6 +48,33 @@ describe("SmartPuck device helpers", () => {
         storageMode: "microsd",
       },
     ]);
+  });
+
+  test("normalizes SmartPuck Wi-Fi config without exposing passwords", () => {
+    expect(
+      normalizeSmartPuckWifiConfig({
+        mode: "station",
+        network: "Wi-Fi: Studio",
+        ip: "192.168.3.22",
+        activeSsid: "Studio",
+        maxNetworks: 5,
+        networks: [
+          { ssid: "Studio", active: true, password: "secret" },
+          { ssid: 42, active: true },
+          { ssid: "Phone", active: false },
+        ],
+      }),
+    ).toEqual({
+      mode: "station",
+      network: "Wi-Fi: Studio",
+      ip: "192.168.3.22",
+      activeSsid: "Studio",
+      maxNetworks: 5,
+      networks: [
+        { ssid: "Studio", active: true },
+        { ssid: "Phone", active: false },
+      ],
+    });
   });
 
   test("formats segment and text-only transcription responses", () => {

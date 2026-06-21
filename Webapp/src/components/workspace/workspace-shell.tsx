@@ -62,6 +62,8 @@ import {
 } from "@/lib/smartpuck-chat";
 import {
   downloadPuckSessionBlob,
+  deletePuckWifiNetwork,
+  fetchPuckWifiConfig,
   fetchWithTimeout,
   formatTranscriptionText,
   getDeviceSessionKey,
@@ -69,8 +71,10 @@ import {
   getTranscriptionDurationMinutes,
   normalizePuckBaseUrl,
   normalizeSmartPuckSessions,
+  savePuckWifiNetwork,
   type SmartPuckSession,
   type SmartPuckStatus,
+  type SmartPuckWifiConfig,
 } from "@/lib/smartpuck-device";
 
 type WorkspaceShellProps = {
@@ -265,6 +269,11 @@ export function WorkspaceShell({
   const [puckState, setPuckState] = useState<PuckConnectionState>("idle");
   const [puckStatus, setPuckStatus] = useState("SmartPuck will be detected automatically when it is on the same network.");
   const [latestPuckStatus, setLatestPuckStatus] = useState<SmartPuckStatus | null>(null);
+  const [puckWifiConfig, setPuckWifiConfig] = useState<SmartPuckWifiConfig | null>(null);
+  const [wifiSetupSsid, setWifiSetupSsid] = useState("");
+  const [wifiSetupPassword, setWifiSetupPassword] = useState("");
+  const [wifiSetupMessage, setWifiSetupMessage] = useState("");
+  const [isSavingWifiSetup, setIsSavingWifiSetup] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingBytes, setRecordingBytes] = useState(0);
@@ -346,6 +355,16 @@ export function WorkspaceShell({
     [],
   );
 
+  const refreshPuckWifiConfig = useCallback(async (baseUrl: string) => {
+    try {
+      const config = await fetchPuckWifiConfig(baseUrl);
+      setPuckWifiConfig(config);
+      setWifiSetupMessage("");
+    } catch {
+      setPuckWifiConfig(null);
+    }
+  }, []);
+
   const checkPuckConnection = useCallback(async () => {
     setPuckState("checking");
     setPuckStatus("Checking SmartPuck over Wi-Fi...");
@@ -365,13 +384,14 @@ export function WorkspaceShell({
       setPuckState("connected");
       const statusText = `Connected. ${status.network ?? "SmartPuck Wi-Fi"} - ${status.storage ?? "audio stream ready"}.`;
       setPuckStatus(statusText);
+      await refreshPuckWifiConfig(baseUrl);
       await refreshPuckSessions(baseUrl);
     } catch (error) {
       setPuckState("error");
       setShowPuckAddressEditor(true);
       setPuckStatus(error instanceof Error ? error.message : "Could not reach SmartPuck.");
     }
-  }, [normalizedPuckBaseUrl, refreshPuckSessions]);
+  }, [normalizedPuckBaseUrl, refreshPuckSessions, refreshPuckWifiConfig]);
 
   const autoFindPuck = useCallback(async () => {
     const candidates = [
@@ -399,6 +419,7 @@ export function WorkspaceShell({
         setShowPuckAddressEditor(false);
         setPuckState("connected");
         setPuckStatus(`SmartPuck found. ${status.network ?? "Local Wi-Fi"} - ${status.storage ?? "audio ready"}.`);
+        await refreshPuckWifiConfig(candidate);
         await refreshPuckSessions(candidate);
         return;
       } catch {
@@ -408,7 +429,44 @@ export function WorkspaceShell({
 
     setPuckState("error");
     setPuckStatus("No SmartPuck found yet. Import an audio file, or enter the device address manually.");
-  }, [initialPuckAddress, refreshPuckSessions]);
+  }, [initialPuckAddress, refreshPuckSessions, refreshPuckWifiConfig]);
+
+  async function saveWifiSetup() {
+    const ssid = wifiSetupSsid.trim();
+    if (!ssid) {
+      setWifiSetupMessage("Enter the Wi-Fi name first.");
+      return;
+    }
+
+    setIsSavingWifiSetup(true);
+    setWifiSetupMessage("Saving Wi-Fi to SmartPuck...");
+    try {
+      await savePuckWifiNetwork(currentPuckBaseUrl, ssid, wifiSetupPassword);
+      setWifiSetupPassword("");
+      setWifiSetupMessage("Saved. SmartPuck is restarting. Use Find after it rejoins Wi-Fi.");
+      setPuckStatus("Wi-Fi saved. SmartPuck is restarting and will reconnect automatically if the network is reachable.");
+      setPuckState("idle");
+      setPuckSessions([]);
+    } catch (error) {
+      setWifiSetupMessage(error instanceof Error ? error.message : "Could not save Wi-Fi.");
+    } finally {
+      setIsSavingWifiSetup(false);
+    }
+  }
+
+  async function deleteWifiSetup(ssid: string) {
+    setIsSavingWifiSetup(true);
+    setWifiSetupMessage(`Removing ${ssid}...`);
+    try {
+      await deletePuckWifiNetwork(currentPuckBaseUrl, ssid);
+      await refreshPuckWifiConfig(currentPuckBaseUrl);
+      setWifiSetupMessage(`Removed ${ssid}.`);
+    } catch (error) {
+      setWifiSetupMessage(error instanceof Error ? error.message : "Could not remove Wi-Fi.");
+    } finally {
+      setIsSavingWifiSetup(false);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -428,7 +486,7 @@ export function WorkspaceShell({
       setDraftMessage(window.localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${activeMeetingId}`) ?? "");
     };
 
-    window.requestAnimationFrame(loadDraft);
+    loadDraft();
     return () => {
       cancelled = true;
     };
@@ -1596,6 +1654,100 @@ export function WorkspaceShell({
                           />
                           <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
                         </div>
+
+                        {puckState === "connected" || puckWifiConfig ? (
+                          <div className="rounded-2xl border border-gray-100 bg-white p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                                  Wi-Fi setup
+                                </p>
+                                <p className="mt-1 text-xs leading-5 text-gray-500">
+                                  {puckWifiConfig
+                                    ? puckWifiConfig.mode === "ap"
+                                      ? "SmartPuck is in direct Wi-Fi setup mode."
+                                      : `SmartPuck is on ${puckWifiConfig.activeSsid || puckWifiConfig.network}.`
+                                    : "Connect to SmartPuck to manage saved Wi-Fi."}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void refreshPuckWifiConfig(currentPuckBaseUrl);
+                                }}
+                                disabled={isSavingWifiSetup}
+                                className="h-8 rounded-lg border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
+                              >
+                                Refresh
+                              </button>
+                            </div>
+
+                            {puckWifiConfig?.networks.length ? (
+                              <div className="mt-3 space-y-1.5">
+                                {puckWifiConfig.networks.map((network) => (
+                                  <div
+                                    key={network.ssid}
+                                    className="flex items-center gap-2 rounded-xl bg-gray-50 px-3 py-2"
+                                  >
+                                    <Wifi className="h-3.5 w-3.5 text-gray-400" />
+                                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-700">
+                                      {network.ssid}
+                                    </span>
+                                    {network.active ? (
+                                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-emerald-700">
+                                        Active
+                                      </span>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void deleteWifiSetup(network.ssid);
+                                      }}
+                                      disabled={isSavingWifiSetup}
+                                      className="h-7 rounded-lg px-2 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:bg-white hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-400">
+                                No saved Wi-Fi networks yet.
+                              </p>
+                            )}
+
+                            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                              <input
+                                type="text"
+                                value={wifiSetupSsid}
+                                onChange={(event) => setWifiSetupSsid(event.target.value)}
+                                placeholder="Wi-Fi name"
+                                className="h-11 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-900 outline-none focus:border-gray-400"
+                              />
+                              <input
+                                type="password"
+                                value={wifiSetupPassword}
+                                onChange={(event) => setWifiSetupPassword(event.target.value)}
+                                placeholder="Password"
+                                className="h-11 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-900 outline-none focus:border-gray-400"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void saveWifiSetup();
+                                }}
+                                disabled={isSavingWifiSetup || !wifiSetupSsid.trim()}
+                                className="h-11 rounded-xl bg-black px-4 text-xs font-bold uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                              >
+                                {isSavingWifiSetup ? "Saving" : "Save"}
+                              </button>
+                            </div>
+                            {wifiSetupMessage ? (
+                              <p className="mt-2 text-xs leading-5 text-gray-500">{wifiSetupMessage}</p>
+                            ) : null}
+                          </div>
+                        ) : null}
 
                       <div
                         onClick={triggerAudioImport}

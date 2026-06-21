@@ -17,6 +17,7 @@
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <Preferences.h>
 #include "freertos/ringbuf.h"
 
 #if __has_include("local_config.h")
@@ -34,6 +35,7 @@
 #define SMARTPUCK_FIRMWARE_VERSION "0.1.0"
 #define SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING (64ULL * 1024ULL * 1024ULL)
 #define SMARTPUCK_MAX_SESSIONS_JSON 40
+#define SMARTPUCK_MAX_SAVED_WIFI_NETWORKS 5
 #define SMARTPUCK_BUTTON_ARM_DELAY_MS 2000
 #ifndef SMARTPUCK_SD_SPI_FREQUENCY
   #define SMARTPUCK_SD_SPI_FREQUENCY 20000000U
@@ -144,6 +146,15 @@ RingbufHandle_t audioRingBuf = NULL;
 bool wifiConnected = false;
 bool apModeActive = false;
 String activeNetworkInfo = "Local Offline Mode";
+uint32_t restartAtMs = 0;
+Preferences smartPuckPrefs;
+
+struct SavedWifiCredential {
+  String ssid;
+  String password;
+};
+SavedWifiCredential savedNetworks[SMARTPUCK_MAX_SAVED_WIFI_NETWORKS];
+int savedNetworksCount = 0;
 
 // Web Server
 WebServer server(80);
@@ -165,11 +176,20 @@ void writeWavHeader(File file, uint32_t totalAudioLen);
 void fillWavHeader(uint8_t* header, uint32_t totalAudioLen);
 void startAP();
 void initWiFi();
+bool tryConfiguredWiFiNetworks();
+bool connectToWiFi(const char* ssid, const char* password, const char* sourceLabel);
+bool connectToStoredSdkWiFi();
+void loadSavedWiFiCredentials();
+bool saveWiFiCredentials(String ssid, String password);
+bool removeWiFiCredentials(String ssid);
+void persistSavedWiFiCredentials();
+String buildWiFiConfigJson();
 void handleRoot();
 void handleDownload();
 void handleSessions();
 void handleSessionUploaded();
 void handleDeleteSession();
+void handleWiFiConfig();
 void handleStream();
 void handleStartRecord();
 void handleStopRecord();
@@ -614,53 +634,211 @@ void audioTask(void* pvParameters) {
 void initWiFi() {
   WiFi.disconnect();
   WiFi.mode(WIFI_STA);
+  loadSavedWiFiCredentials();
   
   // Orange LED indicates Wi-Fi initialization
   setStatusLED(30, 10, 0);
   
-  bool connected = false;
-  
-  for (int i = 0; i < knownNetworksCount; i++) {
-    Serial.println();
-    Serial.print("Connecting to Wi-Fi Network SSID: ");
-    Serial.println(knownNetworks[i].ssid);
-    
-    WiFi.begin(knownNetworks[i].ssid, knownNetworks[i].password);
-    
-    int count = 0;
-    while (WiFi.status() != WL_CONNECTED && count < 20) {
-      delay(500);
-      Serial.print(".");
-      count++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      connected = true;
-      wifiConnected = true;
-      apModeActive = false;
-      activeNetworkInfo = "Wi-Fi: " + String(knownNetworks[i].ssid);
-      
-      Serial.println("\nWiFi connected successfully!");
-      Serial.print("IP Address: ");
-      Serial.println(WiFi.localIP());
-      sendConvexHeartbeat("Connected");
-      
-      // Flash green twice to confirm connection
-      for (int k = 0; k < 2; k++) {
-        setStatusLED(0, 30, 0);
-        delay(200);
-        setStatusLED(0, 0, 0);
-        delay(200);
-      }
-      break;
-    } else {
-      Serial.println("\nConnection timed out for SSID: " + String(knownNetworks[i].ssid));
-    }
-  }
-  
+  bool connected = tryConfiguredWiFiNetworks();
+
   if (!connected) {
     startAP();
   }
+}
+
+bool tryConfiguredWiFiNetworks() {
+  loadSavedWiFiCredentials();
+
+  for (int i = 0; i < savedNetworksCount; i++) {
+    if (connectToWiFi(savedNetworks[i].ssid.c_str(), savedNetworks[i].password.c_str(), "saved")) {
+      return true;
+    }
+  }
+  
+  for (int i = 0; i < knownNetworksCount; i++) {
+    if (connectToWiFi(knownNetworks[i].ssid, knownNetworks[i].password, "firmware")) {
+      return true;
+    }
+  }
+
+  if (connectToStoredSdkWiFi()) {
+    return true;
+  }
+
+  return false;
+}
+
+bool connectToWiFi(const char* ssid, const char* password, const char* sourceLabel) {
+  if (ssid == nullptr || strlen(ssid) == 0) {
+    return false;
+  }
+
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.print(sourceLabel);
+  Serial.print(" Wi-Fi SSID: ");
+  Serial.println(ssid);
+
+  WiFi.mode(apModeActive ? WIFI_AP_STA : WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  int count = 0;
+  while (WiFi.status() != WL_CONNECTED && count < 20) {
+    delay(500);
+    Serial.print(".");
+    count++;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nConnection timed out for SSID: " + String(ssid));
+    WiFi.disconnect();
+    return false;
+  }
+
+  wifiConnected = true;
+  apModeActive = false;
+  activeNetworkInfo = "Wi-Fi: " + String(ssid);
+  WiFi.softAPdisconnect(true);
+
+  Serial.println("\nWiFi connected successfully!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+  sendConvexHeartbeat("Connected");
+
+  // Flash green twice to confirm connection
+  for (int k = 0; k < 2; k++) {
+    setStatusLED(0, 30, 0);
+    delay(200);
+    setStatusLED(0, 0, 0);
+    delay(200);
+  }
+
+  return true;
+}
+
+bool connectToStoredSdkWiFi() {
+  Serial.println();
+  Serial.println("Trying ESP stored Wi-Fi credentials...");
+
+  WiFi.mode(apModeActive ? WIFI_AP_STA : WIFI_STA);
+  WiFi.begin();
+
+  int count = 0;
+  while (WiFi.status() != WL_CONNECTED && count < 20) {
+    delay(500);
+    Serial.print(".");
+    count++;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nNo ESP stored Wi-Fi credentials connected.");
+    WiFi.disconnect();
+    return false;
+  }
+
+  wifiConnected = true;
+  apModeActive = false;
+  activeNetworkInfo = "Wi-Fi: " + WiFi.SSID();
+  WiFi.softAPdisconnect(true);
+
+  Serial.println("\nWiFi connected successfully using ESP stored credentials!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+  sendConvexHeartbeat("Connected");
+
+  for (int k = 0; k < 2; k++) {
+    setStatusLED(0, 30, 0);
+    delay(200);
+    setStatusLED(0, 0, 0);
+    delay(200);
+  }
+
+  return true;
+}
+
+void loadSavedWiFiCredentials() {
+  savedNetworksCount = 0;
+  smartPuckPrefs.begin("smartpuck", true);
+  int count = smartPuckPrefs.getInt("wifi_count", 0);
+  count = constrain(count, 0, SMARTPUCK_MAX_SAVED_WIFI_NETWORKS);
+  for (int i = 0; i < count; i++) {
+    String ssidKey = "ssid" + String(i);
+    String passKey = "pass" + String(i);
+    String ssid = smartPuckPrefs.getString(ssidKey.c_str(), "");
+    String password = smartPuckPrefs.getString(passKey.c_str(), "");
+    if (ssid.length() > 0) {
+      savedNetworks[savedNetworksCount++] = { ssid, password };
+    }
+  }
+  smartPuckPrefs.end();
+}
+
+bool saveWiFiCredentials(String ssid, String password) {
+  ssid.trim();
+  if (ssid.length() == 0 || ssid.length() > 32 || password.length() > 64) {
+    return false;
+  }
+
+  loadSavedWiFiCredentials();
+  for (int i = 0; i < savedNetworksCount; i++) {
+    if (savedNetworks[i].ssid == ssid) {
+      savedNetworks[i].password = password;
+      persistSavedWiFiCredentials();
+      return true;
+    }
+  }
+
+  if (savedNetworksCount >= SMARTPUCK_MAX_SAVED_WIFI_NETWORKS) {
+    for (int i = 1; i < savedNetworksCount; i++) {
+      savedNetworks[i - 1] = savedNetworks[i];
+    }
+    savedNetworksCount--;
+  }
+
+  savedNetworks[savedNetworksCount++] = { ssid, password };
+  persistSavedWiFiCredentials();
+  return true;
+}
+
+bool removeWiFiCredentials(String ssid) {
+  ssid.trim();
+  if (ssid.length() == 0) {
+    return false;
+  }
+
+  loadSavedWiFiCredentials();
+  int writeIndex = 0;
+  bool removed = false;
+  for (int i = 0; i < savedNetworksCount; i++) {
+    if (savedNetworks[i].ssid == ssid) {
+      removed = true;
+      continue;
+    }
+    savedNetworks[writeIndex++] = savedNetworks[i];
+  }
+
+  savedNetworksCount = writeIndex;
+  if (removed) {
+    persistSavedWiFiCredentials();
+  }
+  return removed;
+}
+
+void persistSavedWiFiCredentials() {
+  smartPuckPrefs.begin("smartpuck", false);
+  smartPuckPrefs.putInt("wifi_count", savedNetworksCount);
+  for (int i = 0; i < SMARTPUCK_MAX_SAVED_WIFI_NETWORKS; i++) {
+    String ssidKey = "ssid" + String(i);
+    String passKey = "pass" + String(i);
+    if (i < savedNetworksCount) {
+      smartPuckPrefs.putString(ssidKey.c_str(), savedNetworks[i].ssid);
+      smartPuckPrefs.putString(passKey.c_str(), savedNetworks[i].password);
+    } else {
+      smartPuckPrefs.remove(ssidKey.c_str());
+      smartPuckPrefs.remove(passKey.c_str());
+    }
+  }
+  smartPuckPrefs.end();
 }
 
 void startAP() {
@@ -1665,6 +1843,9 @@ String buildStatusJson() {
   json += "\"streaming\":" + String(isStreaming ? "true" : "false") + ",";
   json += "\"audioSize\":" + String(audioSize) + ",";
   json += "\"network\":\"" + jsonEscape(activeNetworkInfo) + "\",";
+  json += "\"networkMode\":\"" + String(apModeActive ? "ap" : "station") + "\",";
+  json += "\"ip\":\"" + jsonEscape(apModeActive ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\",";
+  json += "\"savedWifiCount\":" + String(savedNetworksCount) + ",";
   json += "\"storage\":\"" + jsonEscape(formatStorageSummary()) + "\",";
   json += "\"storageReady\":" + String((storageAvailable || usePsramFallback) ? "true" : "false") + ",";
   json += "\"storageMode\":\"" + String(usePsramFallback ? "psram" : storageAvailable ? "microsd" : "none") + "\",";
@@ -1816,7 +1997,7 @@ void handleStatus() {
 
 void sendCorsHeaders() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
   server.sendHeader("Access-Control-Allow-Private-Network", "true");
 }
@@ -1824,6 +2005,63 @@ void sendCorsHeaders() {
 void handleCorsOptions() {
   sendCorsHeaders();
   server.send(204, "text/plain", "");
+}
+
+String buildWiFiConfigJson() {
+  loadSavedWiFiCredentials();
+  String json = "{";
+  json += "\"mode\":\"" + String(apModeActive ? "ap" : "station") + "\",";
+  json += "\"network\":\"" + jsonEscape(activeNetworkInfo) + "\",";
+  json += "\"ip\":\"" + jsonEscape(apModeActive ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\",";
+  json += "\"activeSsid\":\"" + jsonEscape(apModeActive ? "" : WiFi.SSID()) + "\",";
+  json += "\"maxNetworks\":" + String(SMARTPUCK_MAX_SAVED_WIFI_NETWORKS) + ",";
+  json += "\"networks\":[";
+  for (int i = 0; i < savedNetworksCount; i++) {
+    if (i > 0) json += ",";
+    json += "{";
+    json += "\"ssid\":\"" + jsonEscape(savedNetworks[i].ssid) + "\",";
+    json += "\"active\":" + String((!apModeActive && WiFi.SSID() == savedNetworks[i].ssid) ? "true" : "false");
+    json += "}";
+  }
+  json += "]}";
+  return json;
+}
+
+void handleWiFiConfig() {
+  sendCorsHeaders();
+
+  if (server.method() == HTTP_GET) {
+    server.send(200, "application/json", buildWiFiConfigJson());
+    return;
+  }
+
+  if (server.method() == HTTP_POST) {
+    String ssid = server.arg("ssid");
+    String password = server.arg("password");
+    if (ssid.length() == 0) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"SSID is required\"}");
+      return;
+    }
+
+    bool ok = saveWiFiCredentials(ssid, password);
+    if (!ok) {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"SSID or password is too long\"}");
+      return;
+    }
+
+    restartAtMs = millis() + 900;
+    server.send(200, "application/json", "{\"ok\":true,\"restart\":true,\"message\":\"Wi-Fi saved. SmartPuck is restarting and will join the network if reachable.\"}");
+    return;
+  }
+
+  if (server.method() == HTTP_DELETE) {
+    String ssid = server.arg("ssid");
+    bool removed = removeWiFiCredentials(ssid);
+    server.send(removed ? 200 : 404, "application/json", removed ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Network not found\"}");
+    return;
+  }
+
+  server.send(405, "application/json", "{\"ok\":false,\"error\":\"Method not allowed\"}");
 }
 
 // Unified button check and debouncing
@@ -1961,10 +2199,12 @@ void setup() {
   server.on("/download", HTTP_OPTIONS, handleCorsOptions);
   server.on("/start_record", HTTP_OPTIONS, handleCorsOptions);
   server.on("/stop_record", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/wifi", HTTP_OPTIONS, handleCorsOptions);
   server.on("/download", handleDownload);
   server.on("/sessions", handleSessions);
   server.on("/session_uploaded", HTTP_POST, handleSessionUploaded);
   server.on("/session", HTTP_DELETE, handleDeleteSession);
+  server.on("/wifi", handleWiFiConfig);
   server.on("/stream", handleStream);
   server.on("/start_record", handleStartRecord);
   server.on("/stop_record", handleStopRecord);
@@ -1989,10 +2229,27 @@ void loop() {
   // 2. Hardware Button Polling
   checkButton();
 
-  // 3. Status LED updates
+  // 3. Restart after Wi-Fi config changes, once the HTTP response has flushed.
+  if (restartAtMs > 0 && millis() > restartAtMs) {
+    Serial.println("[WiFi] Restarting to apply saved Wi-Fi credentials...");
+    delay(100);
+    ESP.restart();
+  }
+
+  // 4. While in fallback AP mode, keep trying saved/firmware Wi-Fi until one connects.
+  static uint32_t lastWifiRetry = 0;
+  if (apModeActive && millis() - lastWifiRetry > 60000) {
+    lastWifiRetry = millis();
+    Serial.println("[WiFi] Retrying saved networks from AP fallback mode...");
+    if (tryConfiguredWiFiNetworks()) {
+      Serial.println("[WiFi] Reconnected from AP fallback mode.");
+    }
+  }
+
+  // 5. Status LED updates
   updateLED();
 
-  // 4. Print status/IP address every 10 seconds
+  // 6. Print status/IP address every 10 seconds
   static uint32_t lastStatusPrint = 0;
   if (millis() - lastStatusPrint > 10000) {
     lastStatusPrint = millis();

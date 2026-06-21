@@ -3,6 +3,9 @@ export type SmartPuckStatus = {
   streaming?: boolean;
   audioSize?: number;
   network?: string;
+  networkMode?: "ap" | "station" | string;
+  ip?: string;
+  savedWifiCount?: number;
   storage?: string;
   storageReady?: boolean;
   storageMode?: "microsd" | "psram" | "none" | string;
@@ -12,6 +15,20 @@ export type SmartPuckStatus = {
   batteryCharging?: boolean | null;
   firmwareVersion?: string;
   lastError?: string;
+};
+
+export type SmartPuckWifiNetwork = {
+  ssid: string;
+  active: boolean;
+};
+
+export type SmartPuckWifiConfig = {
+  mode: "ap" | "station" | string;
+  network: string;
+  ip: string;
+  activeSsid: string;
+  maxNetworks: number;
+  networks: SmartPuckWifiNetwork[];
 };
 
 export type SmartPuckSession = {
@@ -121,6 +138,71 @@ export async function fetchWithTimeout(url: string, timeoutMs: number, init?: Re
     throw error;
   } finally {
     globalThis.clearTimeout(timeout);
+  }
+}
+
+export function normalizeSmartPuckWifiConfig(payload: unknown): SmartPuckWifiConfig {
+  if (!payload || typeof payload !== "object") {
+    return {
+      mode: "unknown",
+      network: "Unknown",
+      ip: "",
+      activeSsid: "",
+      maxNetworks: 0,
+      networks: [],
+    };
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  const networks = Array.isArray(candidate.networks)
+    ? candidate.networks.flatMap((network) => {
+        if (!network || typeof network !== "object") {
+          return [];
+        }
+        const item = network as Record<string, unknown>;
+        if (typeof item.ssid !== "string") {
+          return [];
+        }
+        return [{ ssid: item.ssid, active: item.active === true }];
+      })
+    : [];
+
+  return {
+    mode: typeof candidate.mode === "string" ? candidate.mode : "unknown",
+    network: typeof candidate.network === "string" ? candidate.network : "Unknown",
+    ip: typeof candidate.ip === "string" ? candidate.ip : "",
+    activeSsid: typeof candidate.activeSsid === "string" ? candidate.activeSsid : "",
+    maxNetworks: typeof candidate.maxNetworks === "number" ? candidate.maxNetworks : 0,
+    networks,
+  };
+}
+
+export async function fetchPuckWifiConfig(baseUrl: string) {
+  const response = await fetchWithTimeout(`${baseUrl}/wifi`, 5000);
+  if (!response.ok) {
+    throw new Error(`SmartPuck could not load Wi-Fi settings (${response.status}).`);
+  }
+  return normalizeSmartPuckWifiConfig(await response.json());
+}
+
+export async function savePuckWifiNetwork(baseUrl: string, ssid: string, password: string) {
+  const body = new URLSearchParams({ ssid, password });
+  const response = await fetchWithTimeout(`${baseUrl}/wifi`, 7000, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
+export async function deletePuckWifiNetwork(baseUrl: string, ssid: string) {
+  const response = await fetchWithTimeout(`${baseUrl}/wifi?ssid=${encodeURIComponent(ssid)}`, 5000, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
   }
 }
 
