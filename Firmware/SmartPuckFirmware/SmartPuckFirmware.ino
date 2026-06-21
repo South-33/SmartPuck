@@ -1976,7 +1976,8 @@ void handleDeleteSession() {
   }
 
   if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
-    if (!sessionHasUploadedMarker(path)) {
+    bool forceDelete = server.hasArg("force") && server.arg("force") == "1";
+    if (!forceDelete && !sessionHasUploadedMarker(path)) {
       xSemaphoreGive(fileMutex);
       server.send(409, "application/json", "{\"ok\":false,\"error\":\"Session has not been uploaded\"}");
       return;

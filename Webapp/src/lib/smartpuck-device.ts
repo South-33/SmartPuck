@@ -206,6 +206,17 @@ export async function deletePuckWifiNetwork(baseUrl: string, ssid: string) {
   }
 }
 
+export async function deletePuckSession(baseUrl: string, sessionPath: string, force = false) {
+  const response = await fetchWithTimeout(
+    `${baseUrl}/session?path=${encodeURIComponent(sessionPath)}${force ? "&force=1" : ""}`,
+    7000,
+    { method: "DELETE" },
+  );
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
 export async function downloadPuckSessionBlob({
   baseUrl,
   session,

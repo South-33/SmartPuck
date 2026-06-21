@@ -61,6 +61,7 @@ import {
   type MeetingStatusPill,
 } from "@/lib/smartpuck-chat";
 import {
+  deletePuckSession,
   downloadPuckSessionBlob,
   deletePuckWifiNetwork,
   fetchPuckWifiConfig,
@@ -251,6 +252,7 @@ export function WorkspaceShell({
   const [inlineFolderName, setInlineFolderName] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionProgressMessage, setTranscriptionProgressMessage] = useState("");
+  const [transcriptionError, setTranscriptionError] = useState("");
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
   const [syncProgress, setSyncProgress] = useState({
     percent: 0,
@@ -275,7 +277,6 @@ export function WorkspaceShell({
   const [wifiSetupMessage, setWifiSetupMessage] = useState("");
   const [isSavingWifiSetup, setIsSavingWifiSetup] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingBytes, setRecordingBytes] = useState(0);
   const [recordingDownloadUrl, setRecordingDownloadUrl] = useState<string | null>(null);
   const [recordingFileName, setRecordingFileName] = useState<string | null>(null);
@@ -284,6 +285,7 @@ export function WorkspaceShell({
   const [isLoadingPuckSessions, setIsLoadingPuckSessions] = useState(false);
   const [importingSessionPath, setImportingSessionPath] = useState<string | null>(null);
   const [importedSessionKeys, setImportedSessionKeys] = useState<Set<string>>(() => new Set());
+  const [isDeviceRecordingActionPending, setIsDeviceRecordingActionPending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isSendingRef = useRef(false);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -376,7 +378,7 @@ export function WorkspaceShell({
         throw new Error(`SmartPuck returned HTTP ${response.status}.`);
       }
 
-      const status = (await response.json()) as SmartPuckStatus;
+        const status = (await response.json()) as SmartPuckStatus;
       window.localStorage.setItem("smartpuck:puck-address", baseUrl);
       setLatestPuckStatus(status);
       setPuckAddress(baseUrl);
@@ -412,7 +414,7 @@ export function WorkspaceShell({
           continue;
         }
 
-        const status = (await response.json()) as SmartPuckStatus;
+      const status = (await response.json()) as SmartPuckStatus;
         window.localStorage.setItem("smartpuck:puck-address", candidate);
         setLatestPuckStatus(status);
         setPuckAddress(candidate);
@@ -430,6 +432,69 @@ export function WorkspaceShell({
     setPuckState("error");
     setPuckStatus("No SmartPuck found yet. Import an audio file, or enter the device address manually.");
   }, [initialPuckAddress, refreshPuckSessions, refreshPuckWifiConfig]);
+
+  const refreshPuckStatus = useCallback(async () => {
+    const baseUrl = normalizedPuckBaseUrl();
+    const response = await fetchWithTimeout(`${baseUrl}/status`, 4000);
+    if (!response.ok) {
+      throw new Error(`SmartPuck returned HTTP ${response.status}.`);
+    }
+    const status = (await response.json()) as SmartPuckStatus;
+    setLatestPuckStatus(status);
+    if (status.recording) {
+      setPuckStatus(`SmartPuck is recording on-device. ${formatBytes(status.audioSize ?? 0)} captured.`);
+    } else if (status.lastError) {
+      setPuckStatus(status.lastError);
+    } else {
+      setPuckStatus(`Connected. ${status.network ?? "SmartPuck Wi-Fi"} - ${status.storage ?? "audio stream ready"}.`);
+    }
+    return status;
+  }, [normalizedPuckBaseUrl]);
+
+  async function startDeviceRecording() {
+    if (isDeviceRecordingActionPending || isTranscribing) {
+      return;
+    }
+
+    setIsDeviceRecordingActionPending(true);
+    setPuckStatus("Starting recording on SmartPuck...");
+    try {
+      const baseUrl = normalizedPuckBaseUrl();
+      const response = await fetchWithTimeout(`${baseUrl}/start_record`, 7000);
+      if (!response.ok) {
+        throw new Error(`SmartPuck could not start recording (${response.status}).`);
+      }
+      await refreshPuckStatus();
+      await refreshPuckSessions(baseUrl);
+    } catch (error) {
+      setPuckStatus(error instanceof Error ? error.message : "Could not start SmartPuck recording.");
+    } finally {
+      setIsDeviceRecordingActionPending(false);
+    }
+  }
+
+  async function stopDeviceRecording() {
+    if (isDeviceRecordingActionPending || isTranscribing) {
+      return;
+    }
+
+    setIsDeviceRecordingActionPending(true);
+    setPuckStatus("Stopping SmartPuck recording...");
+    try {
+      const baseUrl = normalizedPuckBaseUrl();
+      const response = await fetchWithTimeout(`${baseUrl}/stop_record`, 10000);
+      if (!response.ok) {
+        throw new Error(`SmartPuck could not stop recording (${response.status}).`);
+      }
+      await refreshPuckStatus();
+      await refreshPuckSessions(baseUrl);
+      setPuckStatus("Recording saved on SmartPuck. Import it when you are ready.");
+    } catch (error) {
+      setPuckStatus(error instanceof Error ? error.message : "Could not stop SmartPuck recording.");
+    } finally {
+      setIsDeviceRecordingActionPending(false);
+    }
+  }
 
   async function saveWifiSetup() {
     const ssid = wifiSetupSsid.trim();
@@ -573,12 +638,25 @@ export function WorkspaceShell({
     }
 
     const interval = window.setInterval(() => {
-      setRecordingSeconds(Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000)));
       setRecordingBytes(streamPcmBytesRef.current);
     }, 250);
 
     return () => window.clearInterval(interval);
   }, [puckState, recordingStartedAt]);
+
+  useEffect(() => {
+    if (activeView !== "new-recording" || !latestPuckStatus?.recording) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshPuckStatus().catch(() => {
+        setPuckStatus("SmartPuck is recording, but the status check dropped. It will refresh when the connection returns.");
+      });
+    }, 2000);
+
+    return () => window.clearInterval(interval);
+  }, [activeView, latestPuckStatus?.recording, refreshPuckStatus]);
 
   useEffect(() => {
     return () => {
@@ -768,25 +846,6 @@ export function WorkspaceShell({
     }
   }
 
-  async function startLiveListeningOnly() {
-    await startLiveListening(false);
-  }
-
-  async function startComputerRecording() {
-    if (puckState === "recording") {
-      return;
-    }
-
-    if (puckState !== "listening") {
-      await startLiveListening(true);
-      return;
-    }
-
-    beginRecordingBuffer();
-    setPuckState("recording");
-    setPuckStatus("Recording the live SmartPuck stream to this browser...");
-  }
-
   function beginRecordingBuffer() {
     if (recordingDownloadUrl) {
       URL.revokeObjectURL(recordingDownloadUrl);
@@ -798,7 +857,6 @@ export function WorkspaceShell({
     setRecordingDownloadUrl(null);
     setRecordingFileName(null);
     setRecordingBytes(0);
-    setRecordingSeconds(0);
     setRecordingStartedAt(Date.now());
   }
 
@@ -967,6 +1025,7 @@ export function WorkspaceShell({
     }
 
     setIsTranscribing(true);
+    setTranscriptionError("");
     setNewRecordingState("syncing");
     setTranscriptionProgressMessage("Uploading audio to local transcription engine...");
     setSyncProgress({
@@ -980,10 +1039,17 @@ export function WorkspaceShell({
       const formData = new FormData();
       formData.append("file", file);
       
-      const transcribeRes = await fetch("http://127.0.0.1:8000/transcribe?model_name=turbo", {
-        method: "POST",
-        body: formData,
-      });
+      let transcribeRes: Response;
+      try {
+        transcribeRes = await fetch("http://127.0.0.1:8000/transcribe?model_name=turbo", {
+          method: "POST",
+          body: formData,
+        });
+      } catch {
+        throw new Error(
+          "Local transcription is not running. Start the local transcription server on port 8000, then import again.",
+        );
+      }
 
       if (!transcribeRes.ok) {
         throw new Error(`Local transcription server returned ${transcribeRes.status}: ${await transcribeRes.text()}`);
@@ -1059,7 +1125,11 @@ export function WorkspaceShell({
     } catch (err) {
       const error = err as Error;
       console.error(error);
-      alert(error.message || "Failed to process transcription or upload. Make sure your local transcribe_server.py is running on port 8000!");
+      setTranscriptionError(
+        error.message ||
+          "Failed to process transcription. Make sure the local transcription server is running on port 8000.",
+      );
+      setPuckStatus("Import paused. Local transcription is unavailable.");
       setNewRecordingState("connect");
     } finally {
       setIsTranscribing(false);
@@ -1122,6 +1192,27 @@ export function WorkspaceShell({
       setNewRecordingState("connect");
       setTranscriptionProgressMessage("");
       alert(error instanceof Error ? error.message : "Failed to import the SmartPuck recording.");
+    }
+  }
+
+  async function removePuckSession(session: SmartPuckSession) {
+    const baseUrl = normalizedPuckBaseUrl();
+    const importKey = getSessionImportKey(baseUrl, session.sessionPath);
+    const alreadyImported = session.uploaded || importedSessionKeys.has(importKey);
+    const message = alreadyImported
+      ? `Remove ${session.name} from SmartPuck?`
+      : `Delete ${session.name} without importing it first? This is useful for test clips, but it cannot be undone.`;
+
+    if (!window.confirm(message)) {
+      return;
+    }
+
+    try {
+      await deletePuckSession(baseUrl, session.sessionPath, !alreadyImported);
+      setPuckStatus(`${session.name} removed from SmartPuck.`);
+      await refreshPuckSessions(baseUrl);
+    } catch (error) {
+      setPuckStatus(error instanceof Error ? error.message : "Could not remove the SmartPuck recording.");
     }
   }
 
@@ -1551,7 +1642,7 @@ export function WorkspaceShell({
             <div
               id="view-new-recording"
               className={clsx(
-                "flex h-[calc(100vh-5rem)] w-full flex-col items-center justify-center overflow-hidden bg-[#f8f9fa] px-6 lg:h-full lg:px-12",
+                "flex h-[calc(100vh-5rem)] w-full flex-col overflow-y-auto bg-[#f8f9fa] px-5 py-6 lg:h-full lg:px-8 lg:py-7",
                 animatedView.isExiting ? "workspace-panel-exit" : "workspace-panel",
               )}
             >
@@ -1563,19 +1654,34 @@ export function WorkspaceShell({
                 accept=".mp3,.wav,.m4a"
               />
               {newRecordingState === "connect" ? (
-                <div id="nr-connect" className="flex h-full w-full flex-col items-center justify-center gap-8">
-                  <RecordingOrb pulsing={puckState === "recording"} />
-                  <div className="space-y-2 text-center">
-                    <h2 className="font-display text-4xl font-bold tracking-tight text-black">
-                      New Recording
-                    </h2>
-                    <p className="font-display text-[11px] font-bold uppercase tracking-[0.25em] text-gray-400">
-                      SmartPuck auto-detect + local transcription
-                    </p>
+                <div id="nr-connect" className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="space-y-1">
+                      <p className="font-display text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400">
+                        SmartPuck auto-detect + local transcription
+                      </p>
+                      <h2 className="font-display text-3xl font-bold tracking-tight text-black">
+                        New Recording
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeNewRecording}
+                      className="self-start rounded-full border border-gray-200 bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-gray-500 hover:border-gray-400 hover:text-black sm:self-auto"
+                    >
+                      Cancel
+                    </button>
                   </div>
 
-                  <div className="w-full max-w-xl rounded-[2rem] border border-gray-200 bg-white p-5 shadow-sm">
-                    <div className="space-y-4">
+                  {transcriptionError ? (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium leading-6 text-amber-900">
+                      {transcriptionError}
+                    </div>
+                  ) : null}
+
+                  <div className="grid w-full gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)]">
+                    <section className="rounded-[1.5rem] border border-gray-200 bg-white p-5 shadow-sm">
+                      <div className="space-y-4">
                         {showPuckAddressEditor ? (
                           <div className="flex flex-col gap-3 sm:flex-row">
                             <label className="min-w-0 flex-1">
@@ -1643,7 +1749,7 @@ export function WorkspaceShell({
                           <span
                             className={clsx(
                               "mt-1 h-2.5 w-2.5 rounded-full",
-                              puckState === "recording"
+                              puckState === "recording" || latestPuckStatus?.recording
                                 ? "bg-red-500"
                                 : puckState === "connected" || puckState === "listening"
                                   ? "bg-emerald-500"
@@ -1653,6 +1759,70 @@ export function WorkspaceShell({
                             )}
                           />
                           <p className="min-w-0 text-sm leading-6 text-gray-600">{puckStatus}</p>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <SyncStatCard
+                            label="Device"
+                            value={latestPuckStatus?.recording ? "Recording" : puckState === "connected" ? "Ready" : sentenceCase(puckState)}
+                          />
+                          <SyncStatCard
+                            label="Captured"
+                            value={formatBytes(latestPuckStatus?.audioSize ?? recordingBytes)}
+                          />
+                          <SyncStatCard
+                            label="Network"
+                            value={puckWifiConfig?.activeSsid || latestPuckStatus?.network?.replace("Wi-Fi: ", "") || "Unknown"}
+                          />
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void startDeviceRecording();
+                            }}
+                            disabled={
+                              isDeviceRecordingActionPending ||
+                              isTranscribing ||
+                              latestPuckStatus?.recording === true ||
+                              puckState === "checking"
+                            }
+                            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-xs font-bold uppercase tracking-widest text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          >
+                            <Mic className="h-4 w-4" />
+                            Record
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void stopDeviceRecording();
+                            }}
+                            disabled={
+                              isDeviceRecordingActionPending ||
+                              isTranscribing ||
+                              latestPuckStatus?.recording !== true
+                            }
+                            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-black px-4 text-xs font-bold uppercase tracking-widest text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          >
+                            <Square className="h-4 w-4" />
+                            Stop
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void refreshPuckStatus()
+                                .then(() => refreshPuckSessions(currentPuckBaseUrl))
+                                .catch((error) => {
+                                  setPuckStatus(error instanceof Error ? error.message : "Could not refresh SmartPuck.");
+                                });
+                            }}
+                            disabled={isDeviceRecordingActionPending || isTranscribing || puckState === "checking"}
+                            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold uppercase tracking-widest text-gray-600 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
+                          >
+                            <Radio className="h-4 w-4" />
+                            Check
+                          </button>
                         </div>
 
                         {puckState === "connected" || puckWifiConfig ? (
@@ -1749,85 +1919,11 @@ export function WorkspaceShell({
                           </div>
                         ) : null}
 
-                      <div
-                        onClick={triggerAudioImport}
-                        className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-8 text-center transition-colors hover:border-gray-400"
-                      >
-                        <Upload className="mb-3 h-8 w-8 text-gray-400" />
-                        <p className="text-sm font-semibold text-gray-700">Import audio from SmartPuck or this computer</p>
-                        <p className="mt-1 text-xs text-gray-400">WAV, MP3, or M4A. The laptop transcribes it locally.</p>
                       </div>
+                    </section>
 
-                      {puckState === "connected" || puckState === "listening" || puckState === "recording" ? (
-                        <div className="rounded-2xl border border-gray-100 bg-white">
-                          <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-                            <div>
-                              <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                                Device recordings
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {isLoadingPuckSessions
-                                  ? "Checking SmartPuck..."
-                                  : puckSessions.length > 0
-                                    ? "Import once, then chat from the saved transcript."
-                                    : "No saved recordings found on the device."}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void refreshPuckSessions(currentPuckBaseUrl);
-                              }}
-                              disabled={isLoadingPuckSessions || isTranscribing}
-                              className="h-9 rounded-xl border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
-                            >
-                              Refresh
-                            </button>
-                          </div>
-                          {puckSessions.length > 0 ? (
-                            <div className="max-h-48 overflow-y-auto p-2">
-                              {puckSessions.map((session) => {
-                                const importKey = getSessionImportKey(currentPuckBaseUrl, session.sessionPath);
-                                const alreadyImported = session.uploaded || importedSessionKeys.has(importKey);
-                                const isImportingThis = importingSessionPath === session.sessionPath;
-                                const canImport = !alreadyImported && !isTranscribing && !importingSessionPath && session.sizeBytes > 44;
-
-                                return (
-                                  <div
-                                    key={session.sessionPath}
-                                    className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-gray-50"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-semibold text-gray-900">{session.name}</p>
-                                      <p className="text-xs text-gray-400">
-                                        {formatDuration(session.durationSeconds)} - {formatBytes(session.sizeBytes)}
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        void importPuckSession(session);
-                                      }}
-                                      disabled={!canImport}
-                                      className={clsx(
-                                        "h-9 rounded-xl px-3 text-[10px] font-bold uppercase tracking-widest",
-                                        alreadyImported
-                                          ? "bg-emerald-50 text-emerald-700"
-                                          : "bg-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300",
-                                      )}
-                                    >
-                                      {isImportingThis ? "Importing" : alreadyImported ? "Imported" : "Import"}
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-4">
+                    <section className="rounded-[1.5rem] border border-gray-200 bg-white p-5 shadow-sm">
+                      <div>
                       <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
                         Save Session To Folder
                       </label>
@@ -1873,96 +1969,112 @@ export function WorkspaceShell({
                           </button>
                         </div>
                       ) : null}
-                    </div>
+                      </div>
 
-                        <div className="mt-5 grid grid-cols-3 gap-3">
-                          <SyncStatCard label="Duration" value={formatDuration(recordingSeconds)} />
-                          <SyncStatCard label="Captured" value={formatBytes(recordingBytes)} />
-                          <SyncStatCard
-                            label="Rate"
-                            value={recordingBytes > 0 ? "16 kHz" : "Ready"}
-                          />
-                        </div>
+                      <button
+                        type="button"
+                        onClick={triggerAudioImport}
+                        className="mt-4 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-7 text-center transition-colors hover:border-gray-400"
+                      >
+                        <Upload className="mb-3 h-7 w-7 text-gray-400" />
+                        <p className="text-sm font-semibold text-gray-700">Import audio from SmartPuck or this computer</p>
+                        <p className="mt-1 text-xs text-gray-400">WAV, MP3, or M4A. The laptop transcribes it locally.</p>
+                      </button>
 
-                        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                          {puckState !== "listening" && puckState !== "recording" ? (
+                      {recordingDownloadUrl && recordingFileName ? (
+                        <a
+                          href={recordingDownloadUrl}
+                          download={recordingFileName}
+                          className="mt-4 flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white text-xs font-bold uppercase tracking-widest text-black hover:border-gray-400"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download Browser WAV
+                        </a>
+                      ) : null}
+
+                      {puckState === "connected" || puckState === "listening" || puckState === "recording" || latestPuckStatus ? (
+                        <div className="mt-4 rounded-2xl border border-gray-100 bg-white">
+                          <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                            <div>
+                              <p className="font-display text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                                Device recordings
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {isLoadingPuckSessions
+                                  ? "Checking SmartPuck..."
+                                  : puckSessions.length > 0
+                                    ? "Import, remove, or leave recordings on the device."
+                                    : "No saved recordings found on the device."}
+                              </p>
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
-                                void startLiveListeningOnly();
+                                void refreshPuckSessions(currentPuckBaseUrl);
                               }}
-                              disabled={puckState === "checking"}
-                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-black text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                              disabled={isLoadingPuckSessions || isTranscribing}
+                              className="h-9 rounded-xl border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black disabled:cursor-not-allowed disabled:text-gray-300"
                             >
-                              <Radio className="h-5 w-5" />
-                              Start Listening
+                              Refresh
                             </button>
-                          ) : null}
+                          </div>
+                          {puckSessions.length > 0 ? (
+                            <div className="max-h-64 overflow-y-auto p-2">
+                              {puckSessions.map((session) => {
+                                const importKey = getSessionImportKey(currentPuckBaseUrl, session.sessionPath);
+                                const alreadyImported = session.uploaded || importedSessionKeys.has(importKey);
+                                const isImportingThis = importingSessionPath === session.sessionPath;
+                                const canImport = !alreadyImported && !isTranscribing && !importingSessionPath && session.sizeBytes > 44;
 
-                          {puckState === "listening" ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void startComputerRecording();
-                              }}
-                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
-                            >
-                              <Mic className="h-5 w-5" />
-                              Start Recording
-                            </button>
-                          ) : null}
-
-                          {puckState === "recording" ? (
-                            <button
-                              type="button"
-                              onClick={stopComputerRecording}
-                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full bg-red-600 text-sm font-bold uppercase tracking-widest text-white shadow-xl hover:bg-red-500"
-                            >
-                              <Square className="h-4 w-4 fill-current" />
-                              Stop & Save
-                            </button>
-                          ) : null}
-
-                          {puckState === "listening" || puckState === "recording" ? (
-                            <button
-                              type="button"
-                              onClick={stopLiveListening}
-                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
-                            >
-                              <Square className="h-4 w-4" />
-                              Stop Listening
-                            </button>
-                          ) : null}
-
-                          {recordingDownloadUrl && recordingFileName ? (
-                            <a
-                              href={recordingDownloadUrl}
-                              download={recordingFileName}
-                              className="flex h-14 flex-1 items-center justify-center gap-3 rounded-full border border-gray-200 bg-white text-sm font-bold uppercase tracking-widest text-black hover:border-gray-400"
-                            >
-                              <Download className="h-5 w-5" />
-                              Download WAV
-                            </a>
+                                return (
+                                  <div
+                                    key={session.sessionPath}
+                                    className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-gray-50"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-semibold text-gray-900">
+                                        {session.name.replace(/_/g, " ")}
+                                      </p>
+                                      <p className="truncate text-xs text-gray-400">
+                                        {formatDuration(session.durationSeconds)} - {formatBytes(session.sizeBytes)} -{" "}
+                                        {puckWifiConfig?.activeSsid || latestPuckStatus?.network || session.storageMode}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void importPuckSession(session);
+                                      }}
+                                      disabled={!canImport}
+                                      className={clsx(
+                                        "h-9 rounded-xl px-3 text-[10px] font-bold uppercase tracking-widest",
+                                        alreadyImported
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300",
+                                      )}
+                                    >
+                                      {isImportingThis ? "Importing" : alreadyImported ? "Imported" : "Import"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void removePuckSession(session);
+                                      }}
+                                      disabled={isTranscribing || importingSessionPath === session.sessionPath}
+                                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300"
+                                      aria-label={`Remove ${session.name}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           ) : null}
                         </div>
-
-                    <button
-                      type="button"
-                      onClick={triggerAudioImport}
-                      className="mt-4 flex w-full items-center justify-center gap-3 rounded-full border-2 border-dashed border-gray-300 py-4 text-sm font-bold uppercase tracking-widest text-gray-500 hover:border-gray-500 hover:text-black"
-                    >
-                      <Upload className="h-5 w-5" />
-                      Import Audio File
-                    </button>
+                      ) : null}
+                    </section>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={closeNewRecording}
-                    className="text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-black"
-                  >
-                    Cancel
-                  </button>
                 </div>
               ) : (
                 <div id="nr-syncing" className="flex h-full w-full flex-col items-center justify-center gap-10">
