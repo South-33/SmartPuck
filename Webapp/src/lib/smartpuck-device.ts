@@ -35,6 +35,10 @@ export type SmartPuckSession = {
   sessionPath: string;
   audioPath: string;
   name: string;
+  displayName?: string;
+  createdAt?: string;
+  network?: string;
+  ip?: string;
   sizeBytes: number;
   durationSeconds: number;
   uploaded: boolean;
@@ -92,6 +96,10 @@ export function normalizeSmartPuckSessions(payload: unknown): SmartPuckSession[]
         sessionPath: candidate.sessionPath,
         audioPath: candidate.audioPath,
         name: candidate.name,
+        displayName: typeof candidate.displayName === "string" ? candidate.displayName : undefined,
+        createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : undefined,
+        network: typeof candidate.network === "string" ? candidate.network : undefined,
+        ip: typeof candidate.ip === "string" ? candidate.ip : undefined,
         sizeBytes: typeof candidate.sizeBytes === "number" ? candidate.sizeBytes : 0,
         durationSeconds: typeof candidate.durationSeconds === "number" ? candidate.durationSeconds : 0,
         uploaded: candidate.uploaded === true,

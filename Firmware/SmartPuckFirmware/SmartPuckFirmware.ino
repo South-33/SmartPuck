@@ -18,6 +18,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
+#include <time.h>
 #include "freertos/ringbuf.h"
 
 #if __has_include("local_config.h")
@@ -166,6 +167,10 @@ const char* SMARTPUCK_HTTP_HEADERS[] = { "Range" };
 void setStatusLED(uint8_t r, uint8_t g, uint8_t b);
 bool initSDCard();
 String getNextSessionPath();
+String buildSessionSlug();
+String getSessionTimestamp();
+String sanitizePathSegment(String value);
+String readManifestField(String sessionPath, String field);
 bool initI2S();
 void startRecording();
 void stopRecording();
@@ -335,10 +340,11 @@ String getNextSessionPath() {
     SD_DEVICE.mkdir("/sessions");
   }
 
+  String sessionSlug = buildSessionSlug();
   int maxIndex = 0;
   File root = SD_DEVICE.open("/sessions");
   if (!root) {
-    return "/sessions/session_001";
+    return "/sessions/" + sessionSlug + "_001";
   }
 
   File file = root.openNextFile();
@@ -347,8 +353,9 @@ String getNextSessionPath() {
       String name = file.name();
       int lastSlash = name.lastIndexOf('/');
       String folderName = (lastSlash >= 0) ? name.substring(lastSlash + 1) : name;
-      if (folderName.startsWith("session_")) {
-        int index = folderName.substring(8).toInt();
+      String prefix = sessionSlug + "_";
+      if (folderName.startsWith(prefix)) {
+        int index = folderName.substring(prefix.length()).toInt();
         if (index > maxIndex) {
           maxIndex = index;
         }
@@ -359,9 +366,48 @@ String getNextSessionPath() {
   root.close();
 
   int nextIndex = maxIndex + 1;
-  char buf[32];
-  snprintf(buf, sizeof(buf), "/sessions/session_%03d", nextIndex);
+  char buf[96];
+  snprintf(buf, sizeof(buf), "/sessions/%s_%03d", sessionSlug.c_str(), nextIndex);
   return String(buf);
+}
+
+String buildSessionSlug() {
+  String timestamp = getSessionTimestamp();
+  String network = apModeActive ? "direct" : WiFi.SSID();
+  network = sanitizePathSegment(network);
+  if (network.length() == 0) {
+    network = "offline";
+  }
+  return "session_" + timestamp + "_" + network;
+}
+
+String getSessionTimestamp() {
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 250)) {
+    char buffer[20];
+    strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", &timeinfo);
+    return String(buffer);
+  }
+
+  char fallback[20];
+  snprintf(fallback, sizeof(fallback), "boot_%lu", (unsigned long)(millis() / 1000));
+  return String(fallback);
+}
+
+String sanitizePathSegment(String value) {
+  value.trim();
+  String out = "";
+  for (size_t i = 0; i < value.length() && out.length() < 24; i++) {
+    char c = value.charAt(i);
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+      out += c;
+    } else if (c == '-' || c == '_') {
+      out += c;
+    } else if (c == ' ') {
+      out += "-";
+    }
+  }
+  return out;
 }
 
 bool repairWavHeader(String wavPath) {
@@ -388,6 +434,37 @@ bool repairWavHeader(String wavPath) {
   wav.flush();
   wav.close();
   return true;
+}
+
+String readManifestField(String sessionPath, String field) {
+  if (!isSafeSessionPath(sessionPath)) {
+    return "";
+  }
+
+  File manifest = SD_DEVICE.open(sessionPath + "/manifest.json", FILE_READ);
+  if (!manifest) {
+    return "";
+  }
+
+  String needle = "\"" + field + "\"";
+  while (manifest.available()) {
+    String line = manifest.readStringUntil('\n');
+    int keyIndex = line.indexOf(needle);
+    if (keyIndex < 0) {
+      continue;
+    }
+    int colonIndex = line.indexOf(':', keyIndex + needle.length());
+    int valueStart = line.indexOf('"', colonIndex + 1);
+    int valueEnd = valueStart >= 0 ? line.indexOf('"', valueStart + 1) : -1;
+    if (colonIndex >= 0 && valueStart >= 0 && valueEnd > valueStart) {
+      String value = line.substring(valueStart + 1, valueEnd);
+      manifest.close();
+      return value;
+    }
+  }
+
+  manifest.close();
+  return "";
 }
 
 void repairIncompleteSessions() {
@@ -505,9 +582,19 @@ void startRecording() {
     // Create manifest file
     File manifest = SD_DEVICE.open(currentSessionDir + "/manifest.json", FILE_WRITE);
     if (manifest) {
+      String sessionName = currentSessionDir.substring(currentSessionDir.lastIndexOf('/') + 1);
+      String recordedAt = getSessionTimestamp();
+      String network = apModeActive ? "SmartPuck direct Wi-Fi" : WiFi.SSID();
+      String ipAddress = apModeActive ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
       manifest.println("{");
       manifest.println("  \"version\": 1,");
       manifest.println("  \"device\": \"SmartPuck-MVP\",");
+      manifest.println("  \"name\": \"" + jsonEscape(sessionName) + "\",");
+      manifest.println("  \"displayName\": \"" + jsonEscape(recordedAt + " - " + network) + "\",");
+      manifest.println("  \"createdAt\": \"" + jsonEscape(recordedAt) + "\",");
+      manifest.println("  \"network\": \"" + jsonEscape(network) + "\",");
+      manifest.println("  \"ip\": \"" + jsonEscape(ipAddress) + "\",");
+      manifest.println("  \"storageMode\": \"" + String(usePsramFallback ? "psram" : "microsd") + "\",");
       manifest.println("  \"audio\": \"audio_000.wav\"");
       manifest.println("}");
       manifest.close();
@@ -703,6 +790,7 @@ bool connectToWiFi(const char* ssid, const char* password, const char* sourceLab
   Serial.println("\nWiFi connected successfully!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
   sendConvexHeartbeat("Connected");
 
   // Flash green twice to confirm connection
@@ -744,6 +832,7 @@ bool connectToStoredSdkWiFi() {
   Serial.println("\nWiFi connected successfully using ESP stored credentials!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
   sendConvexHeartbeat("Connected");
 
   for (int k = 0; k < 2; k++) {
@@ -1909,6 +1998,16 @@ String buildSessionsJson() {
     String sessionPath = sessionPaths[i];
     String audioPath = sessionPath + "/audio_000.wav";
     String name = sessionPath.substring(sessionPath.lastIndexOf('/') + 1);
+    String displayName = readManifestField(sessionPath, "displayName");
+    String createdAt = readManifestField(sessionPath, "createdAt");
+    String network = readManifestField(sessionPath, "network");
+    String ip = readManifestField(sessionPath, "ip");
+    if (displayName.length() == 0) {
+      displayName = name;
+    }
+    if (network.length() == 0) {
+      network = activeNetworkInfo;
+    }
     size_t sizeBytes = 0;
     File wav = SD_DEVICE.open(audioPath, FILE_READ);
     if (wav) {
@@ -1920,6 +2019,10 @@ String buildSessionsJson() {
     json += "{\"sessionPath\":\"" + jsonEscape(sessionPath) + "\",";
     json += "\"audioPath\":\"" + jsonEscape(audioPath) + "\",";
     json += "\"name\":\"" + jsonEscape(name) + "\",";
+    json += "\"displayName\":\"" + jsonEscape(displayName) + "\",";
+    json += "\"createdAt\":\"" + jsonEscape(createdAt) + "\",";
+    json += "\"network\":\"" + jsonEscape(network) + "\",";
+    json += "\"ip\":\"" + jsonEscape(ip) + "\",";
     json += "\"sizeBytes\":" + String(sizeBytes) + ",";
     json += "\"durationSeconds\":" + String(sizeBytes > 44 ? (sizeBytes - 44) / 32000 : 0) + ",";
     json += "\"uploaded\":" + String(sessionHasUploadedMarker(sessionPath) ? "true" : "false") + ",";

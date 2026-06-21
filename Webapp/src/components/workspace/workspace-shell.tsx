@@ -20,6 +20,7 @@ import {
   Archive,
   ArrowRight,
   ArrowUp,
+  ChevronDown,
   CircleHelp,
   Download,
   FileText,
@@ -122,7 +123,20 @@ type WorkspaceView =
 type WorkspaceTab = "dashboard" | "transcripts" | "device";
 type NewRecordingState = "connect" | "syncing";
 type PuckConnectionState = "idle" | "checking" | "connected" | "listening" | "recording" | "error";
+type TranscriptionProfile = "auto" | "english-fast" | "khmer-better" | "khmer-tiny" | "high-quality";
 const DEFAULT_PUCK_ADDRESS = "http://192.168.4.1";
+
+const TRANSCRIPTION_PROFILES: Array<{
+  id: TranscriptionProfile;
+  label: string;
+  hint: string;
+}> = [
+  { id: "auto", label: "Auto", hint: "Routes by language" },
+  { id: "english-fast", label: "English fast", hint: "Small English model" },
+  { id: "khmer-better", label: "Khmer better", hint: "Specialist model" },
+  { id: "khmer-tiny", label: "Khmer tiny", hint: "Lower resource" },
+  { id: "high-quality", label: "High quality", hint: "Turbo fallback" },
+];
 
 const ARCHIVE_ITEMS = [
   {
@@ -253,6 +267,8 @@ export function WorkspaceShell({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionProgressMessage, setTranscriptionProgressMessage] = useState("");
   const [transcriptionError, setTranscriptionError] = useState("");
+  const [transcriptionServerState, setTranscriptionServerState] = useState<"unknown" | "ready" | "offline">("unknown");
+  const [transcriptionProfile, setTranscriptionProfile] = useState<TranscriptionProfile>("auto");
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
   const [syncProgress, setSyncProgress] = useState({
     percent: 0,
@@ -261,6 +277,7 @@ export function WorkspaceShell({
     audioHours: 0,
   });
   const [importFolderId, setImportFolderId] = useState(fallbackFolderId || "");
+  const [isImportFolderMenuOpen, setIsImportFolderMenuOpen] = useState(false);
   const [prevFallbackFolderId, setPrevFallbackFolderId] = useState(fallbackFolderId);
   if (fallbackFolderId !== prevFallbackFolderId) {
     setPrevFallbackFolderId(fallbackFolderId);
@@ -364,6 +381,15 @@ export function WorkspaceShell({
       setWifiSetupMessage("");
     } catch {
       setPuckWifiConfig(null);
+    }
+  }, []);
+
+  const checkTranscriptionServer = useCallback(async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:8000/health", { cache: "no-store" });
+      setTranscriptionServerState(response.ok ? "ready" : "offline");
+    } catch {
+      setTranscriptionServerState("offline");
     }
   }, []);
 
@@ -629,8 +655,9 @@ export function WorkspaceShell({
     }
 
     autoCheckedPuckAddressRef.current = "auto";
+    void checkTranscriptionServer();
     void autoFindPuck();
-  }, [activeView, puckState, autoFindPuck]);
+  }, [activeView, puckState, autoFindPuck, checkTranscriptionServer]);
 
   useEffect(() => {
     if (puckState !== "recording" || recordingStartedAt === null) {
@@ -754,6 +781,7 @@ export function WorkspaceShell({
     setNewRecordingState("connect");
     setPendingTransport("wifi");
     setImportFolderId(fallbackFolderId || "");
+    setIsImportFolderMenuOpen(false);
     setPuckState("idle");
     setPuckStatus("SmartPuck will be detected automatically when it is on the same network.");
     autoCheckedPuckAddressRef.current = null;
@@ -1027,7 +1055,7 @@ export function WorkspaceShell({
     setIsTranscribing(true);
     setTranscriptionError("");
     setNewRecordingState("syncing");
-    setTranscriptionProgressMessage("Uploading audio to local transcription engine...");
+    setTranscriptionProgressMessage("Preparing local transcription...");
     setSyncProgress({
       percent: 10,
       transferredMb: 1,
@@ -1036,25 +1064,7 @@ export function WorkspaceShell({
     });
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      
-      let transcribeRes: Response;
-      try {
-        transcribeRes = await fetch("http://127.0.0.1:8000/transcribe?model_name=turbo", {
-          method: "POST",
-          body: formData,
-        });
-      } catch {
-        throw new Error(
-          "Local transcription is not running. Start the local transcription server on port 8000, then import again.",
-        );
-      }
-
-      if (!transcribeRes.ok) {
-        throw new Error(`Local transcription server returned ${transcribeRes.status}: ${await transcribeRes.text()}`);
-      }
-
+      const transcription = await transcribeAudioFile(file, setTranscriptionProgressMessage);
       setTranscriptionProgressMessage("Transcription complete. Saving transcript...");
       setSyncProgress({
         percent: 60,
@@ -1063,7 +1073,6 @@ export function WorkspaceShell({
         audioHours: 0.5,
       });
 
-      const transcription = await transcribeRes.json();
       const transcriptText = formatTranscriptionText(transcription);
 
       setTranscriptionProgressMessage("Saving meeting record...");
@@ -1136,6 +1145,38 @@ export function WorkspaceShell({
       setImportingSessionPath(null);
       setTranscriptionProgressMessage("");
     }
+  }
+
+  async function transcribeAudioFile(file: File, onProgress: (message: string) => void) {
+    if (transcriptionServerState !== "ready") {
+      onProgress("Checking the local SmartPuck worker...");
+      try {
+        const health = await fetch("http://127.0.0.1:8000/health", { cache: "no-store" });
+        if (!health.ok) {
+          throw new Error("Health check failed");
+        }
+        setTranscriptionServerState("ready");
+      } catch {
+        setTranscriptionServerState("offline");
+        throw new Error(
+          "Local transcription worker is not running. Start the SmartPuck worker on this laptop, then import again.",
+        );
+      }
+    }
+
+    onProgress("Sending audio to the local SmartPuck worker...");
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(`http://127.0.0.1:8000/transcribe?model_name=${transcriptionProfile}`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Local transcription server returned ${response.status}: ${await response.text()}`);
+    }
+
+    return response.json();
   }
 
   function handleAudioFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1928,17 +1969,45 @@ export function WorkspaceShell({
                         Save Session To Folder
                       </label>
                       <div className="flex gap-2">
-                        <select
-                          value={importFolderId}
-                          onChange={(e) => setImportFolderId(e.target.value)}
-                          className="h-12 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm font-semibold text-gray-900 outline-none focus:border-gray-400"
-                        >
-                          {visibleFolders.map((folder) => (
-                            <option key={folder.id} value={folder.id}>
-                              {folder.name}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => setIsImportFolderMenuOpen((open) => !open)}
+                            className="flex h-12 w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 text-left text-sm font-semibold text-gray-900 outline-none transition focus:border-gray-400"
+                          >
+                            <span className="min-w-0 truncate">
+                              {visibleFolders.find((folder) => folder.id === importFolderId)?.name ?? "Choose folder"}
+                            </span>
+                            <ChevronDown
+                              className={clsx(
+                                "h-4 w-4 flex-shrink-0 text-gray-500 transition-transform",
+                                isImportFolderMenuOpen ? "rotate-180" : "",
+                              )}
+                            />
+                          </button>
+                          {isImportFolderMenuOpen ? (
+                            <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl">
+                              {visibleFolders.map((folder) => (
+                                <button
+                                  key={folder.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setImportFolderId(folder.id);
+                                    setIsImportFolderMenuOpen(false);
+                                  }}
+                                  className={clsx(
+                                    "flex h-10 w-full items-center rounded-lg px-3 text-left text-sm font-semibold",
+                                    folder.id === importFolderId
+                                      ? "bg-gray-100 text-black"
+                                      : "text-gray-600 hover:bg-gray-50 hover:text-black",
+                                  )}
+                                >
+                                  <span className="min-w-0 truncate">{folder.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                         <button
                           type="button"
                           onClick={() => setShowInlineFolderCreator(!showInlineFolderCreator)}
@@ -1971,14 +2040,52 @@ export function WorkspaceShell({
                       ) : null}
                       </div>
 
+                      <div className="mt-4">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                          Transcription Mode
+                        </p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {TRANSCRIPTION_PROFILES.map((profile) => (
+                            <button
+                              key={profile.id}
+                              type="button"
+                              onClick={() => setTranscriptionProfile(profile.id)}
+                              className={clsx(
+                                "rounded-xl border px-3 py-2 text-left transition",
+                                transcriptionProfile === profile.id
+                                  ? "border-black bg-black text-white"
+                                  : "border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300 hover:bg-white",
+                              )}
+                            >
+                              <span className="block text-xs font-bold uppercase tracking-widest">
+                                {profile.label}
+                              </span>
+                              <span
+                                className={clsx(
+                                  "mt-1 block text-[11px]",
+                                  transcriptionProfile === profile.id ? "text-white/65" : "text-gray-400",
+                                )}
+                              >
+                                {profile.hint}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <button
                         type="button"
                         onClick={triggerAudioImport}
                         className="mt-4 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-7 text-center transition-colors hover:border-gray-400"
                       >
                         <Upload className="mb-3 h-7 w-7 text-gray-400" />
-                        <p className="text-sm font-semibold text-gray-700">Import audio from SmartPuck or this computer</p>
-                        <p className="mt-1 text-xs text-gray-400">WAV, MP3, or M4A. The laptop transcribes it locally.</p>
+                        <p className="text-sm font-semibold text-gray-700">Upload audio from this computer</p>
+                        <p className="mt-1 text-xs text-gray-400">
+                          WAV, MP3, or M4A.{" "}
+                          {transcriptionServerState === "ready"
+                            ? "The local worker will transcribe it."
+                            : "Start the local worker before importing."}
+                        </p>
                       </button>
 
                       {recordingDownloadUrl && recordingFileName ? (
@@ -2033,11 +2140,11 @@ export function WorkspaceShell({
                                   >
                                     <div className="min-w-0 flex-1">
                                       <p className="truncate text-sm font-semibold text-gray-900">
-                                        {session.name.replace(/_/g, " ")}
+                                        {(session.displayName || session.name).replace(/_/g, " ")}
                                       </p>
                                       <p className="truncate text-xs text-gray-400">
                                         {formatDuration(session.durationSeconds)} - {formatBytes(session.sizeBytes)} -{" "}
-                                        {puckWifiConfig?.activeSsid || latestPuckStatus?.network || session.storageMode}
+                                        {session.network || puckWifiConfig?.activeSsid || latestPuckStatus?.network || session.storageMode}
                                       </p>
                                     </div>
                                     <button

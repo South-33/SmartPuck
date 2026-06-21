@@ -52,7 +52,7 @@ describe("Demo workspace UI", () => {
     expect(screen.queryByRole("button", { name: /^USB$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Bluetooth$/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Import audio from SmartPuck or this computer/i }));
+    await user.click(screen.getByRole("button", { name: /Upload audio from this computer/i }));
 
     expect(
       await screen.findByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i, {}, { timeout: 2000 }),
