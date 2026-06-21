@@ -121,9 +121,14 @@ type WorkspaceView =
   | "settings";
 
 type WorkspaceTab = "dashboard" | "transcripts" | "device";
-type NewRecordingState = "connect" | "syncing";
 type PuckConnectionState = "idle" | "checking" | "connected" | "listening" | "recording" | "error";
 type TranscriptionProfile = "auto" | "english-fast" | "khmer-better" | "khmer-tiny" | "high-quality";
+type ImportStatus = {
+  state: "idle" | "working" | "done" | "error";
+  message: string;
+  detail?: string;
+  meetingId?: string;
+};
 const DEFAULT_PUCK_ADDRESS = "http://192.168.4.1";
 
 const TRANSCRIPTION_PROFILES: Array<{
@@ -260,22 +265,29 @@ export function WorkspaceShell({
     });
     return initial;
   });
-  const [newRecordingState, setNewRecordingState] = useState<NewRecordingState>("connect");
   const [pendingTransport, setPendingTransport] = useState<DeviceTransport>("wifi");
   const [showInlineFolderCreator, setShowInlineFolderCreator] = useState(false);
   const [inlineFolderName, setInlineFolderName] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcriptionProgressMessage, setTranscriptionProgressMessage] = useState("");
   const [transcriptionError, setTranscriptionError] = useState("");
+  const [importStatus, setImportStatus] = useState<ImportStatus>({
+    state: "idle",
+    message: "Ready to import audio.",
+  });
+  const setTranscriptionProgressMessage = useCallback((message: string) => {
+    setImportStatus((current) =>
+      current.state === "done"
+        ? current
+        : {
+            ...current,
+            state: "working",
+            message,
+          },
+    );
+  }, []);
   const [transcriptionServerState, setTranscriptionServerState] = useState<"unknown" | "ready" | "offline">("unknown");
   const [transcriptionProfile, setTranscriptionProfile] = useState<TranscriptionProfile>("auto");
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [syncProgress, setSyncProgress] = useState({
-    percent: 0,
-    transferredMb: 0,
-    attachments: 0,
-    audioHours: 0,
-  });
   const [importFolderId, setImportFolderId] = useState(fallbackFolderId || "");
   const [isImportFolderMenuOpen, setIsImportFolderMenuOpen] = useState(false);
   const [prevFallbackFolderId, setPrevFallbackFolderId] = useState(fallbackFolderId);
@@ -601,39 +613,6 @@ export function WorkspaceShell({
   }, [activeMeetingId, draftMessage]);
 
   useEffect(() => {
-    if (activeView !== "new-recording" || newRecordingState !== "syncing") {
-      return;
-    }
-
-    const targets =
-      pendingTransport === "usb"
-        ? { percent: 68, transferredMb: 83, attachments: 0, audioHours: 1.5 }
-        : pendingTransport === "bluetooth"
-          ? { percent: 52, transferredMb: 52, attachments: 0, audioHours: 0.8 }
-          : { percent: 41, transferredMb: 34, attachments: 0, audioHours: 0.5 };
-
-    let step = 0;
-    const totalSteps = 16;
-
-    const interval = window.setInterval(() => {
-      step += 1;
-      const ratio = Math.min(step / totalSteps, 1);
-      setSyncProgress({
-        percent: Math.round(targets.percent * ratio),
-        transferredMb: Math.round(targets.transferredMb * ratio),
-        attachments: Math.round(targets.attachments * ratio),
-        audioHours: Number((targets.audioHours * ratio).toFixed(1)),
-      });
-
-      if (ratio >= 1) {
-        window.clearInterval(interval);
-      }
-    }, 110);
-
-    return () => window.clearInterval(interval);
-  }, [activeView, newRecordingState, pendingTransport]);
-
-  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -778,10 +757,11 @@ export function WorkspaceShell({
 
   function showNewRecording() {
     setActiveView("new-recording");
-    setNewRecordingState("connect");
     setPendingTransport("wifi");
     setImportFolderId(fallbackFolderId || "");
     setIsImportFolderMenuOpen(false);
+    setImportStatus({ state: "idle", message: "Ready to import audio." });
+    setTranscriptionError("");
     setPuckState("idle");
     setPuckStatus("SmartPuck will be detected automatically when it is on the same network.");
     autoCheckedPuckAddressRef.current = null;
@@ -796,7 +776,6 @@ export function WorkspaceShell({
     }
     setActiveView("recent-sessions");
     setActiveTab("dashboard");
-    setNewRecordingState("connect");
   }
 
 
@@ -1054,34 +1033,25 @@ export function WorkspaceShell({
 
     setIsTranscribing(true);
     setTranscriptionError("");
-    setNewRecordingState("syncing");
     setTranscriptionProgressMessage("Preparing local transcription...");
-    setSyncProgress({
-      percent: 10,
-      transferredMb: 1,
-      attachments: 0,
-      audioHours: 0.1,
+    setImportStatus({
+      state: "working",
+      message: "Preparing local transcription...",
+      detail: `${file.name} - ${formatBytes(file.size)}`,
     });
 
     try {
       const transcription = await transcribeAudioFile(file, setTranscriptionProgressMessage);
       setTranscriptionProgressMessage("Transcription complete. Saving transcript...");
-      setSyncProgress({
-        percent: 60,
-        transferredMb: Math.round(file.size / 1000000),
-        attachments: 0,
-        audioHours: 0.5,
+      setImportStatus({
+        state: "working",
+        message: "Saving transcript to the selected folder...",
+        detail: `${file.name} - ${formatBytes(file.size)}`,
       });
 
       const transcriptText = formatTranscriptionText(transcription);
 
       setTranscriptionProgressMessage("Saving meeting record...");
-      setSyncProgress({
-        percent: 90,
-        transferredMb: Math.round(file.size / 1000000),
-        attachments: 0,
-        audioHours: 0.8,
-      });
 
       if (onCreateMeetingWithAudio) {
         const durationMin = getTranscriptionDurationMinutes(transcription);
@@ -1105,9 +1075,12 @@ export function WorkspaceShell({
           audioHours: Number((durationMin / 60).toFixed(2)),
         });
 
-        if (meetingId) {
-          onSelectMeeting(meetingId);
-        }
+        setImportStatus({
+          state: "done",
+          message: "Transcript saved to the selected folder.",
+          detail: `${file.name} - ${durationStr} - ${formatBytes(file.size)}`,
+          meetingId,
+        });
       }
 
       if (sourceSession) {
@@ -1124,13 +1097,7 @@ export function WorkspaceShell({
         await refreshPuckSessions(sourceSession.baseUrl);
       }
 
-      setSyncProgress({
-        percent: 100,
-        transferredMb: Math.round(file.size / 1024 / 1024),
-        attachments: 0,
-        audioHours: 1.0,
-      });
-      closeNewRecording();
+      setPuckStatus("Import complete. The transcript is saved in the selected folder.");
     } catch (err) {
       const error = err as Error;
       console.error(error);
@@ -1139,17 +1106,25 @@ export function WorkspaceShell({
           "Failed to process transcription. Make sure the local transcription server is running on port 8000.",
       );
       setPuckStatus("Import paused. Local transcription is unavailable.");
-      setNewRecordingState("connect");
+      setImportStatus({
+        state: "error",
+        message: "Import paused.",
+        detail: error.message || "Failed to process transcription.",
+      });
     } finally {
       setIsTranscribing(false);
       setImportingSessionPath(null);
-      setTranscriptionProgressMessage("");
     }
   }
 
   async function transcribeAudioFile(file: File, onProgress: (message: string) => void) {
     if (transcriptionServerState !== "ready") {
       onProgress("Checking the local SmartPuck worker...");
+      setImportStatus({
+        state: "working",
+        message: "Checking the local SmartPuck worker...",
+        detail: "The worker must be running on this laptop.",
+      });
       try {
         const health = await fetch("http://127.0.0.1:8000/health", { cache: "no-store" });
         if (!health.ok) {
@@ -1165,6 +1140,11 @@ export function WorkspaceShell({
     }
 
     onProgress("Sending audio to the local SmartPuck worker...");
+    setImportStatus({
+      state: "working",
+      message: "Transcribing locally...",
+      detail: `${file.name} - ${formatBytes(file.size)}. This can take a while for long audio.`,
+    });
     const formData = new FormData();
     formData.append("file", file);
     const response = await fetch(`http://127.0.0.1:8000/transcribe?model_name=${transcriptionProfile}`, {
@@ -1203,11 +1183,10 @@ export function WorkspaceShell({
     setPendingTransport("wifi");
     setImportingSessionPath(session.sessionPath);
     setTranscriptionProgressMessage("Downloading recording from SmartPuck...");
-    setSyncProgress({
-      percent: 8,
-      transferredMb: Math.max(1, Math.round(session.sizeBytes / 1024 / 1024)),
-      attachments: 0,
-      audioHours: Number((session.durationSeconds / 3600).toFixed(2)),
+    setImportStatus({
+      state: "working",
+      message: "Downloading recording from SmartPuck...",
+      detail: `${formatDuration(session.durationSeconds)} - ${formatBytes(session.sizeBytes)}`,
     });
 
     try {
@@ -1216,11 +1195,10 @@ export function WorkspaceShell({
         session,
         onProgress: (downloadedBytes, totalBytes) => {
           setTranscriptionProgressMessage("Downloading recording from SmartPuck...");
-          setSyncProgress({
-            percent: Math.max(8, Math.min(45, Math.round((downloadedBytes / Math.max(totalBytes, 1)) * 45))),
-            transferredMb: Math.max(1, Math.round(downloadedBytes / 1024 / 1024)),
-            attachments: 0,
-            audioHours: Number((session.durationSeconds / 3600).toFixed(2)),
+          setImportStatus({
+            state: "working",
+            message: "Downloading recording from SmartPuck...",
+            detail: `${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}`,
           });
         },
       });
@@ -1230,8 +1208,6 @@ export function WorkspaceShell({
     } catch (error) {
       setImportingSessionPath(null);
       setIsTranscribing(false);
-      setNewRecordingState("connect");
-      setTranscriptionProgressMessage("");
       alert(error instanceof Error ? error.message : "Failed to import the SmartPuck recording.");
     }
   }
@@ -1257,39 +1233,8 @@ export function WorkspaceShell({
     }
   }
 
-  async function handleDemoManualImport() {
-    const folderId = importFolderId || fallbackFolderId;
-    if (!folderId) {
-      return;
-    }
-
-    setPendingTransport("manual");
-    setSyncProgress({
-      percent: 0,
-      transferredMb: 0,
-      attachments: 0,
-      audioHours: 0,
-    });
-    setNewRecordingState("syncing");
-    
-    const [meetingId] = await Promise.all([
-      Promise.resolve(onConnectDevice(folderId, "manual")),
-      new Promise((resolve) => window.setTimeout(resolve, 900)),
-    ]);
-
-    if (typeof meetingId === "string") {
-      onSelectMeeting(meetingId);
-    }
-
-    closeNewRecording();
-  }
-
   function triggerAudioImport() {
-    if (mode === "demo") {
-      void handleDemoManualImport();
-    } else {
-      audioFileInputRef.current?.click();
-    }
+    audioFileInputRef.current?.click();
   }
 
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
@@ -1694,8 +1639,7 @@ export function WorkspaceShell({
                 onChange={handleAudioFileChange}
                 accept=".mp3,.wav,.m4a"
               />
-              {newRecordingState === "connect" ? (
-                <div id="nr-connect" className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+              <div id="nr-connect" className="mx-auto flex w-full max-w-6xl flex-col gap-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div className="space-y-1">
                       <p className="font-display text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400">
@@ -2076,6 +2020,7 @@ export function WorkspaceShell({
                       <button
                         type="button"
                         onClick={triggerAudioImport}
+                        disabled={isTranscribing}
                         className="mt-4 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-7 text-center transition-colors hover:border-gray-400"
                       >
                         <Upload className="mb-3 h-7 w-7 text-gray-400" />
@@ -2087,6 +2032,16 @@ export function WorkspaceShell({
                             : "Start the local worker before importing."}
                         </p>
                       </button>
+
+                      <ImportStatusPanel
+                        status={importStatus}
+                        isWorking={isTranscribing}
+                        onOpenMeeting={(meetingId) => {
+                          setActiveView("recent-sessions");
+                          setActiveTab("dashboard");
+                          onSelectMeeting(meetingId);
+                        }}
+                      />
 
                       {recordingDownloadUrl && recordingFileName ? (
                         <a
@@ -2182,61 +2137,7 @@ export function WorkspaceShell({
                       ) : null}
                     </section>
                   </div>
-                </div>
-              ) : (
-                <div id="nr-syncing" className="flex h-full w-full flex-col items-center justify-center gap-10">
-                  <RecordingOrb pulsing />
-
-                  <div className="space-y-2 text-center">
-                    <h2 className="font-display text-4xl font-bold tracking-tight text-black">
-                      {isTranscribing ? "Processing Session" : "Syncing Session"}
-                    </h2>
-                    <p className="font-display text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                      {isTranscribing ? transcriptionProgressMessage : "April 18, 2026 - Protocol: Ultra-Low Latency"}
-                    </p>
-                  </div>
-
-                  <div className="w-full max-w-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                        {isTranscribing ? "Progress" : "Active Uplink"}
-                      </span>
-                      <span className="font-display text-2xl font-light text-black">
-                        {syncProgress.percent}
-                        <sup className="text-sm">%</sup>
-                      </span>
-                    </div>
-                    <div className="h-px w-full overflow-hidden rounded-full bg-gray-200">
-                      <div
-                        className="h-full rounded-full bg-black transition-all duration-700"
-                        style={{ width: `${syncProgress.percent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid w-full max-w-lg grid-cols-1 gap-5 md:grid-cols-3">
-                    <SyncStatCard
-                      label="Transferred"
-                      value={`${syncProgress.transferredMb}`}
-                      suffix="MB"
-                    />
-                    <SyncStatCard label="Attachments" value={`${syncProgress.attachments}`} />
-                    <SyncStatCard
-                      label="Audio Stream"
-                      value={syncProgress.audioHours.toFixed(1)}
-                      suffix="HR"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={closeNewRecording}
-                    className="rounded-full border border-gray-200 px-8 py-3 text-xs font-bold uppercase tracking-widest text-gray-500 hover:border-gray-400 hover:text-black"
-                  >
-                    Stop & Discard
-                  </button>
-                </div>
-              )}
+              </div>
             </div>
           ) : null}
 
@@ -3069,12 +2970,12 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
     );
   }
 
+  const hasActivity = Boolean(message.activity?.length || message.reasoning?.trim());
   const isStreamingEmpty =
-    message.status === "streaming" && !message.body.trim() && !message.reasoning?.trim();
-  const hasReasoning = Boolean(message.reasoning?.trim());
+    message.status === "streaming" && !message.body.trim() && !hasActivity;
   const isError = message.status === "error";
   const isEmptyCompleteAssistant =
-    message.status !== "streaming" && !isError && !message.body.trim() && !hasReasoning;
+    message.status !== "streaming" && !isError && !message.body.trim() && !hasActivity;
 
   return (
     <div className="group flex gap-8">
@@ -3093,17 +2994,7 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
         )}
       </div>
       <div className="flex-1 space-y-5 pt-1">
-        {hasReasoning && (
-          <div className="max-w-3xl rounded-2xl border border-gray-100 bg-gray-50/50 p-4">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-gray-500">
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-              <span>Thinking Process</span>
-            </div>
-            <p className="font-mono text-sm leading-relaxed text-gray-500 italic whitespace-pre-wrap">
-              {message.reasoning}
-            </p>
-          </div>
-        )}
+        {hasActivity ? <AssistantActivity message={message} /> : null}
 
         {isError ? (
           <div className="max-w-3xl rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm leading-6 text-red-700">
@@ -3130,6 +3021,117 @@ function MessageBubble({ message }: { message: MeetingMessage }) {
         <p className="font-display text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">
           SmartPuck - {relativeLabel(message.createdAt)}
         </p>
+      </div>
+    </div>
+  );
+}
+
+function AssistantActivity({ message }: { message: MeetingMessage }) {
+  const activity = message.activity?.length
+    ? message.activity
+    : message.reasoning?.trim()
+      ? [{
+          id: `${message.id}-reasoning`,
+          title: "Thinking",
+          body: message.reasoning,
+          status: message.status === "streaming" ? "working" as const : "done" as const,
+        }]
+      : [];
+
+  if (activity.length === 0) {
+    return null;
+  }
+
+  const latest = activity[activity.length - 1];
+  const isWorking = message.status === "streaming" || activity.some((item) => item.status === "working");
+  const preview = latest.body?.split("\n").find(Boolean)?.trim();
+
+  return (
+    <details className="max-w-3xl rounded-2xl border border-gray-100 bg-gray-50/70 px-4 py-3 text-sm text-gray-600">
+      <summary className="flex cursor-pointer list-none items-center gap-3 font-medium text-gray-700">
+        {isWorking ? (
+          <LoaderCircle className="h-4 w-4 animate-spin text-gray-500" />
+        ) : (
+          <Sparkles className="h-4 w-4 text-gray-500" />
+        )}
+        <span className="flex-1 truncate">
+          {isWorking ? "Working" : "Activity"} · {latest.title}
+          {preview ? `: ${preview}` : ""}
+        </span>
+        <ChevronDown className="h-4 w-4 text-gray-400" />
+      </summary>
+      <div className="mt-4 space-y-3 border-l border-gray-200 pl-4">
+        {activity.map((item) => (
+          <div key={item.id}>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
+              <span
+                className={clsx(
+                  "h-2 w-2 rounded-full",
+                  item.status === "error"
+                    ? "bg-red-400"
+                    : item.status === "working"
+                      ? "animate-pulse bg-amber-400"
+                      : "bg-emerald-400",
+                )}
+              />
+              <span>{item.title}</span>
+              {item.source ? <span className="normal-case tracking-normal text-gray-300">· {item.source}</span> : null}
+            </div>
+            {item.body ? (
+              <p className="mt-1 whitespace-pre-wrap font-mono text-xs leading-5 text-gray-500">{item.body}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ImportStatusPanel({
+  status,
+  isWorking,
+  onOpenMeeting,
+}: {
+  status: ImportStatus;
+  isWorking: boolean;
+  onOpenMeeting: (meetingId: string) => void;
+}) {
+  if (status.state === "idle" && !isWorking) {
+    return null;
+  }
+
+  const tone =
+    status.state === "done"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-900"
+      : status.state === "error"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : "border-gray-200 bg-gray-50 text-gray-700";
+
+  return (
+    <div className={clsx("mt-4 rounded-2xl border px-4 py-3", tone)}>
+      <div className="flex items-start gap-3">
+        <span className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center">
+          {isWorking ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : status.state === "done" ? (
+            <Sparkles className="h-4 w-4" />
+          ) : (
+            <AlertCircle className="h-4 w-4" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">{status.message}</p>
+          {status.detail ? <p className="mt-1 text-xs leading-5 opacity-70">{status.detail}</p> : null}
+        </div>
+        {status.state === "done" && status.meetingId ? (
+          <button
+            type="button"
+            onClick={() => onOpenMeeting(status.meetingId!)}
+            className="flex-shrink-0 rounded-xl bg-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-gray-800"
+          >
+            Open Chat
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -3280,25 +3282,6 @@ function useAnimatedValue<T>(value: T, exitMs: number, key: string = String(valu
 
   const isExiting = key !== renderedKey;
   return { value: isExiting ? exitingValue : value, isExiting };
-}
-
-function RecordingOrb({ pulsing }: { pulsing: boolean }) {
-  return (
-    <div className="relative flex items-center justify-center">
-      {pulsing ? (
-        <div className="absolute h-64 w-64 animate-ping rounded-full bg-[rgba(0,0,0,0.08)] opacity-20" />
-      ) : null}
-      <div
-        className="h-52 w-52 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle at 38% 35%, #ffffff 0%, #e8e8e8 40%, #c8c8c8 70%, #a0a0a0 100%)",
-          boxShadow:
-            "inset -8px -8px 24px rgba(0,0,0,0.18), inset 4px 4px 16px rgba(255,255,255,0.9), 0 24px 64px rgba(0,0,0,0.12)",
-        }}
-      />
-    </div>
-  );
 }
 
 function SidebarNavItem({

@@ -635,21 +635,6 @@ export const createMeetingFromDeviceSync = mutation({
       },
     }[args.transport];
 
-    const mockTranscripts = {
-      wifi: `[15:10:02] Elena (AI): Starting the Wi-Fi live stream test. Can you hear the audio?
-[15:10:12] Alex (Frontend): Yes, the 16-bit 16kHz PCM stream is playing through the Web Audio API with very low latency—about 30 milliseconds.
-[15:10:30] Elena (AI): Great! The onboard SD card is recording in parallel.
-[15:10:45] Alex (Frontend): I can see the connection status is green, and I can download the WAV file now. Works perfectly.`,
-      usb: `[09:30:05] Sarah (Product): Let's verify the USB mass storage mode on the SmartPuck.
-[09:30:15] John (Hardware): When plugged in, the ESP32 MSC driver exposes the microSD card as a USB drive. The browser app reads it directly.
-[09:31:00] Dave (Firmware): I've verified the sector read/write speed. It's solid and works even if the partition format is corrupted because we expose raw block access.`,
-      bluetooth: `[11:00:10] John (Hardware): Testing Bluetooth connection. The puck is advertising its sync service.
-[11:00:30] Alex (Frontend): I'm able to pair with the puck from the browser using Web Bluetooth.
-[11:00:45] John (Hardware): Outstanding. We can sync metadata and trigger recording starts over BLE.`,
-      manual: `[13:00:05] Professor: Today we will cover design systems at scale.
-[13:00:20] Student: Can we import legacy CSS directly into Figma tokens?
-[13:01:00] Professor: Yes, we use automated style parsers to extract colors and typography, mapping them to variables.`,
-    }[args.transport];
 
     const meetingId = await ctx.db.insert("meetings", {
       scopeKey: viewer.scopeKey,
@@ -671,23 +656,8 @@ export const createMeetingFromDeviceSync = mutation({
       syncTransferredMb: transportLabels.transferredMb,
       syncVisuals: 0,
       syncAudioHours: transportLabels.audioHours,
-      decisions: [
-        "Keep each recording attached to the folder selected at ingest time.",
-        "Keep each upload attached to one folder to avoid cross-folder ambiguity.",
-      ],
-      actions: [
-        {
-          id: `sync-action-${now}-1`,
-          owner: "Backend",
-          label: "Attach transcript processing job once the pipeline exists",
-        },
-        {
-          id: `sync-action-${now}-2`,
-          owner: "Product",
-          label: "Pick auth provider before exposing uploads publicly",
-        },
-      ],
-      transcriptText: mockTranscripts,
+      decisions: [],
+      actions: [],
       updatedAt: now,
     });
 
@@ -947,16 +917,13 @@ export const createMeetingWithAudio = mutation({
       status: "ready",
       startedAtLabel: "Just now",
       sourceTransport: args.transport,
-      summary: "Local audio session transcribed on the laptop and saved to this folder.",
+      summary: "Imported audio was transcribed locally and saved to this folder.",
       transcriptPreview,
       syncPercent: 100,
       syncTransferredMb: args.transferredMb,
       syncVisuals: 0,
       syncAudioHours: args.audioHours,
-      decisions: [
-        "Transcribe locally using Whisper to keep voice data private.",
-        "Store transcript text inside the selected folder."
-      ],
+      decisions: [],
       actions: [],
       transcriptText: args.transcriptText,
       audioFileId: args.audioFileId,

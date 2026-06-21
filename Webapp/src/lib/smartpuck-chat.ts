@@ -71,6 +71,12 @@ export function buildOptimisticChatTurn(input: {
     status: "streaming",
     createdAt: nowIso,
     reasoning: ASSISTANT_THINKING_BODY,
+    activity: [{
+      id: `${optimisticTurnId}-activity`,
+      title: "Thinking",
+      body: ASSISTANT_THINKING_BODY,
+      status: "working",
+    }],
   };
 
   return {

@@ -27,6 +27,13 @@ export type MeetingMessage = {
   createdAt: string;
   attachments?: ChatAttachment[];
   reasoning?: string;
+  activity?: Array<{
+    id: string;
+    title: string;
+    body?: string;
+    source?: string;
+    status?: "working" | "done" | "error";
+  }>;
 };
 
 export type MeetingRecord = {

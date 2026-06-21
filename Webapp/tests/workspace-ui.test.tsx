@@ -33,7 +33,7 @@ describe("Demo workspace UI", () => {
     expect(screen.getByText("Customer Research")).toBeInTheDocument();
   });
 
-  test("opens the Wi-Fi recording flow and creates an imported recording shell", async () => {
+  test("opens the recording flow without auto-creating a chat", async () => {
     const user = userEvent.setup();
 
     render(<DemoWorkspace />);
@@ -54,18 +54,9 @@ describe("Demo workspace UI", () => {
 
     await user.click(screen.getByRole("button", { name: /Upload audio from this computer/i }));
 
-    expect(
-      await screen.findByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i, {}, { timeout: 2000 }),
-    ).toBeInTheDocument();
-
-    const prompt = screen.getByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i);
-    await user.type(prompt, "Summarize the backend contract");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-
-    expect(screen.getByText("Summarize the backend contract")).toBeInTheDocument();
-    expect(
-      await screen.findByText(/Folder organization, local transcription, transcript search, and saved chat/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "New Recording" })).toBeInTheDocument();
+    expect(screen.getByText(/Upload audio from this computer/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/Ask SmartPuck about "Imported Recording"/i)).not.toBeInTheDocument();
   });
 
   test("renders assistant markdown with the shared AI markdown renderer", async () => {

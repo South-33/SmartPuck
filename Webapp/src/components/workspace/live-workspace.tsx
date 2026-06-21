@@ -61,8 +61,9 @@ function LiveWorkspaceContent() {
     }
 
     const messages: MeetingMessage[] = agentMessages.results.map((message) => {
-      const reasoning = message.parts
-        ?.filter((part) => part.type === "reasoning")
+      const parts = message.parts ?? [];
+      const reasoning = parts
+        .filter((part) => part.type === "reasoning")
         .map((part) => {
           if (part && typeof part === "object" && "text" in part) {
             return (part as { text?: string }).text;
@@ -71,12 +72,58 @@ function LiveWorkspaceContent() {
         })
         .join("")
         .trim();
+      const toolActivity = parts.flatMap((part, index) => {
+        if (!part || typeof part !== "object" || !("type" in part)) {
+          return [];
+        }
+        const typedPart = part as {
+          type: string;
+          toolName?: string;
+          state?: string;
+          input?: unknown;
+          output?: unknown;
+          errorText?: string;
+        };
+        const isToolPart = typedPart.type.startsWith("tool-") || typedPart.type.includes("tool");
+        if (!isToolPart) {
+          return [];
+        }
+        const toolName = typedPart.toolName ?? typedPart.type.replace(/^tool-/, "");
+        const state = typedPart.state ?? "working";
+        const body =
+          typeof typedPart.errorText === "string"
+            ? typedPart.errorText
+            : typedPart.output
+              ? summarizeToolPayload(typedPart.output)
+              : typedPart.input
+                ? summarizeToolPayload(typedPart.input)
+                : undefined;
+        return [{
+          id: `${message.key}-tool-${index}`,
+          title: readableToolName(toolName),
+          body,
+          source: "Tool",
+          status: state.includes("error") ? "error" as const : state.includes("result") || state.includes("done") ? "done" as const : "working" as const,
+        }];
+      });
+      const activity = [
+        ...(reasoning
+          ? [{
+              id: `${message.key}-reasoning`,
+              title: "Thinking",
+              body: reasoning,
+              status: message.status === "streaming" ? "working" as const : "done" as const,
+            }]
+          : []),
+        ...toolActivity,
+      ];
 
       return {
         id: message.key,
         role: message.role === "assistant" ? "assistant" : "user",
         body: message.text,
         reasoning: reasoning || undefined,
+        activity: activity.length > 0 ? activity : undefined,
         status: message.status === "streaming" ? "streaming" : "complete",
         createdAt:
           typeof message._creationTime === "number"
@@ -407,5 +454,32 @@ function WorkspaceBootShell({ reason }: { reason: string }) {
 }
 
 function isLeakedInternalPrompt(body: string) {
-  return body.trimStart().startsWith("SMARTPUCK PROPOSAL CONTEXT:");
+  const normalized = body.trimStart();
+  return (
+    normalized.startsWith("SMARTPUCK PROPOSAL CONTEXT:") ||
+    normalized.startsWith("System Context / Instructions:") ||
+    normalized.includes("Use this private context to answer")
+  );
+}
+
+function readableToolName(toolName: string) {
+  return toolName
+    .replace(/^tool-/, "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function summarizeToolPayload(payload: unknown) {
+  if (payload === null || payload === undefined) {
+    return undefined;
+  }
+  if (typeof payload === "string") {
+    return payload.slice(0, 240);
+  }
+  try {
+    return JSON.stringify(payload).slice(0, 240);
+  } catch {
+    return "Tool activity";
+  }
 }

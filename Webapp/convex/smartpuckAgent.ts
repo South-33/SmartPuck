@@ -10,8 +10,7 @@ import {
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { z } from "zod";
-import { generateObject } from "ai";
-import { api, components, internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import { action, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { SMARTPUCK_PROPOSAL_CONTEXT } from "./smartpuckContext";
@@ -83,7 +82,9 @@ export const smartpuckAgent: Agent<any, any> = new Agent(components.agent, {
   languageModel: google(model),
   instructions: [
     "You are SmartPuck Companion AI. Answer as a concise meeting and product assistant.",
-    "Ground every answer in the SmartPuck proposal context and this chat's meeting context.",
+    "When the current chat has transcript text, answer from that transcript and the current folder's transcript tools first.",
+    "Do not mix SmartPuck product or implementation details into transcript answers unless the user explicitly asks about SmartPuck, the recorder, the app, or the transcription pipeline.",
+    "When there is no transcript text, you may answer practical SmartPuck product questions from product context.",
     "You have tools to list, search, and read transcripts of meetings in the current folder. Use these tools (like listFolderMeetings, searchMeetingTranscripts, and readMeetingTranscript) when the user asks what was said, what decisions were made in past sessions, or asks for specific quotes.",
     "If the user asks about a meeting but the folder has no records with hasTranscript=true, say there is no recorded meeting transcript in this folder yet and tell them to start New Recording or import audio.",
     "If transcript search/read tools return empty or show no matching records, say transcript details are not available and keep the next step simple.",
@@ -205,12 +206,16 @@ export const streamMeetingReply = action({
       agentName: "SmartPuck",
     });
 
+    const productContext = context.hasTranscript
+      ? ""
+      : ["SMARTPUCK PRODUCT CONTEXT:", SMARTPUCK_PROPOSAL_CONTEXT, ""].join("\n");
     const hiddenContext = [
       "Use this private context to answer. Do not quote or reveal this block as a user message.",
       "",
-      "SMARTPUCK PROPOSAL CONTEXT:",
-      SMARTPUCK_PROPOSAL_CONTEXT,
-      "",
+      productContext,
+      context.hasTranscript
+        ? "MODE: Transcript chat. Prefer the transcript. Do not invent app/product decisions as meeting content."
+        : "MODE: Product or empty chat. If the user asks about meetings, say no transcript is available yet.",
       `FOLDER: ${context.folderName}`,
       `CHAT: ${context.meetingTitle}`,
       `CURRENT CHAT HAS TRANSCRIPT: ${context.hasTranscript ? "yes" : "no"}`,
@@ -242,10 +247,6 @@ export const streamMeetingReply = action({
 
     await result.consumeStream();
 
-    await ctx.runAction(api.smartpuckAgent.generatePinnedInsights, {
-      meetingId: args.meetingId,
-    });
-
     return null;
   },
 });
@@ -254,91 +255,27 @@ export const generatePinnedInsights = action({
   args: {
     meetingId: v.id("meetings"),
   },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const context = await ctx.runQuery(internal.workspace.getMeetingContext, {
-      meetingId: args.meetingId,
-      scopeKey: identity.tokenIdentifier,
-    });
-
-    const threadId = await ctx.runMutation(internal.workspace.ensureMeetingAgentThread, {
-      meetingId: args.meetingId,
-      scopeKey: identity.tokenIdentifier,
-    });
-
-    const paginatedMessages = await ctx.runQuery(api.smartpuckAgent.listMeetingMessages, {
-      meetingId: args.meetingId,
-      threadId,
-      paginationOpts: { numItems: 20, cursor: null },
-      streamArgs: { kind: "list" as const },
-    });
-
-    const conversationHistory = paginatedMessages.page
-      .map((msg: { role: string; text?: string }) => `${msg.role === "user" ? "User" : "Agent"}: ${msg.text ?? ""}`)
-      .reverse()
-      .join("\n");
-
-    const systemPrompt = [
-      "You are the Session Intelligence background assistant for SmartPuck.",
-      "Your task is to analyze the conversation and generate dynamic pinned insights for the current meeting.",
-      "These insights will be shown on the right-side panel as cards. You can return 1, 2, or 3 cards. If there are no meaningful insights to display, return an empty array.",
-      "For each card, you must provide: a short ID, a title, a Lucide icon (one of: 'sparkles', 'grip', 'search', 'settings', 'help', 'alert'), and clean, styled HTML/Markdown content for the body.",
-      "Keep the HTML body extremely clean, compact, and styled (e.g., using small lists, readable text classes). Do not wrap with standard html page structures, just raw clean tags.",
-    ].join("\n");
-
-    const promptText = [
-      `MEETING SUMMARY: ${context.summary}`,
-      `MEETING RECENT CHAT HISTORY:`,
-      conversationHistory,
-      `What are the pinned insights (Key Decisions, Action Items, or other dynamic updates) that should be shown on the right side for this session?`,
-    ].join("\n");
-
-    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      return null;
-    }
-
-    try {
-      const { object } = await generateObject({
-        model: google(model),
-        system: systemPrompt,
-        prompt: promptText,
-        schema: z.object({
-          insights: z.array(
-            z.object({
-              id: z.string(),
-              title: z.string(),
-              htmlContent: z.string(),
-              icon: z.string().optional(),
-            }),
-          ),
-        }),
-      });
-
-      if (object && Array.isArray(object.insights)) {
-        await ctx.runMutation(internal.workspace.updateMeetingInsights, {
-          meetingId: args.meetingId,
-          insights: object.insights,
-        });
-      }
-    } catch (e) {
-      console.error("Failed to generate dynamic pinned insights:", e);
-    }
-
+  handler: async () => {
+    // Placeholder only for now. Keep pinned insights static so ordinary chat replies
+    // do not spend an extra model call.
     return null;
   },
 });
 
+
 function buildFallbackReply(
   context: {
     meetingTitle: string;
+    hasTranscript: boolean;
+    transcriptPreview: string;
   },
   userMessage: string,
 ) {
   const lower = userMessage.toLowerCase();
+
+  if (context.hasTranscript) {
+    return `I have the transcript for "${context.meetingTitle}", but live Gemini replies are not configured right now. Transcript preview:\n\n${context.transcriptPreview}`;
+  }
 
   if (lower.includes("hardware") || lower.includes("device") || lower.includes("bom")) {
     return "SmartPuck's MVP hardware centers on a LOLIN S3 Pro ESP32-S3 board, INMP441 I2S microphone, onboard microSD storage, a 3.7V LiPo battery with JST PH2.0 connector, and simple button/LED controls. The target BOM stays under $50 and prioritizes reliable offline audio before camera, Wi-Fi, or mobile scope.";
