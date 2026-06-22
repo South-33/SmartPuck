@@ -397,8 +397,7 @@ export function importSmartPuckAudioFiles(
   const db = writableDb();
   if (!db) throw new Error("Hermes state database is not ready yet.");
 
-  const folder = folderId ? getFolderRow(folderId) : null;
-  const targetFolder = folder ? rowToFolder(folder, []) : ensureDefaultFolder();
+  const targetFolder = ensureDefaultFolder();
   const imported: SmartPuckRecording[] = [];
   const now = Date.now();
 
@@ -420,6 +419,9 @@ export function importSmartPuckAudioFiles(
       .get(audioSha256) as RecordingRow | undefined;
     if (existing) {
       db.prepare(`INSERT OR IGNORE INTO ${MEMBERSHIPS_TABLE} (folder_id, recording_id, added_at) VALUES (?, ?, ?)`).run(targetFolder.id, existing.id, now);
+      if (folderId && folderId !== targetFolder.id) {
+        db.prepare(`INSERT OR IGNORE INTO ${MEMBERSHIPS_TABLE} (folder_id, recording_id, added_at) VALUES (?, ?, ?)`).run(folderId, existing.id, now);
+      }
       imported.push(rowToRecording(existing));
       continue;
     }
@@ -489,18 +491,22 @@ export function importSmartPuckAudioFiles(
       row.updated_at,
     );
     db.prepare(`INSERT OR IGNORE INTO ${MEMBERSHIPS_TABLE} (folder_id, recording_id, added_at) VALUES (?, ?, ?)`).run(targetFolder.id, row.id, now);
+    if (folderId && folderId !== targetFolder.id) {
+      db.prepare(`INSERT OR IGNORE INTO ${MEMBERSHIPS_TABLE} (folder_id, recording_id, added_at) VALUES (?, ?, ?)`).run(folderId, row.id, now);
+    }
     imported.push(rowToRecording(row));
   }
 
+  const activeFolderId = folderId ?? targetFolder.id;
   db.prepare(`UPDATE ${FOLDERS_TABLE} SET updated_at = ? WHERE id = ?`).run(
     Date.now(),
-    targetFolder.id,
+    activeFolderId,
   );
 
   return {
     folder:
       listSmartPuckLibrary().folders.find(
-        (item) => item.id === targetFolder.id,
+        (item) => item.id === activeFolderId,
       ) ?? targetFolder,
     recordings: imported,
   };

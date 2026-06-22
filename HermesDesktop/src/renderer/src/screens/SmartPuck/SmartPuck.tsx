@@ -104,8 +104,10 @@ export default function SmartPuck({
   const [renamingRecording, setRenamingRecording] =
     useState<SmartPuckRecording | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-  const [playlistPickerRecording, setPlaylistPickerRecording] =
+  const [folderPickerRecording, setFolderPickerRecording] =
     useState<SmartPuckRecording | null>(null);
+  const [folderPickerPosition, setFolderPickerPosition] =
+    useState({ top: 0, right: 0 });
   const [transcriptDraft, setTranscriptDraft] = useState("");
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const transcriptPrefixRef = useRef("");
@@ -1180,6 +1182,64 @@ export default function SmartPuck({
           user-select: none !important;
           -webkit-user-select: none !important;
         }
+        .smartpuck-recording-folders {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 4px;
+        }
+        .smartpuck-folder-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 8px;
+          border-radius: 12px;
+          font-family: inherit;
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 1;
+          border: 1px solid transparent;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          user-select: none;
+        }
+        .smartpuck-folder-tag svg {
+          flex-shrink: 0;
+        }
+        .smartpuck-folder-tag.active {
+          background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+          border: 1px solid var(--accent);
+          color: var(--accent);
+        }
+        .smartpuck-folder-tag.active:hover {
+          background: rgba(216, 74, 58, 0.1);
+          border-color: #d84a3a;
+          color: #d84a3a;
+        }
+        .smartpuck-folder-tag.active:hover .remove-icon {
+          color: #d84a3a;
+        }
+        .smartpuck-folder-tag.inactive {
+          background: transparent;
+          border: 1px dashed var(--border-bright);
+          color: var(--text-secondary);
+        }
+        .smartpuck-folder-tag.inactive:hover {
+          background: color-mix(in srgb, var(--accent) 8%, transparent);
+          border-color: var(--accent);
+          color: var(--accent);
+        }
+        .smartpuck-folder-tag .remove-icon {
+          margin-left: 2px;
+          font-size: 11px;
+          font-weight: bold;
+          opacity: 0.8;
+          color: var(--text-muted);
+          transition: color 0.15s ease;
+        }
+        .smartpuck-folder-popover .smartpuck-dropdown-item {
+          transition: background 0.1s ease;
+        }
       `}</style>
       {error && <div className="smartpuck-error">{error}</div>}
 
@@ -1498,6 +1558,12 @@ export default function SmartPuck({
             <div className="smartpuck-accordion-content">
               <div className="smartpuck-recordings">
                 {visibleRecordings.map((recording) => {
+                  const recordingFolders = folders.filter((f) =>
+                    f.recordings.some((r) => r.id === recording.id)
+                  );
+                  const mostRecentFolder = folders[0] || null;
+                  const isInMostRecent = mostRecentFolder && mostRecentFolder.recordings.some((r) => r.id === recording.id);
+
                   return (
                     <article className="smartpuck-recording-row" key={recording.id}>
                       <button
@@ -1527,6 +1593,42 @@ export default function SmartPuck({
                             {statusLabel(recording)}
                           </span>
                         </div>
+                        {/* Folder tags list */}
+                        {folders.length > 0 && (
+                          <div className="smartpuck-recording-folders">
+                            {recordingFolders.map((f) => (
+                              <button
+                                key={f.id}
+                                type="button"
+                                className="smartpuck-folder-tag active"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveFromFolder(recording.id, f.id);
+                                }}
+                                title={`Click to remove from ${f.name}`}
+                              >
+                                <Folder size={10} />
+                                <span>{f.name}</span>
+                                <span className="remove-icon">×</span>
+                              </button>
+                            ))}
+                            {mostRecentFolder && !isInMostRecent && (
+                              <button
+                                key={mostRecentFolder.id}
+                                type="button"
+                                className="smartpuck-folder-tag inactive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddToFolder(recording.id, mostRecentFolder.id);
+                                }}
+                                title={`Click to add to ${mostRecentFolder.name}`}
+                              >
+                                <Plus size={10} />
+                                <span>{mostRecentFolder.name}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                         <div className="smartpuck-recording-meta">
                           <span>{formatDate(recording.createdAt)}</span>
                           <span style={{ color: "var(--text-muted)" }}>·</span>
@@ -1581,7 +1683,15 @@ export default function SmartPuck({
                               className="smartpuck-icon-btn"
                               title="Add to folder"
                               aria-label={`Add ${recording.title} to folder`}
-                              onClick={() => setPlaylistPickerRecording(recording)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const bounds = e.currentTarget.getBoundingClientRect();
+                                setFolderPickerPosition({
+                                  top: Math.min(bounds.bottom + 6, window.innerHeight - 300),
+                                  right: Math.max(12, window.innerWidth - bounds.right),
+                                });
+                                setFolderPickerRecording(folderPickerRecording?.id === recording.id ? null : recording);
+                              }}
                             >
                               <Plus size={14} />
                             </button>
@@ -2041,44 +2151,82 @@ export default function SmartPuck({
         </div>
       )}
 
-      {playlistPickerRecording && (
-        <div className="smartpuck-transcript-overlay" role="dialog" aria-modal="true">
-          <div className="smartpuck-rename-dialog smartpuck-folder-picker">
-            <h2>Save to folders</h2>
-            <p className="smartpuck-folder-picker-title">{playlistPickerRecording.title}</p>
-            <div className="smartpuck-playlist-list">
+      {folderPickerRecording && createPortal(
+        <>
+          <div
+            onClick={() => setFolderPickerRecording(null)}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 998,
+            }}
+          />
+          <div
+            className="smartpuck-dropdown-menu smartpuck-folder-popover"
+            style={{
+              position: "fixed",
+              top: folderPickerPosition.top,
+              right: folderPickerPosition.right,
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border-bright)",
+              borderRadius: 8,
+              boxShadow: "0 6px 16px rgba(0,0,0,0.3)",
+              zIndex: 999,
+              minWidth: 200,
+              maxWidth: 260,
+              padding: "8px 0",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div style={{ padding: "8px 14px 10px", borderBottom: "1px solid var(--border)", fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Add to folders
+            </div>
+            <div style={{ maxHeight: 200, overflowY: "auto", padding: "4px 0" }}>
               {folders.map((folder) => {
                 const included = folder.recordings.some(
-                  (recording) => recording.id === playlistPickerRecording.id,
+                  (r) => r.id === folderPickerRecording.id,
                 );
                 return (
                   <button
                     key={folder.id}
                     type="button"
-                    className={`smartpuck-folder-picker-option${included ? " is-selected" : ""}`}
-                    disabled={!!busy}
-                    onClick={() =>
-                      included
-                        ? handleRemoveFromFolder(playlistPickerRecording.id, folder.id)
-                        : handleAddToFolder(playlistPickerRecording.id, folder.id)
-                    }
+                    className="smartpuck-dropdown-item"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "8px 14px",
+                    }}
+                    onClick={() => {
+                      if (included) {
+                        handleRemoveFromFolder(folderPickerRecording.id, folder.id);
+                      } else {
+                        handleAddToFolder(folderPickerRecording.id, folder.id);
+                      }
+                    }}
                   >
-                    <Folder size={14} />
-                    <span>{folder.name}</span>
-                    <span className="smartpuck-folder-picker-check" aria-hidden="true">
-                      {included ? <Check size={14} /> : <Circle size={14} />}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <Folder size={12} style={{ opacity: 0.7 }} />
+                      <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                        {folder.name}
+                      </span>
+                    </div>
+                    {included ? (
+                      <Check size={14} style={{ color: "var(--accent)" }} />
+                    ) : (
+                      <Circle size={14} style={{ opacity: 0.3 }} />
+                    )}
                   </button>
                 );
               })}
             </div>
-            <div>
-              <button type="button" className="smartpuck-secondary-btn" onClick={() => setPlaylistPickerRecording(null)}>
-                Done
-              </button>
-            </div>
           </div>
-        </div>
+        </>,
+        document.body
       )}
     </div>
   );
