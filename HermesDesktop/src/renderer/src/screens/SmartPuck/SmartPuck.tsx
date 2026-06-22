@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AudioLines,
   Check,
@@ -1616,7 +1617,7 @@ export default function SmartPuck({
                             >
                               <MoreVertical size={16} />
                             </button>
-                            {activeMenuId === recording.id && (
+                            {activeMenuId === recording.id && createPortal(
                               <>
                                 <div
                                   onClick={() => setActiveMenuId(null)}
@@ -1741,7 +1742,8 @@ export default function SmartPuck({
                                     </>
                                   )}
                                 </div>
-                              </>
+                              </>,
+                              document.body
                             )}
                           </div>
                         )}
