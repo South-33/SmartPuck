@@ -99,10 +99,14 @@ function Layout({
   const [audioTitle, setAudioTitle] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioSourceKeyRef = useRef<string | null>(null);
+  // Invalidates in-flight media reads. Without this, a deleted or replaced
+  // recording can finish loading after the UI has already closed its player.
+  const audioRequestRef = useRef(0);
 
   // Clean up audio on unmount
   useEffect(() => {
     return () => {
+      audioRequestRef.current += 1;
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -138,6 +142,7 @@ function Layout({
         }
       }
     } else {
+      const request = ++audioRequestRef.current;
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.removeEventListener("timeupdate", handleAudioTimeUpdate);
@@ -155,6 +160,7 @@ function Layout({
         const dataUrl = await window.hermesAPI.readMediaFile(
           recording.playbackAudioPath || recording.audioPath,
         );
+        if (request !== audioRequestRef.current) return;
         if (!dataUrl) {
           setPlayingId(null);
           return;
@@ -189,6 +195,7 @@ function Layout({
       }
       return;
     }
+    const request = ++audioRequestRef.current;
     audioRef.current?.pause();
     setPlayingId(id);
     setAudioTitle(session.displayName || session.name);
@@ -200,8 +207,10 @@ function Layout({
       `${baseUrl}/download?path=${encodeURIComponent(session.audioPath)}`,
       { cache: "no-store" },
     );
+    if (request !== audioRequestRef.current) return;
     if (!response.ok) throw new Error(`SmartPuck returned HTTP ${response.status}.`);
     const blob = await response.blob();
+    if (request !== audioRequestRef.current) return;
     if (blob.size <= 44) throw new Error("This recording contains no playable audio.");
     const objectUrl = URL.createObjectURL(
       blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: "audio/wav" }),
@@ -238,10 +247,11 @@ function Layout({
 
   useEffect(() => {
     if (!playingId || playingId.startsWith("device:") || !smartPuckLibrary) return;
-    const stillExists = smartPuckLibrary.folders.some((folder) =>
-      folder.recordings.some((recording) => recording.id === playingId),
+    const stillExists = smartPuckLibrary.recordings.some(
+      (recording) => recording.id === playingId,
     );
     if (stillExists) return;
+    audioRequestRef.current += 1;
     audioRef.current?.pause();
     audioRef.current = null;
     audioSourceKeyRef.current = null;
@@ -262,10 +272,11 @@ function Layout({
     const nextPath = recording.playbackAudioPath || recording.audioPath;
     if (audioSourceKeyRef.current === nextPath) return;
     const previous = audioRef.current;
+    const request = ++audioRequestRef.current;
     const resumeAt = previous?.currentTime || 0;
     const shouldResume = !!previous && !previous.paused;
     void window.hermesAPI.readMediaFile(nextPath).then((nextUrl) => {
-      if (!nextUrl || playingId !== recording.id) return;
+      if (!nextUrl || request !== audioRequestRef.current) return;
       previous?.pause();
       const nextAudio = new Audio(nextUrl);
       audioRef.current = nextAudio;
@@ -1280,8 +1291,10 @@ function Layout({
                 type="button"
                 className="smartpuck-icon-btn"
                 onClick={() => {
+                  audioRequestRef.current += 1;
                   if (audioRef.current) {
                     audioRef.current.pause();
+                    audioRef.current = null;
                   }
                   setPlayingId(null);
                   setAudioUrl(null);

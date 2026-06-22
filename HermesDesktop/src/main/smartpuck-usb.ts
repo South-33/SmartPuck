@@ -32,9 +32,12 @@ async function usbCommand<T>(url: string, command: string, responseType: string)
     const finish = (error?: Error, value?: T) => {
       clearTimeout(timeout);
       port.removeAllListeners();
-      if (port.isOpen) port.close(() => undefined);
-      if (error) reject(error);
-      else resolve(value as T);
+      const complete = () => {
+        if (error) reject(error);
+        else resolve(value as T);
+      };
+      if (port.isOpen) port.close(complete);
+      else complete();
     };
     port.on("data", (chunk: Buffer) => {
       pending += chunk.toString("utf8");
@@ -91,8 +94,11 @@ async function usbOkCommand(url: string, command: string): Promise<void> {
     const finish = (error?: Error) => {
       clearTimeout(timeout);
       port.removeAllListeners();
-      if (port.isOpen) port.close(() => undefined);
-      if (error) reject(error); else resolve();
+      const complete = () => {
+        if (error) reject(error); else resolve();
+      };
+      if (port.isOpen) port.close(complete);
+      else complete();
     };
     port.on("data", (chunk: Buffer) => {
       pending += chunk.toString("utf8");
@@ -123,8 +129,11 @@ export async function downloadSmartPuckUsbAudio(deviceUrl: string, audioPath: st
     const finish = (error?: Error, value?: Buffer) => {
       clearTimeout(timeout);
       port.removeAllListeners();
-      if (port.isOpen) port.close(() => undefined);
-      if (error) reject(error); else resolve(value as Buffer);
+      const complete = () => {
+        if (error) reject(error); else resolve(value as Buffer);
+      };
+      if (port.isOpen) port.close(complete);
+      else complete();
     };
     port.on("data", (chunk: Buffer) => {
       let data = chunk;
