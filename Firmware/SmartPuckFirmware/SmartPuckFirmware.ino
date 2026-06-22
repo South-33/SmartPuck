@@ -14,6 +14,7 @@
 #include "SPI.h"
 #include <driver/i2s.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
@@ -40,6 +41,9 @@
 #define SMARTPUCK_BUTTON_ARM_DELAY_MS 2000
 #ifndef SMARTPUCK_SD_SPI_FREQUENCY
   #define SMARTPUCK_SD_SPI_FREQUENCY 20000000U
+#endif
+#ifndef SMARTPUCK_LED_BRIGHTNESS_PERCENT
+  #define SMARTPUCK_LED_BRIGHTNESS_PERCENT 40U
 #endif
 
 // ============================================================================
@@ -100,6 +104,9 @@
 #define CHANNEL_COUNT       1     // Mono
 #define I2S_BUFFER_SIZE     1024 // Audio buffer size in bytes (256 samples of 32-bit data = 16ms)
 #define I2S_SHIFT_FACTOR    16    // Shift standard 24-bit MSB inside 32-bit slot down to 16-bit PCM
+#ifndef SMARTPUCK_MIC_GAIN
+  #define SMARTPUCK_MIC_GAIN 4.0f // +12 dB; raises quiet INMP441 speech before storage/streaming
+#endif
 
 // ============================================================================
 // WI-FI CREDENTIALS LIST
@@ -128,6 +135,7 @@ File audioFile;
 volatile bool isRecording = false;
 volatile bool isStreaming = false;
 volatile uint32_t audioSize = 0;
+volatile uint8_t audioLevel = 0;
 String currentSessionDir = "";
 String currentWavPath = "";
 bool storageAvailable = false;
@@ -160,6 +168,7 @@ int savedNetworksCount = 0;
 // Web Server
 WebServer server(80);
 const char* SMARTPUCK_HTTP_HEADERS[] = { "Range" };
+String usbCommandBuffer = "";
 
 // ============================================================================
 // FUNCTION PROTOTYPES
@@ -223,11 +232,15 @@ String formatStorageSummary();
 void checkButton();
 void updateLED();
 void audioTask(void* pvParameters);
+void checkUsbTransport();
+void handleUsbCommand(String command);
+void sendUsbFile(String audioPath);
 
 // ============================================================================
 // FIRST-ORDER IIR HIGH-PASS FILTER
 // ============================================================================
-// Removes the ~150-200mV DC offset characteristic of the INMP441 sensor.
+// Removes the ~150-200mV DC offset characteristic of the INMP441 sensor,
+// then applies a fixed, saturating speech gain shared by recording and streaming.
 // y[n] = x[n] - x[n-1] + alpha * y[n-1]
 void applyHPFBuffer(int16_t* buffer, size_t count) {
   static float prev_x = 0;
@@ -240,9 +253,10 @@ void applyHPFBuffer(int16_t* buffer, size_t count) {
     prev_x = x;
     prev_y = y;
     
-    if (y > 32767.0f) buffer[i] = 32767;
-    else if (y < -32768.0f) buffer[i] = -32768;
-    else buffer[i] = (int16_t)y;
+    const float amplified = y * SMARTPUCK_MIC_GAIN;
+    if (amplified > 32767.0f) buffer[i] = 32767;
+    else if (amplified < -32768.0f) buffer[i] = -32768;
+    else buffer[i] = (int16_t)amplified;
   }
 }
 
@@ -301,7 +315,10 @@ void fillWavHeader(uint8_t* header, uint32_t totalAudioLen) {
 // LED Status Helper (Handles both LOLIN's RGB LED and ESP32-CAM's active-low LED)
 void setStatusLED(uint8_t r, uint8_t g, uint8_t b) {
 #ifdef BOARD_LOLIN_S3_PRO
-  neopixelWrite(LED_PIN, g, r, b); // Swap green and red for GRB WS2812
+  const uint8_t scaledR = (uint8_t)(((uint16_t)r * SMARTPUCK_LED_BRIGHTNESS_PERCENT) / 100U);
+  const uint8_t scaledG = (uint8_t)(((uint16_t)g * SMARTPUCK_LED_BRIGHTNESS_PERCENT) / 100U);
+  const uint8_t scaledB = (uint8_t)(((uint16_t)b * SMARTPUCK_LED_BRIGHTNESS_PERCENT) / 100U);
+  neopixelWrite(LED_PIN, scaledG, scaledR, scaledB); // Swap green and red for GRB WS2812
 #endif
 #ifdef BOARD_ESP32_CAM
   if (r > 0 || g > 0 || b > 0) {
@@ -677,6 +694,19 @@ void audioTask(void* pvParameters) {
       
       // Apply High-Pass Filter to remove DC baseline offset
       applyHPFBuffer(processedBuffer, sampleCount);
+
+      // Track a smoothed post-gain peak for the desktop recording meter.
+      uint16_t peak = 0;
+      for (size_t i = 0; i < sampleCount; i++) {
+        uint16_t magnitude = processedBuffer[i] == INT16_MIN
+          ? 32768
+          : abs(processedBuffer[i]);
+        if (magnitude > peak) peak = magnitude;
+      }
+      const uint8_t nextLevel = (uint8_t)min(100U, ((uint32_t)peak * 100U) / 32767U);
+      audioLevel = nextLevel >= audioLevel
+        ? (uint8_t)((audioLevel + nextLevel + 1U) / 2U)
+        : (uint8_t)((audioLevel * 3U + nextLevel + 2U) / 4U);
       
       size_t processedBytes = sampleCount * 2;
       
@@ -1149,7 +1179,6 @@ void sendRangeHeaders(size_t fileSize, size_t rangeStart, size_t rangeEnd, bool 
   size_t contentLength = rangeEnd >= rangeStart ? (rangeEnd - rangeStart + 1) : 0;
   server.sendHeader("Accept-Ranges", "bytes");
   server.sendHeader("Cache-Control", "no-store");
-  server.sendHeader("Content-Length", String(contentLength));
   if (partial) {
     server.sendHeader(
       "Content-Range",
@@ -1931,6 +1960,7 @@ String buildStatusJson() {
   json += "\"recording\":" + String(isRecording ? "true" : "false") + ",";
   json += "\"streaming\":" + String(isStreaming ? "true" : "false") + ",";
   json += "\"audioSize\":" + String(audioSize) + ",";
+  json += "\"audioLevel\":" + String(isRecording ? audioLevel : 0) + ",";
   json += "\"network\":\"" + jsonEscape(activeNetworkInfo) + "\",";
   json += "\"networkMode\":\"" + String(apModeActive ? "ap" : "station") + "\",";
   json += "\"ip\":\"" + jsonEscape(apModeActive ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\",";
@@ -2211,6 +2241,14 @@ void updateLED() {
         setStatusLED(5, 0, 0);  // Very dim Red
       }
     }
+  } else if (lastRecordingError.length() > 0) {
+    static uint32_t lastErrorBlinkTime = 0;
+    static bool errorLedState = false;
+    if (millis() - lastErrorBlinkTime > 700) {
+      lastErrorBlinkTime = millis();
+      errorLedState = !errorLedState;
+      setStatusLED(errorLedState ? 24 : 3, errorLedState ? 8 : 1, 0);
+    }
   } else {
     setStatusLED(0, 0, 30); // Solid Blue (Idle)
   }
@@ -2220,7 +2258,7 @@ void updateLED() {
 // MAIN SETUP
 // ============================================================================
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
   delay(1000);
   Serial.println("--- SmartPuck Offline Audio Recorder Initializing ---");
 
@@ -2291,6 +2329,12 @@ void setup() {
 
   // Initialize Wi-Fi and Web Server (or local AP fallback)
   initWiFi();
+  if (MDNS.begin("smartpuck")) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("SmartPuck discovery ready at http://smartpuck.local");
+  } else {
+    Serial.println("WARNING: SmartPuck mDNS discovery failed to start.");
+  }
 
   // Initialize Web Portal Endpoints
   server.collectHeaders(SMARTPUCK_HTTP_HEADERS, 1);
@@ -2324,7 +2368,83 @@ void setup() {
 // ============================================================================
 // MAIN LOOP (Runs on Core 0)
 // ============================================================================
+void handleUsbCommand(String command) {
+  command.trim();
+  if (!command.startsWith("@SPK ")) return;
+  command.remove(0, 5);
+
+  if (command == "STATUS") {
+    Serial.println("@SPK STATUS " + buildStatusJson());
+  } else if (command == "SESSIONS") {
+    Serial.println("@SPK SESSIONS " + buildSessionsJson());
+  } else if (command == "START") {
+    startRecording();
+    Serial.println("@SPK STATUS " + buildStatusJson());
+  } else if (command == "STOP") {
+    stopRecording();
+    Serial.println("@SPK STATUS " + buildStatusJson());
+  } else if (command.startsWith("DOWNLOAD ")) {
+    sendUsbFile(command.substring(9));
+  } else if (command.startsWith("UPLOADED ")) {
+    const String sessionPath = command.substring(9);
+    Serial.println(markSessionUploaded(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not mark session uploaded");
+  } else if (command.startsWith("DELETE ")) {
+    const String sessionPath = command.substring(7);
+    Serial.println(removeSessionRecursive(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not delete session");
+  } else {
+    Serial.println("@SPK ERROR Unknown command");
+  }
+}
+
+void sendUsbFile(String audioPath) {
+  audioPath.trim();
+  if (!isSafeAudioPath(audioPath)) {
+    Serial.println("@SPK ERROR Unsafe audio path");
+    return;
+  }
+  if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+    Serial.println("@SPK ERROR Storage is busy");
+    return;
+  }
+  File file = SD_DEVICE.open(audioPath, FILE_READ);
+  if (!file) {
+    xSemaphoreGive(fileMutex);
+    Serial.println("@SPK ERROR Audio file not found");
+    return;
+  }
+  const size_t size = file.size();
+  Serial.printf("@SPK FILE %u\n", (unsigned int)size);
+  uint8_t buffer[1024];
+  while (file.available()) {
+    const size_t readBytes = file.read(buffer, sizeof(buffer));
+    if (readBytes == 0) break;
+    Serial.write(buffer, readBytes);
+  }
+  Serial.flush();
+  file.close();
+  xSemaphoreGive(fileMutex);
+}
+
+void checkUsbTransport() {
+  while (Serial.available() > 0) {
+    const char next = (char)Serial.read();
+    if (next == '\r') continue;
+    if (next == '\n') {
+      handleUsbCommand(usbCommandBuffer);
+      usbCommandBuffer = "";
+    } else if (usbCommandBuffer.length() < 256) {
+      usbCommandBuffer += next;
+    } else {
+      usbCommandBuffer = "";
+    }
+  }
+}
+
 void loop() {
+  // USB-C is the preferred wired control/transfer transport. Commands are
+  // explicitly framed so ordinary debug output remains safe to ignore.
+  checkUsbTransport();
+
   // 1. WiFi/Web Server client handling (even while recording!)
   if (wifiConnected) {
     server.handleClient();

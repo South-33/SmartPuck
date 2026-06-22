@@ -1,6 +1,10 @@
 .vercel
 .pio/
 .vscode/
+__pycache__/
+
+# Deprecated prototype. SmartPuck ships from HermesDesktop and Firmware.
+/Webapp/
 
 # RunLong CLI files
 .longrun/
@@ -8,3 +12,19 @@ RUNLONG.md
 
 # Local firmware secrets
 Firmware/SmartPuckFirmware/local_config.h
+
+# Copied Hermes Desktop app outputs
+HermesDesktop/node_modules/
+HermesDesktop/dist/
+HermesDesktop/out/
+HermesDesktop/release/
+HermesDesktop/.sandbox/
+HermesDesktop/.eslintcache
+HermesDesktop/*.tsbuildinfo
+HermesDesktop/.env
+HermesDesktop/.env.*
+!HermesDesktop/.env.example
+HermesDesktop/.smartpuck-preview-home/
+HermesDesktop/.smartpuck-*
+HermesDesktop/smartpuck-*.png
+HermesDesktop/smartpuck-*.log
