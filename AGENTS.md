@@ -18,4 +18,5 @@ This is the project's AGENTS.md
 - Firmware runs a dual-core FreeRTOS layout: Core 1 runs a high-priority task reading I2S and writing to SD (synchronized via `fileMutex`), while Core 0 runs button checking and WiFi Web Server loops.
 - Local AI target is a Python/FastAPI worker, not browser JS: faster-whisper + Whisper large-v3-turbo first, pyannote diarization later, then Gemini/local LLM chat over stored transcripts.
 - Agent uses tools (listFolderMeetings, searchMeetingTranscripts, readMeetingTranscript) to search meeting transcripts in the database; do not stuff transcripts into system context.
-
+- Firmware `/download` must rely on `server.setContentLength()` only -> an extra `Content-Length` header makes Node reject the response; HermesDesktop keeps a raw-stream fallback for already-flashed firmware.
+- Firmware advertises its HTTP service as `smartpuck.local` with mDNS -> HermesDesktop tries that hostname before saved/AP addresses so DHCP changes do not break automatic sync.

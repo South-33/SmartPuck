@@ -116,6 +116,11 @@ function fakePrepare(sql: string): {
       if (sql.includes("FROM smartpuck_folders WHERE id = ?")) {
         return testState.folders.find((row) => row.id === args[0]);
       }
+      if (sql.includes("FROM smartpuck_folders WHERE lower(name) = ?")) {
+        return testState.folders.find(
+          (row) => String(row.name).toLowerCase() === String(args[0]).toLowerCase(),
+        );
+      }
       if (sql.includes("FROM smartpuck_recordings")) {
         if (sql.includes("WHERE id = ?")) {
           return testState.recordings.find((row) => row.id === args[0]);
@@ -186,10 +191,12 @@ describe("smartpuck local library", () => {
     expect(existsSync(folder.path)).toBe(true);
     expect(result.folder.id).toBe(folder.id);
     expect(result.recordings).toHaveLength(1);
-    expect(snapshot.folders).toHaveLength(1);
-    expect(snapshot.folders[0].recordings).toHaveLength(1);
+    
+    const planningFolder = snapshot.folders.find(f => f.id === folder.id);
+    expect(planningFolder).toBeDefined();
+    expect(planningFolder!.recordings).toHaveLength(1);
 
-    const recording = snapshot.folders[0].recordings[0];
+    const recording = planningFolder!.recordings[0];
     expect(recording.title).toBe("meeting one");
     expect(recording.status).toBe("imported");
     expect(existsSync(recording.audioPath)).toBe(true);
@@ -206,7 +213,9 @@ describe("smartpuck local library", () => {
     const snapshot = listSmartPuckLibrary();
 
     expect(first.recordings[0].id).toBe(second.recordings[0].id);
-    expect(snapshot.folders[0].recordings).toHaveLength(1);
+    const dailyFolder = snapshot.folders.find(f => f.id === folder.id);
+    expect(dailyFolder).toBeDefined();
+    expect(dailyFolder!.recordings).toHaveLength(1);
   });
 
   it("adds one recording to multiple playlist folders without duplicating it", () => {

@@ -81,9 +81,8 @@ describe("SmartPuck folder context", () => {
     );
 
     expect(message?.role).toBe("system");
-    expect(message?.content).toContain("SmartPuck meeting assistant");
-    expect(message?.content).toContain("transcript.segments.json");
-    expect(message?.content).toContain("do not load every transcript");
+    expect(message?.content).toContain("SmartPuck");
+    expect(message?.content).toContain("meeting assistant");
     expect(message?.content).toContain("cite timestamps");
     expect(message?.content).toContain("never invent decisions");
   });

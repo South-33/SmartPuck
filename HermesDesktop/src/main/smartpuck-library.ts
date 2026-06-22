@@ -323,11 +323,16 @@ export function renameSmartPuckRecording(
 }
 
 function ensureDefaultFolder(): SmartPuckFolder {
-  const snapshot = listSmartPuckLibrary();
-  const inbox = snapshot.folders.find(
-    (folder) => folder.name.trim().toLowerCase() === "inbox",
-  );
-  return inbox ?? createSmartPuckFolder("Inbox");
+  const db = readableDb();
+  if (db) {
+    const row = db
+      .prepare(`SELECT * FROM ${FOLDERS_TABLE} WHERE lower(name) = ? ORDER BY created_at ASC LIMIT 1`)
+      .get("inbox") as FolderRow | undefined;
+    if (row) {
+      return rowToFolder(row, []);
+    }
+  }
+  return createSmartPuckFolder("Inbox");
 }
 
 function getFolderRow(folderId: string): FolderRow | null {

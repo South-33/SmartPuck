@@ -160,7 +160,7 @@ export default function SmartPuck({
   const selectedFolder = useMemo<SmartPuckFolder | null>(() => {
     return folders.find((folder) => folder.id === selectedFolderId) ?? null;
   }, [folders, selectedFolderId]);
-  const visibleRecordings = selectedFolder?.recordings ?? snapshot?.recordings ?? [];
+  const visibleRecordings = snapshot?.recordings ?? [];
   const pendingDeviceSessions = useMemo(
     () =>
       device?.sessions.filter(
@@ -482,12 +482,11 @@ export default function SmartPuck({
     void runAction("Importing audio", async () => {
       const files = await window.hermesAPI.smartPuck.selectAudioFiles();
       if (!files.length) return;
-      const result = await window.hermesAPI.smartPuck.importAudioFiles(
+      await window.hermesAPI.smartPuck.importAudioFiles(
         selectedFolder?.id ?? null,
         files,
       );
       await refresh();
-      setSelectedFolderId(result.folder.id);
     });
   }, [refresh, runAction, selectedFolder?.id]);
 
@@ -1533,13 +1532,13 @@ export default function SmartPuck({
               Open folder
             </button>
             <div>
-              <strong>{visibleRecordings.length}</strong>
+              <strong>{(selectedFolder ? selectedFolder.recordings : visibleRecordings).length}</strong>
               <span>recordings</span>
             </div>
             <div>
               <strong>
                 {formatBytes(
-                  visibleRecordings.reduce(
+                  (selectedFolder ? selectedFolder.recordings : visibleRecordings).reduce(
                     (total, recording) => total + recording.sizeBytes,
                     0,
                   ) ?? 0,
