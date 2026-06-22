@@ -313,25 +313,35 @@ export default function SmartPuck({
 
   const handleAddToFolder = useCallback(
     (recordingId: string, folderId: string) => {
-      void runAction("Adding to folder", async () => {
-        await window.hermesAPI.smartPuck.moveRecording(recordingId, folderId);
-        await refresh();
-      });
+      void (async (): Promise<void> => {
+        setError(null);
+        try {
+          await window.hermesAPI.smartPuck.moveRecording(recordingId, folderId);
+          await refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      })();
     },
-    [refresh, runAction],
+    [refresh],
   );
 
   const handleRemoveFromFolder = useCallback(
     (recordingId: string, folderId: string) => {
-      void runAction("Removing from folder", async () => {
-        await window.hermesAPI.smartPuck.removeRecordingFromFolder(
-          recordingId,
-          folderId,
-        );
-        await refresh();
-      });
+      void (async (): Promise<void> => {
+        setError(null);
+        try {
+          await window.hermesAPI.smartPuck.removeRecordingFromFolder(
+            recordingId,
+            folderId,
+          );
+          await refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      })();
     },
-    [refresh, runAction],
+    [refresh],
   );
 
   const isAlreadyImported = useCallback(
@@ -1573,8 +1583,11 @@ export default function SmartPuck({
                   const recordingFolders = folders.filter((f) =>
                     f.recordings.some((r) => r.id === recording.id)
                   );
-                  const mostRecentFolder = folders[0] || null;
-                  const isInMostRecent = mostRecentFolder && mostRecentFolder.recordings.some((r) => r.id === recording.id);
+                  const inactiveFolders = folders.filter((f) =>
+                    !f.recordings.some((r) => r.id === recording.id)
+                  );
+                  const allowedInactiveCount = Math.max(0, 6 - recordingFolders.length);
+                  const displayedInactiveFolders = inactiveFolders.slice(0, allowedInactiveCount);
 
                   return (
                     <article className="smartpuck-recording-row" key={recording.id}>
@@ -1624,21 +1637,21 @@ export default function SmartPuck({
                                 <span className="remove-icon">×</span>
                               </button>
                             ))}
-                            {mostRecentFolder && !isInMostRecent && (
+                            {displayedInactiveFolders.map((f) => (
                               <button
-                                key={mostRecentFolder.id}
+                                key={f.id}
                                 type="button"
                                 className="smartpuck-folder-tag inactive"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleAddToFolder(recording.id, mostRecentFolder.id);
+                                  handleAddToFolder(recording.id, f.id);
                                 }}
-                                title={`Click to add to ${mostRecentFolder.name}`}
+                                title={`Click to add to ${f.name}`}
                               >
                                 <Plus size={10} />
-                                <span>{mostRecentFolder.name}</span>
+                                <span>{f.name}</span>
                               </button>
-                            )}
+                            ))}
                           </div>
                         )}
                         <div className="smartpuck-recording-meta">
