@@ -84,6 +84,52 @@ interface LayoutProps {
   onDismissVerifyWarning?: () => void;
 }
 
+function setupAudioBoost(audio: HTMLAudioElement): void {
+  try {
+    const AudioContextConstructor =
+      window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextConstructor) {
+      const ctx = new AudioContextConstructor();
+      const source = ctx.createMediaElementSource(audio);
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = 2; // Apply same 2x boost as Live Listen
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = -12;
+      compressor.knee.value = 8;
+      compressor.ratio.value = 6;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.2;
+
+      source.connect(gainNode);
+      gainNode.connect(compressor);
+      compressor.connect(ctx.destination);
+      
+      audio.addEventListener("play", () => {
+        if (ctx.state === "suspended") {
+          void ctx.resume();
+        }
+      });
+      (audio as any)._audioCtx = ctx;
+    }
+  } catch (e) {
+    console.error("Web Audio API boost setup failed", e);
+  }
+}
+
+function cleanUpAudioInstance(audio: HTMLAudioElement | null): void {
+  if (!audio) return;
+  try {
+    audio.pause();
+  } catch {}
+  if ((audio as any)._audioCtx) {
+    try {
+      void ((audio as any)._audioCtx as AudioContext).close();
+    } catch (e) {
+      console.error("Failed to close audio context", e);
+    }
+  }
+}
+
 function Layout({
   verifyWarning,
   onReinstall,
@@ -108,7 +154,7 @@ function Layout({
     return () => {
       audioRequestRef.current += 1;
       if (audioRef.current) {
-        audioRef.current.pause();
+        cleanUpAudioInstance(audioRef.current);
         audioRef.current = null;
       }
     };
@@ -144,7 +190,7 @@ function Layout({
     } else {
       const request = ++audioRequestRef.current;
       if (audioRef.current) {
-        audioRef.current.pause();
+        cleanUpAudioInstance(audioRef.current);
         audioRef.current.removeEventListener("timeupdate", handleAudioTimeUpdate);
         audioRef.current.removeEventListener("loadedmetadata", handleAudioLoadedMetadata);
         audioRef.current.removeEventListener("ended", handleAudioEnded);
@@ -168,6 +214,7 @@ function Layout({
         setAudioUrl(dataUrl);
         audioSourceKeyRef.current = recording.playbackAudioPath || recording.audioPath;
         const audio = new Audio(dataUrl);
+        setupAudioBoost(audio);
         audioRef.current = audio;
         audio.addEventListener("timeupdate", handleAudioTimeUpdate);
         audio.addEventListener("loadedmetadata", handleAudioLoadedMetadata);
@@ -196,7 +243,9 @@ function Layout({
       return;
     }
     const request = ++audioRequestRef.current;
-    audioRef.current?.pause();
+    if (audioRef.current) {
+      cleanUpAudioInstance(audioRef.current);
+    }
     setPlayingId(id);
     setAudioTitle(session.displayName || session.name);
     setAudioUrl(null);
@@ -218,6 +267,7 @@ function Layout({
     setAudioUrl(objectUrl);
     audioSourceKeyRef.current = id;
     const audio = new Audio(objectUrl);
+    setupAudioBoost(audio);
     audioRef.current = audio;
     audio.addEventListener("timeupdate", handleAudioTimeUpdate);
     audio.addEventListener("loadedmetadata", handleAudioLoadedMetadata);
@@ -252,8 +302,10 @@ function Layout({
     );
     if (stillExists) return;
     audioRequestRef.current += 1;
-    audioRef.current?.pause();
-    audioRef.current = null;
+    if (audioRef.current) {
+      cleanUpAudioInstance(audioRef.current);
+      audioRef.current = null;
+    }
     audioSourceKeyRef.current = null;
     setPlayingId(null);
     setAudioUrl(null);
@@ -277,8 +329,11 @@ function Layout({
     const shouldResume = !!previous && !previous.paused;
     void window.hermesAPI.readMediaFile(nextPath).then((nextUrl) => {
       if (!nextUrl || request !== audioRequestRef.current) return;
-      previous?.pause();
+      if (previous) {
+        cleanUpAudioInstance(previous);
+      }
       const nextAudio = new Audio(nextUrl);
+      setupAudioBoost(nextAudio);
       audioRef.current = nextAudio;
       audioSourceKeyRef.current = nextPath;
       setAudioUrl(nextUrl);
@@ -1293,7 +1348,7 @@ function Layout({
                 onClick={() => {
                   audioRequestRef.current += 1;
                   if (audioRef.current) {
-                    audioRef.current.pause();
+                    cleanUpAudioInstance(audioRef.current);
                     audioRef.current = null;
                   }
                   setPlayingId(null);
