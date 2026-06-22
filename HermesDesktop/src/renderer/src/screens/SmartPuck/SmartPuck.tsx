@@ -1634,7 +1634,6 @@ export default function SmartPuck({
                               >
                                 <Folder size={10} />
                                 <span>{f.name}</span>
-                                <span className="remove-icon">×</span>
                               </button>
                             ))}
                             {displayedInactiveFolders.map((f) => (
