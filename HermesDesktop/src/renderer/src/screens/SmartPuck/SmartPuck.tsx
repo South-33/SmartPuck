@@ -176,10 +176,9 @@ export default function SmartPuck({
     [device, folders],
   );
 
-  const refresh = useCallback(async () => {
+  const loadLibraryData = useCallback(async () => {
     const next = await window.hermesAPI.smartPuck.listLibrary();
     setSnapshot(next);
-    window.dispatchEvent(new Event("smartpuck-library-changed"));
     setSelectedFolderId((current) => {
       if (current && next.folders.some((folder) => folder.id === current)) {
         return current;
@@ -187,6 +186,11 @@ export default function SmartPuck({
       return current ?? null;
     });
   }, []);
+
+  const refresh = useCallback(async () => {
+    await loadLibraryData();
+    window.dispatchEvent(new Event("smartpuck-library-changed"));
+  }, [loadLibraryData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,7 +200,6 @@ export default function SmartPuck({
         if (cancelled) return;
         setSnapshot(next);
         setSelectedFolderId(null);
-        window.dispatchEvent(new Event("smartpuck-library-changed"));
       })
       .catch((err) => {
         if (!cancelled) {
@@ -207,6 +210,16 @@ export default function SmartPuck({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const handleLibraryChanged = (): void => {
+      void loadLibraryData();
+    };
+    window.addEventListener("smartpuck-library-changed", handleLibraryChanged);
+    return () => {
+      window.removeEventListener("smartpuck-library-changed", handleLibraryChanged);
+    };
+  }, [loadLibraryData]);
 
   const hasActiveTranscription = useMemo(
     () =>

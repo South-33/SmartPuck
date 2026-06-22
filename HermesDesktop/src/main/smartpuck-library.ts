@@ -394,10 +394,9 @@ export function importSmartPuckAudioFiles(
     throw new Error("Choose at least one audio file to import.");
   }
 
+  const targetFolder = ensureDefaultFolder();
   const db = writableDb();
   if (!db) throw new Error("Hermes state database is not ready yet.");
-
-  const targetFolder = ensureDefaultFolder();
   const imported: SmartPuckRecording[] = [];
   const now = Date.now();
 
