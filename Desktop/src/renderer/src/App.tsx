@@ -2,21 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
-  Bold,
   Check,
+  ChevronLeft,
+  ChevronRight,
   CircleDot,
   Code,
-  Download,
   Filter,
   Folder,
   FolderOpen,
   HelpCircle,
-  Italic,
-  Link2,
-  List,
-  Maximize2,
   Mic,
-  MoreHorizontal,
   Pencil,
   Play,
   Plus,
@@ -24,15 +19,14 @@ import {
   Save,
   Search,
   Settings,
-  Share2,
   Sparkles,
   Square,
-  SquareTerminal,
   Tags,
   Trash,
   Trash2,
-  Underline,
+  Volume1,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 import type {
   DeviceSnapshot,
@@ -53,12 +47,6 @@ type WorkspaceDialogState =
   | { type: "rename"; workplace: Workplace; name: string }
   | null;
 
-interface Segment {
-  timestamp: string;
-  speaker: string;
-  text: string;
-}
-
 function size(value: number): string {
   if (!value) return "0 GB";
   const units = ["B", "KB", "MB", "GB"];
@@ -69,33 +57,6 @@ function size(value: number): string {
     i++;
   }
   return `${amount.toFixed(i ? 1 : 0)} ${units[i]}`;
-}
-
-// Regex to parse raw transcript lines into structured segments (timestamp, speaker, text)
-function parseTranscript(text: string): Segment[] {
-  if (!text) return [];
-  const lines = text.split("\n");
-  const segments: Segment[] = [];
-  const regex = /^(?:\[?(\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\]?\s+)?([^:]+):\s*(.*)$/;
-  
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const match = line.match(regex);
-    if (match) {
-      segments.push({
-        timestamp: match[1] || "",
-        speaker: match[2] || "",
-        text: match[3] || ""
-      });
-    } else {
-      segments.push({
-        timestamp: "",
-        speaker: "",
-        text: line
-      });
-    }
-  }
-  return segments;
 }
 
 export default function App(): React.JSX.Element {
@@ -117,12 +78,20 @@ export default function App(): React.JSX.Element {
   const [draggingWorkplaceId, setDraggingWorkplaceId] = useState("");
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogState>(null);
   
+  // Collapsible & Resizable Panes States
+  const [isRailCollapsed, setIsRailCollapsed] = useState(false);
+  const [railWidth, setRailWidth] = useState(240);
+  const [workspacesWidth, setWorkspacesWidth] = useState(220);
+  const [meetingsWidth, setMeetingsWidth] = useState(320);
+  const [curationFilter, setCurationFilter] = useState<'all' | 'curated' | 'pending'>('all');
+
   // Custom Audio Player States
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeStr, setCurrentTimeStr] = useState("00:00");
   const [playSpeed, setPlaySpeed] = useState("1x");
   const [progressPercent, setProgressPercent] = useState(0);
+  const [volume, setVolume] = useState(1.0);
 
   const streamAbort = useRef<AbortController | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
@@ -239,12 +208,27 @@ export default function App(): React.JSX.Element {
         ? library.inbox
         : library.workplaces.find((w) => w.metadata.id === workplaceId)
             ?.meetings || [];
+            
+    let filtered = scoped;
+    
+    // Search strictly within selected workspace meetings
     const needle = query.trim().toLocaleLowerCase();
-    if (!needle) return scoped;
-    return allMeetings.filter((meeting) =>
-      `${meeting.metadata.title}\n${meeting.metadata.summary || ""}\n${meeting.transcript}`.toLocaleLowerCase().includes(needle),
-    );
-  }, [allMeetings, library, workplaceId, query]);
+    if (needle) {
+      filtered = filtered.filter((meeting) =>
+        `${meeting.metadata.title}\n${meeting.metadata.summary || ""}\n${meeting.transcript}`.toLocaleLowerCase().includes(needle),
+      );
+    }
+    
+    // Filter by curation status if selected
+    if (curationFilter === "pending") {
+      filtered = filtered.filter(m => m.metadata.curationStatus === "pending");
+    } else if (curationFilter === "curated") {
+      filtered = filtered.filter(m => m.metadata.curationStatus === "curated");
+    }
+    
+    return filtered;
+  }, [allMeetings, library, workplaceId, query, curationFilter]);
+
   const selected = useMemo(
     () =>
       allMeetings.find(
@@ -363,6 +347,7 @@ export default function App(): React.JSX.Element {
 
   const meetingWorkspaceIds = (meeting: Meeting): Set<string> =>
     new Set(meeting.metadata.workspaceIds || []);
+
   const reorderWorkplaceDrop = (targetId: string): void => {
     if (!draggingWorkplaceId || draggingWorkplaceId === targetId) return;
     const ids = library.workplaces.map((workplace) => workplace.metadata.id);
@@ -417,28 +402,80 @@ export default function App(): React.JSX.Element {
     setProgressPercent(0);
   };
 
-  const handleSegmentTextChange = (index: number, newText: string) => {
-    const segments = parseTranscript(draft);
-    if (segments[index]) {
-      segments[index].text = newText;
-      const updated = segments
-        .map(s => {
-          const timePart = s.timestamp ? `${s.timestamp} ` : "";
-          const speakerPart = s.speaker ? `${s.speaker}: ` : "";
-          return `${timePart}${speakerPart}${s.text}`;
-        })
-        .join("\n");
-      setDraft(updated);
-    }
+  const cycleVolume = () => {
+    if (!audioRef.current) return;
+    let nextVol = 1.0;
+    if (volume === 1.0) nextVol = 0.5;
+    else if (volume === 0.5) nextVol = 0.0;
+    else nextVol = 1.0;
+    audioRef.current.volume = nextVol;
+    setVolume(nextVol);
   };
 
-  // Convert parsed text characters and word metrics
+  const handleWaveformClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current || !audioRef.current.duration) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const percent = clickX / rect.width;
+    audioRef.current.currentTime = audioRef.current.duration * percent;
+    setProgressPercent(percent * 100);
+  };
+
+  // Resize Mouse Drag Handlers
+  const handleWorkspaceResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = workspacesWidth;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(150, Math.min(400, startWidth + (moveEvent.clientX - startX)));
+      setWorkspacesWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleMeetingsResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = meetingsWidth;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(200, Math.min(500, startWidth + (moveEvent.clientX - startX)));
+      setMeetingsWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleRailResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = railWidth;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(160, Math.min(320, startWidth + (moveEvent.clientX - startX)));
+      setRailWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
   const wordCount = draft ? draft.trim().split(/\s+/).filter(Boolean).length : 0;
   const charCount = draft ? draft.length : 0;
 
   return (
-    <div className="app">
-      <aside className="rail">
+    <div className="app" style={{ gridTemplateColumns: isRailCollapsed ? "68px 4px 1fr" : `${railWidth}px 4px 1fr` }}>
+      <aside className={`rail ${isRailCollapsed ? "collapsed" : ""}`} style={{ width: isRailCollapsed ? 68 : railWidth }}>
         <div className="brand">
           <span>
             <CircleDot size={18} />
@@ -451,34 +488,39 @@ export default function App(): React.JSX.Element {
             onClick={() => setView("library")}
           >
             <FolderOpen />
-            Library
+            {!isRailCollapsed && <span>Library</span>}
           </button>
           <button
             className={view === "device" ? "active" : ""}
             onClick={() => setView("device")}
           >
             <Mic />
-            Device
+            {!isRailCollapsed && <span>Device</span>}
+            {device?.connected && (
+              <span style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "var(--accent-green)",
+                marginLeft: isRailCollapsed ? "0" : "auto",
+                boxShadow: "0 0 8px var(--accent-green)"
+              }} />
+            )}
           </button>
           <button
             className={view === "settings" ? "active" : ""}
             onClick={() => setView("settings")}
           >
             <Settings />
-            Settings
+            {!isRailCollapsed && <span>Settings</span>}
           </button>
         </nav>
-        <div className="rail-bottom">
-          <button className="rail-bottom-btn" onClick={() => alert("SmartPuck Desktop v1.0.0\nLocal-first meeting companion.")}>
-            <HelpCircle />
-            About
-          </button>
-          <div className="rail-status-bar">
-            <span className={`rail-status-dot ${device?.connected ? "active" : ""}`} />
-            <span>{device?.connected ? "Connected" : "Disconnected"}</span>
-          </div>
-        </div>
+        
+        <button className="rail-collapse-toggle" onClick={() => setIsRailCollapsed(!isRailCollapsed)}>
+          {isRailCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+        </button>
       </aside>
+      <div className="resize-handle" onMouseDown={handleRailResize} />
       <main>
         {error && <div className="error"><AlertCircle size={16} />{error}</div>}
         {workspaceDialog && (
@@ -497,7 +539,9 @@ export default function App(): React.JSX.Element {
               </p>
               <input
                 autoFocus
-                aria-label="Workspace name"
+                style={{ pointerEvents: "auto", position: "relative", zIndex: 110 }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 placeholder="Workspace name"
                 value={workspaceDialog.name}
                 onChange={(event) => setWorkspaceDialog({ ...workspaceDialog, name: event.target.value })}
@@ -568,7 +612,7 @@ export default function App(): React.JSX.Element {
           </div>
         )}
         {view === "library" && (
-          <div className="library-container">
+          <div className="library-container" style={{ gridTemplateColumns: `${workspacesWidth}px 4px ${meetingsWidth}px 4px 1fr` }}>
             {/* Column 1: Workspaces */}
             <aside className="lib-col-workspaces">
               <div className="col-header">
@@ -620,16 +664,10 @@ export default function App(): React.JSX.Element {
                   ))}
                 </div>
               </div>
-              <div className="workspace-footer">
-                <div className="workspace-footer-label">
-                  <span>Workspace Usage</span>
-                  <span>128 GB of 512 GB</span>
-                </div>
-                <div className="workspace-progress-track">
-                  <div className="workspace-progress-bar" style={{ width: "25%" }} />
-                </div>
-              </div>
             </aside>
+
+            {/* Resize Divider 1 */}
+            <div className="resize-handle" onMouseDown={handleWorkspaceResize} />
 
             {/* Column 2: Meetings */}
             <section className="lib-col-meetings">
@@ -648,7 +686,18 @@ export default function App(): React.JSX.Element {
                       onChange={(event) => setQuery(event.target.value)}
                     />
                   </div>
-                  <button title="Filters" style={{ padding: "10px" }}>
+                  <button
+                    className={curationFilter !== "all" ? "active" : ""}
+                    onClick={() => {
+                      setCurationFilter(current => {
+                        if (current === "all") return "pending";
+                        if (current === "pending") return "curated";
+                        return "all";
+                      });
+                    }}
+                    title={`Filter: ${curationFilter === "all" ? "All" : curationFilter === "pending" ? "Pending Curation" : "Curated"}`}
+                    style={{ padding: "10px", color: curationFilter !== "all" ? "var(--accent-lime)" : "inherit" }}
+                  >
                     <Filter size={15} />
                   </button>
                 </div>
@@ -697,6 +746,9 @@ export default function App(): React.JSX.Element {
               </div>
             </section>
 
+            {/* Resize Divider 2 */}
+            <div className="resize-handle" onMouseDown={handleMeetingsResize} />
+
             {/* Column 3: Meeting Detail & Transcript */}
             <section className="lib-col-detail">
               {selected ? (
@@ -709,16 +761,8 @@ export default function App(): React.JSX.Element {
                       </p>
                     </div>
                     <div className="detail-actions-top">
-                      <button title="More Options" style={{ padding: "9px" }} onClick={() => rename(selected)}>
-                        <MoreHorizontal size={15} />
-                      </button>
-                      <button onClick={importFiles}>
-                        <Download size={14} />
-                        Export
-                      </button>
-                      <button className="primary" onClick={() => alert(`Sharing meeting transcript: ${selected.metadata.title}`)}>
-                        <Share2 size={14} />
-                        Share
+                      <button onClick={() => rename(selected)}>
+                        Rename
                       </button>
                     </div>
                   </div>
@@ -729,7 +773,7 @@ export default function App(): React.JSX.Element {
                         {isPlaying ? <Square size={16} fill="#000" /> : <Play size={16} />}
                       </button>
                       <span className="player-time">{currentTimeStr}</span>
-                      <div className="player-waveform-visualizer">
+                      <div className="player-waveform-visualizer" onClick={handleWaveformClick} title="Click to seek">
                         {Array.from({ length: 45 }).map((_, i) => {
                           const isActive = i / 45 * 100 < progressPercent;
                           const heightVal = 15 + Math.abs(Math.sin(i * 0.2)) * 75;
@@ -749,11 +793,8 @@ export default function App(): React.JSX.Element {
                         <button className="player-speed-btn" onClick={cyclePlaySpeed} title="Playback Speed">
                           {playSpeed}
                         </button>
-                        <button className="player-icon-btn" title="Mute/Unmute">
-                          <Volume2 />
-                        </button>
-                        <button className="player-icon-btn" title="Expand Player">
-                          <Maximize2 />
+                        <button className="player-icon-btn" onClick={cycleVolume} title={`Volume: ${Math.round(volume * 100)}%`}>
+                          {volume === 1.0 ? <Volume2 size={16} /> : volume === 0.5 ? <Volume1 size={16} /> : <VolumeX size={16} />}
                         </button>
                       </div>
                       <audio
@@ -780,60 +821,23 @@ export default function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    {/* Transcript List Panel */}
-                    <div className="detail-transcript-wrapper">
+                    {/* Transcript Editor Card */}
+                    <div className="detail-transcript-wrapper" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
                       <h4 className="detail-section-title">Transcript</h4>
-                      <div className="transcript-card">
-                        <div className="transcript-toolbar">
-                          <div className="toolbar-group-left">
-                            <select className="toolbar-select">
-                              <option>Normal</option>
-                              <option>Heading 1</option>
-                              <option>Heading 2</option>
-                            </select>
-                            <div className="toolbar-separator" />
-                            <button className="toolbar-btn" title="Bold"><Bold size={14} /></button>
-                            <button className="toolbar-btn" title="Italic"><Italic size={14} /></button>
-                            <button className="toolbar-btn" title="Underline"><Underline size={14} /></button>
-                            <div className="toolbar-separator" />
-                            <button className="toolbar-btn" title="Bullet List"><List size={14} /></button>
-                            <button className="toolbar-btn" title="Link"><Link2 size={14} /></button>
-                            <button className="toolbar-btn" title="Code"><Code size={14} /></button>
-                            <button className="toolbar-btn" title="Code Block"><SquareTerminal size={14} /></button>
-                          </div>
-                          <div className="toolbar-search">
-                            <Search size={12} />
-                            <input placeholder="Find..." />
-                          </div>
-                        </div>
-                        <div className="transcript-body">
-                          {parseTranscript(draft).length === 0 ? (
-                            <div style={{ color: "var(--text-muted)", fontSize: "13px" }}>Transcript is empty.</div>
-                          ) : (
-                            parseTranscript(draft).map((segment, index) => (
-                              <div className="transcript-line" key={index}>
-                                <span className="transcript-timestamp">
-                                  {segment.timestamp || "00:00"}
-                                </span>
-                                <span className="transcript-speaker">
-                                  {segment.speaker || "Speaker"}
-                                </span>
-                                <input
-                                  className="transcript-text"
-                                  value={segment.text}
-                                  onChange={(e) => handleSegmentTextChange(index, e.target.value)}
-                                  spellCheck
-                                />
-                              </div>
-                            ))
-                          )}
-                        </div>
+                      <div className="transcript-card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                        <textarea
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          spellCheck
+                          placeholder="Edit transcript text..."
+                        />
                         <div className="transcript-footer">
                           <span>{charCount.toLocaleString()} characters • {wordCount.toLocaleString()} words</span>
                         </div>
                       </div>
                     </div>
                   </div>
+                  
                   <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: "10px", background: "var(--bg-sidebar)" }}>
                     <button
                       onClick={() =>
