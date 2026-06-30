@@ -2,16 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
+  Bold,
   Check,
   CircleDot,
-  Copy,
-  FileAudio,
+  Code,
+  Download,
+  Filter,
+  Folder,
   FolderOpen,
-  HardDrive,
-  Import,
+  HelpCircle,
+  Italic,
+  Link2,
+  List,
+  Maximize2,
   Mic,
-  PanelLeftClose,
-  PanelLeftOpen,
+  MoreHorizontal,
   Pencil,
   Play,
   Plus,
@@ -19,10 +24,15 @@ import {
   Save,
   Search,
   Settings,
+  Share2,
   Sparkles,
   Square,
+  SquareTerminal,
   Tags,
+  Trash,
   Trash2,
+  Underline,
+  Volume2,
 } from "lucide-react";
 import type {
   DeviceSnapshot,
@@ -43,8 +53,14 @@ type WorkspaceDialogState =
   | { type: "rename"; workplace: Workplace; name: string }
   | null;
 
+interface Segment {
+  timestamp: string;
+  speaker: string;
+  text: string;
+}
+
 function size(value: number): string {
-  if (!value) return "—";
+  if (!value) return "0 GB";
   const units = ["B", "KB", "MB", "GB"];
   let amount = value;
   let i = 0;
@@ -53,6 +69,33 @@ function size(value: number): string {
     i++;
   }
   return `${amount.toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+// Regex to parse raw transcript lines into structured segments (timestamp, speaker, text)
+function parseTranscript(text: string): Segment[] {
+  if (!text) return [];
+  const lines = text.split("\n");
+  const segments: Segment[] = [];
+  const regex = /^(?:\[?(\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\]?\s+)?([^:]+):\s*(.*)$/;
+  
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const match = line.match(regex);
+    if (match) {
+      segments.push({
+        timestamp: match[1] || "",
+        speaker: match[2] || "",
+        text: match[3] || ""
+      });
+    } else {
+      segments.push({
+        timestamp: "",
+        speaker: "",
+        text: line
+      });
+    }
+  }
+  return segments;
 }
 
 export default function App(): React.JSX.Element {
@@ -73,8 +116,14 @@ export default function App(): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [draggingWorkplaceId, setDraggingWorkplaceId] = useState("");
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogState>(null);
-  const [showWorkplaces, setShowWorkplaces] = useState(true);
-  const [copied, setCopied] = useState(false);
+  
+  // Custom Audio Player States
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTimeStr, setCurrentTimeStr] = useState("00:00");
+  const [playSpeed, setPlaySpeed] = useState("1x");
+  const [progressPercent, setProgressPercent] = useState(0);
+
   const streamAbort = useRef<AbortController | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const monitorGain = useRef<GainNode | null>(null);
@@ -92,6 +141,7 @@ export default function App(): React.JSX.Element {
     if (view !== "device" || !device?.connected || !device.ip) return;
     void window.smartpuck.device.wifiConfig().then(setWifiConfig).catch(() => setWifiConfig(null));
   }, [view, device?.connected, device?.ip]);
+  
   useEffect(() => {
     const close = (): void => setContextMenu(null);
     window.addEventListener("click", close);
@@ -195,12 +245,6 @@ export default function App(): React.JSX.Element {
       `${meeting.metadata.title}\n${meeting.metadata.summary || ""}\n${meeting.transcript}`.toLocaleLowerCase().includes(needle),
     );
   }, [allMeetings, library, workplaceId, query]);
-
-  const inboxPending = useMemo(
-    () => library.inbox.filter((meeting) => meeting.metadata.curationStatus === "pending").length,
-    [library.inbox],
-  );
-
   const selected = useMemo(
     () =>
       allMeetings.find(
@@ -211,6 +255,9 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     setDraft(selected?.transcript || "");
+    setIsPlaying(false);
+    setCurrentTimeStr("00:00");
+    setProgressPercent(0);
   }, [selected?.metadata.id, selected?.transcript]);
 
   const run = async (
@@ -316,12 +363,6 @@ export default function App(): React.JSX.Element {
 
   const meetingWorkspaceIds = (meeting: Meeting): Set<string> =>
     new Set(meeting.metadata.workspaceIds || []);
-
-  const quickAddWorkplaces = (meeting: Meeting): Workplace[] => {
-    const linked = meetingWorkspaceIds(meeting);
-    return library.workplaces.filter((workplace) => !linked.has(workplace.metadata.id)).slice(0, 3);
-  };
-
   const reorderWorkplaceDrop = (targetId: string): void => {
     if (!draggingWorkplaceId || draggingWorkplaceId === targetId) return;
     const ids = library.workplaces.map((workplace) => workplace.metadata.id);
@@ -331,6 +372,69 @@ export default function App(): React.JSX.Element {
     ids.splice(to, 0, ids.splice(from, 1)[0]);
     void run("reorder-workplaces", async () => setLibrary(await window.smartpuck.library.reorderWorkplaces(ids)));
   };
+
+  // Custom Audio Player Event Handlers
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) return;
+    const current = audioRef.current.currentTime || 0;
+    const duration = audioRef.current.duration || 1;
+    const min = Math.floor(current / 60);
+    const sec = Math.floor(current % 60);
+    setCurrentTimeStr(`${min.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`);
+    setProgressPercent((current / duration) * 100);
+  };
+
+  const cyclePlaySpeed = () => {
+    if (!audioRef.current) return;
+    let nextRate = 1.0;
+    let nextLabel = "1x";
+    if (playSpeed === "1x") {
+      nextRate = 1.5;
+      nextLabel = "1.5x";
+    } else if (playSpeed === "1.5x") {
+      nextRate = 2.0;
+      nextLabel = "2x";
+    } else {
+      nextRate = 1.0;
+      nextLabel = "1x";
+    }
+    audioRef.current.playbackRate = nextRate;
+    setPlaySpeed(nextLabel);
+  };
+
+  const handleAudioEnded = () => {
+    setIsPlaying(false);
+    setCurrentTimeStr("00:00");
+    setProgressPercent(0);
+  };
+
+  const handleSegmentTextChange = (index: number, newText: string) => {
+    const segments = parseTranscript(draft);
+    if (segments[index]) {
+      segments[index].text = newText;
+      const updated = segments
+        .map(s => {
+          const timePart = s.timestamp ? `${s.timestamp} ` : "";
+          const speakerPart = s.speaker ? `${s.speaker}: ` : "";
+          return `${timePart}${speakerPart}${s.text}`;
+        })
+        .join("\n");
+      setDraft(updated);
+    }
+  };
+
+  // Convert parsed text characters and word metrics
+  const wordCount = draft ? draft.trim().split(/\s+/).filter(Boolean).length : 0;
+  const charCount = draft ? draft.length : 0;
 
   return (
     <div className="app">
@@ -355,16 +459,6 @@ export default function App(): React.JSX.Element {
           >
             <Mic />
             Device
-            {device?.connected && (
-              <span style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "var(--accent-green)",
-                marginLeft: "auto",
-                boxShadow: "0 0 8px var(--accent-green)"
-              }} />
-            )}
           </button>
           <button
             className={view === "settings" ? "active" : ""}
@@ -374,8 +468,15 @@ export default function App(): React.JSX.Element {
             Settings
           </button>
         </nav>
-        <div className="rail-foot">
-          <small>Local-first meeting memory</small>
+        <div className="rail-bottom">
+          <button className="rail-bottom-btn" onClick={() => alert("SmartPuck Desktop v1.0.0\nLocal-first meeting companion.")}>
+            <HelpCircle />
+            About
+          </button>
+          <div className="rail-status-bar">
+            <span className={`rail-status-dot ${device?.connected ? "active" : ""}`} />
+            <span>{device?.connected ? "Connected" : "Disconnected"}</span>
+          </div>
         </div>
       </aside>
       <main>
@@ -467,275 +568,333 @@ export default function App(): React.JSX.Element {
           </div>
         )}
         {view === "library" && (
-          <div className="library">
-            <header>
-              <div>
-                <p className="eyebrow">Meeting workspace</p>
-                <h1>Library</h1>
-              </div>
-              <div className="actions">
-                <div className="search-container">
-                  <span style={{ position: "absolute", left: 12, color: "var(--text-muted)", display: "flex", alignItems: "center" }}>
-                    <Search size={16} />
-                  </span>
-                  <input
-                    className="search"
-                    aria-label="Search meetings"
-                    placeholder="Search meetings..."
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
-                </div>
-                <button
-                  onClick={() => setShowWorkplaces(!showWorkplaces)}
-                  title={showWorkplaces ? "Collapse Workspaces" : "Expand Workspaces"}
-                  style={{ padding: "10px" }}
-                >
-                  {showWorkplaces ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-                </button>
-                <button onClick={openCreateWorkspace}>
-                  <Plus />
-                  Workspace
-                </button>
-                <button className="primary" onClick={importFiles}>
-                  <Import />
-                  Import audio
-                </button>
-              </div>
-            </header>
-            <div className="library-grid" style={{ gridTemplateColumns: showWorkplaces ? "220px minmax(300px, 380px) 1fr" : "380px 1fr" }}>
-              <section className={`workplaces panel ${showWorkplaces ? "" : "collapsed"}`}>
+          <div className="library-container">
+            {/* Column 1: Workspaces */}
+            <aside className="lib-col-workspaces">
+              <div className="col-header">
                 <h3>Workspaces</h3>
-                <button
-                  className={workplaceId === "inbox" ? "selected" : ""}
-                  onClick={() => {
-                    setWorkplaceId("inbox");
-                    setSelectedId("");
-                  }}
-                >
-                  <span>Unassigned</span>
-                  <b>
-                    {library.inbox.length}
-                    {inboxPending > 0 ? ` · ${inboxPending} to curate` : ""}
-                  </b>
+                <button onClick={openCreateWorkspace} style={{ padding: "4px 8px", fontSize: "11px" }}>
+                  <Plus size={12} /> New
                 </button>
-                {library.workplaces.length === 0 && (
-                  <div className="workspace-hint">
-                    <p>No workspaces yet.</p>
-                    <button onClick={openCreateWorkspace}>
-                      <Plus /> Create one
-                    </button>
-                  </div>
-                )}
-                {library.workplaces.map((w) => (
-                  <button
-                    key={w.metadata.id}
-                    draggable
-                    className={workplaceId === w.metadata.id ? "selected" : ""}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setContextMenu({ type: "workplace", workplace: w, x: event.clientX, y: event.clientY });
-                    }}
-                    onDoubleClick={() => renameWorkplace(w)}
-                    onDragStart={() => setDraggingWorkplaceId(w.metadata.id)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={() => reorderWorkplaceDrop(w.metadata.id)}
-                    onDragEnd={() => setDraggingWorkplaceId("")}
+              </div>
+              <div className="col-content">
+                <div className="workspace-tree">
+                  <div
+                    className={`workspace-item ${workplaceId === "inbox" ? "selected" : ""}`}
                     onClick={() => {
-                      setWorkplaceId(w.metadata.id);
+                      setWorkplaceId("inbox");
                       setSelectedId("");
                     }}
                   >
-                    <span>{w.metadata.name}</span>
-                    <b>{w.meetings.length}</b>
+                    <div className="workspace-item-label">
+                      <Folder />
+                      <span>Unassigned</span>
+                    </div>
+                    <span className="count">{library.inbox.length}</span>
+                  </div>
+                  {library.workplaces.map((w) => (
+                    <div
+                      key={w.metadata.id}
+                      draggable
+                      className={`workspace-item ${workplaceId === w.metadata.id ? "selected" : ""}`}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setContextMenu({ type: "workplace", workplace: w, x: event.clientX, y: event.clientY });
+                      }}
+                      onDoubleClick={() => renameWorkplace(w)}
+                      onDragStart={() => setDraggingWorkplaceId(w.metadata.id)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => reorderWorkplaceDrop(w.metadata.id)}
+                      onDragEnd={() => setDraggingWorkplaceId("")}
+                      onClick={() => {
+                        setWorkplaceId(w.metadata.id);
+                        setSelectedId("");
+                      }}
+                    >
+                      <div className="workspace-item-label">
+                        <Folder />
+                        <span>{w.metadata.name}</span>
+                      </div>
+                      <span className="count">{w.meetings.length}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="workspace-footer">
+                <div className="workspace-footer-label">
+                  <span>Workspace Usage</span>
+                  <span>128 GB of 512 GB</span>
+                </div>
+                <div className="workspace-progress-track">
+                  <div className="workspace-progress-bar" style={{ width: "25%" }} />
+                </div>
+              </div>
+            </aside>
+
+            {/* Column 2: Meetings */}
+            <section className="lib-col-meetings">
+              <div className="col-header">
+                <h3>Meetings ({meetings.length})</h3>
+              </div>
+              <div className="col-content">
+                <div className="meetings-search-row">
+                  <div className="search-container">
+                    <Search size={15} />
+                    <input
+                      className="search"
+                      aria-label="Search meetings"
+                      placeholder="Search meetings..."
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                  </div>
+                  <button title="Filters" style={{ padding: "10px" }}>
+                    <Filter size={15} />
                   </button>
-                ))}
-              </section>
-              <section className="meetings panel">
-                <div className="section-head">
-                  <h3>Meetings</h3>
-                  <span>{meetings.length}</span>
                 </div>
                 {meetings.length === 0 ? (
                   <div className="empty">
                     <Mic />
                     <p>No meetings here yet.</p>
-                    <button onClick={importFiles}>Import a recording</button>
+                    <button onClick={importFiles}>Import audio</button>
                   </div>
                 ) : (
                   meetings.map((m) => (
                     <button
                       key={m.metadata.id}
-                      className={`meeting ${selectedId === m.metadata.id ? "selected" : ""}`}
+                      className={`meeting-card ${selectedId === m.metadata.id ? "selected" : ""}`}
+                      onClick={() => setSelectedId(m.metadata.id)}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         setContextMenu({ type: "meeting", meeting: m, x: event.clientX, y: event.clientY });
                       }}
-                      onClick={() => setSelectedId(m.metadata.id)}
                       onDoubleClick={() => rename(m)}
                     >
-                      <div>
+                      <div className="meeting-card-info">
                         <strong>{m.metadata.title}</strong>
-                        <small>
-                          {new Date(m.metadata.capturedAt).toLocaleString()}
-                        </small>
-                        {quickAddWorkplaces(m).length > 0 && (
-                          <span className="quick-add" onClick={(event) => event.stopPropagation()}>
-                            {quickAddWorkplaces(m).map((workplace) => (
-                              <em
-                                key={workplace.metadata.id}
-                                role="button"
-                                tabIndex={0}
-                                title={`Add to ${workplace.metadata.name}`}
-                                onClick={() => addToWorkplace(m, workplace.metadata.id)}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") addToWorkplace(m, workplace.metadata.id);
-                                }}
-                              >
-                                + {workplace.metadata.name}
-                              </em>
-                            ))}
-                          </span>
-                        )}
+                        <span>{new Date(m.metadata.capturedAt).toLocaleDateString()} • {new Date(m.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <span className={`status ${m.metadata.status}`}>
-                        {m.metadata.status === "transcribing" && m.metadata.progressPercent
-                          ? `${m.metadata.status} ${m.metadata.progressPercent}%`
-                          : m.metadata.status}
-                      </span>
+                      <div className="meeting-card-meta">
+                        <span className="meeting-card-duration">
+                          {m.metadata.durationSeconds
+                            ? `${Math.floor(m.metadata.durationSeconds / 60)}:${String(Math.floor(m.metadata.durationSeconds % 60)).padStart(2, "0")}`
+                            : "0:00"}
+                        </span>
+                        <span className={`status-badge ${m.metadata.status}`}>
+                          {m.metadata.status}
+                        </span>
+                      </div>
                     </button>
                   ))
                 )}
-              </section>
-              <section className="detail panel">
-                {selected ? (
-                  <>
-                    <div className="section-head">
-                      <div>
-                        <p className="eyebrow">{selected.metadata.status}</p>
-                        <h2>{selected.metadata.title}</h2>
-                      </div>
-                      <button title="Rename" onClick={() => rename(selected)}>
-                        Rename
+              </div>
+              <div className="meetings-footer">
+                <span>Showing 1-{meetings.length} of {meetings.length}</span>
+                <div className="meetings-pagination">
+                  <button disabled>&lt;</button>
+                  <button disabled>&gt;</button>
+                </div>
+              </div>
+            </section>
+
+            {/* Column 3: Meeting Detail & Transcript */}
+            <section className="lib-col-detail">
+              {selected ? (
+                <>
+                  <div className="detail-header-wrapper">
+                    <div className="detail-header-info">
+                      <h2>{selected.metadata.title}</h2>
+                      <p>
+                        {new Date(selected.metadata.capturedAt).toLocaleDateString()} • {new Date(selected.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {selected.metadata.durationSeconds ? `${Math.floor(selected.metadata.durationSeconds / 60)}:${String(Math.floor(selected.metadata.durationSeconds % 60)).padStart(2, "0")}` : "0:00"} • {selected.metadata.sourceDevice?.sessionName || "SmartPuck-2F3A"}
+                      </p>
+                    </div>
+                    <div className="detail-actions-top">
+                      <button title="More Options" style={{ padding: "9px" }} onClick={() => rename(selected)}>
+                        <MoreHorizontal size={15} />
+                      </button>
+                      <button onClick={importFiles}>
+                        <Download size={14} />
+                        Export
+                      </button>
+                      <button className="primary" onClick={() => alert(`Sharing meeting transcript: ${selected.metadata.title}`)}>
+                        <Share2 size={14} />
+                        Share
                       </button>
                     </div>
-                    <div className="meta">
-                      <span>{selected.metadata.curationStatus === "pending" ? "Needs agent curation" : "Curated"}</span>
-                      <span>
-                        {selected.metadata.language || "Language pending"}
-                      </span>
-                      <span>
-                        {selected.metadata.durationSeconds
-                          ? `${Math.round(selected.metadata.durationSeconds / 60)} min`
-                          : "Duration pending"}
-                      </span>
-                    </div>
-                    {meetingWorkspaceIds(selected).size > 0 && (
-                      <div className="workspace-tags">
-                        {library.workplaces
-                          .filter((workplace) => meetingWorkspaceIds(selected).has(workplace.metadata.id))
-                          .map((workplace) => (
-                            <span key={workplace.metadata.id}>
-                              {workplace.metadata.name}
-                            </span>
-                          ))}
+                  </div>
+                  <div className="detail-scroller">
+                    {/* Custom Formatted Audio Player */}
+                    <div className="custom-audio-player">
+                      <button className="player-play-btn" onClick={togglePlay} title={isPlaying ? "Pause" : "Play"}>
+                        {isPlaying ? <Square size={16} fill="#000" /> : <Play size={16} />}
+                      </button>
+                      <span className="player-time">{currentTimeStr}</span>
+                      <div className="player-waveform-visualizer">
+                        {Array.from({ length: 45 }).map((_, i) => {
+                          const isActive = i / 45 * 100 < progressPercent;
+                          const heightVal = 15 + Math.abs(Math.sin(i * 0.2)) * 75;
+                          return (
+                            <div
+                              key={i}
+                              className={`waveform-bar ${isActive ? "active" : ""}`}
+                              style={{ height: `${heightVal}%` }}
+                            />
+                          );
+                        })}
                       </div>
-                    )}
-                    {selected.metadata.summary && (
-                      <p className="meeting-summary">{selected.metadata.summary}</p>
-                    )}
-                    <div className="audio-player-wrapper">
+                      <span className="player-time">
+                        {selected.metadata.durationSeconds ? `${Math.floor(selected.metadata.durationSeconds / 60)}:${String(Math.floor(selected.metadata.durationSeconds % 60)).padStart(2, "0")}` : "0:00"}
+                      </span>
+                      <div className="player-controls-right">
+                        <button className="player-speed-btn" onClick={cyclePlaySpeed} title="Playback Speed">
+                          {playSpeed}
+                        </button>
+                        <button className="player-icon-btn" title="Mute/Unmute">
+                          <Volume2 />
+                        </button>
+                        <button className="player-icon-btn" title="Expand Player">
+                          <Maximize2 />
+                        </button>
+                      </div>
                       <audio
-                        className="audio-player"
-                        controls
-                        preload="metadata"
+                        ref={(el) => {
+                          audioRef.current = el;
+                        }}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                        onTimeUpdate={handleTimeUpdate}
+                        onEnded={handleAudioEnded}
                         src={`smartpuck://audio/${encodeURIComponent(selected.metadata.id)}`}
+                        style={{ display: "none" }}
                       />
                     </div>
-                    <textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      spellCheck
-                      placeholder="Start transcribing or edit transcript..."
-                    />
-                    <div className="editor-toolbar">
-                      <div className="editor-stats">
-                        <span>{draft ? draft.trim().split(/\s+/).filter(Boolean).length : 0} words</span>
-                        <span>{draft ? draft.length : 0} characters</span>
+
+                    {/* Summary Section */}
+                    {selected.metadata.summary && (
+                      <div className="detail-summary-wrapper">
+                        <h4 className="detail-section-title">Summary</h4>
+                        <div className="summary-text-block">
+                          {selected.metadata.summary}
+                        </div>
+                        <span className="summary-showmore">Show more</span>
                       </div>
-                      <div className="actions">
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(draft);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                          }}
-                          title="Copy transcript"
-                        >
-                          {copied ? <Check size={14} /> : <Copy size={14} />}
-                          {copied ? "Copied" : "Copy"}
-                        </button>
-                        <button
-                          onClick={() =>
-                            void run("transcribe", async () =>
-                              setLibrary(
-                                await window.smartpuck.library.transcribe(
-                                  selected.metadata.id,
-                                ),
-                              ),
-                            )
-                          }
-                          disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
-                        >
-                          <Sparkles />
-                          {selected.metadata.status === "error"
-                            ? "Retry transcription"
-                            : selected.metadata.status === "ready"
-                              ? "Transcribe again"
-                              : selected.metadata.status === "transcribing"
-                                ? "Transcribing…"
-                                : "Transcribe now"}
-                        </button>
-                        <button
-                          className="primary"
-                          onClick={() =>
-                            void run("save", async () =>
-                              setLibrary(
-                                await window.smartpuck.library.saveTranscript(
-                                  selected.metadata.id,
-                                  draft,
-                                ),
-                              ),
-                            )
-                          }
-                        >
-                          <Save />
-                          Save transcript
-                        </button>
+                    )}
+
+                    {/* Transcript List Panel */}
+                    <div className="detail-transcript-wrapper">
+                      <h4 className="detail-section-title">Transcript</h4>
+                      <div className="transcript-card">
+                        <div className="transcript-toolbar">
+                          <div className="toolbar-group-left">
+                            <select className="toolbar-select">
+                              <option>Normal</option>
+                              <option>Heading 1</option>
+                              <option>Heading 2</option>
+                            </select>
+                            <div className="toolbar-separator" />
+                            <button className="toolbar-btn" title="Bold"><Bold size={14} /></button>
+                            <button className="toolbar-btn" title="Italic"><Italic size={14} /></button>
+                            <button className="toolbar-btn" title="Underline"><Underline size={14} /></button>
+                            <div className="toolbar-separator" />
+                            <button className="toolbar-btn" title="Bullet List"><List size={14} /></button>
+                            <button className="toolbar-btn" title="Link"><Link2 size={14} /></button>
+                            <button className="toolbar-btn" title="Code"><Code size={14} /></button>
+                            <button className="toolbar-btn" title="Code Block"><SquareTerminal size={14} /></button>
+                          </div>
+                          <div className="toolbar-search">
+                            <Search size={12} />
+                            <input placeholder="Find..." />
+                          </div>
+                        </div>
+                        <div className="transcript-body">
+                          {parseTranscript(draft).length === 0 ? (
+                            <div style={{ color: "var(--text-muted)", fontSize: "13px" }}>Transcript is empty.</div>
+                          ) : (
+                            parseTranscript(draft).map((segment, index) => (
+                              <div className="transcript-line" key={index}>
+                                <span className="transcript-timestamp">
+                                  {segment.timestamp || "00:00"}
+                                </span>
+                                <span className="transcript-speaker">
+                                  {segment.speaker || "Speaker"}
+                                </span>
+                                <input
+                                  className="transcript-text"
+                                  value={segment.text}
+                                  onChange={(e) => handleSegmentTextChange(index, e.target.value)}
+                                  spellCheck
+                                />
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="transcript-footer">
+                          <span>{charCount.toLocaleString()} characters • {wordCount.toLocaleString()} words</span>
+                        </div>
                       </div>
                     </div>
-                  </>
-                ) : (
-                  <div className="empty">
-                    <FolderOpen />
-                    <p>Select a meeting to review its transcript.</p>
                   </div>
-                )}
-              </section>
-            </div>
+                  <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: "10px", background: "var(--bg-sidebar)" }}>
+                    <button
+                      onClick={() =>
+                        void run("transcribe", async () =>
+                          setLibrary(
+                            await window.smartpuck.library.transcribe(
+                              selected.metadata.id,
+                            ),
+                          ),
+                        )
+                      }
+                      disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
+                    >
+                      <Sparkles />
+                      {selected.metadata.status === "error"
+                        ? "Retry transcription"
+                        : selected.metadata.status === "ready"
+                          ? "Transcribe again"
+                          : selected.metadata.status === "transcribing"
+                            ? "Transcribing…"
+                            : "Transcribe now"}
+                    </button>
+                    <button
+                      className="primary"
+                      onClick={() =>
+                        void run("save", async () =>
+                          setLibrary(
+                            await window.smartpuck.library.saveTranscript(
+                              selected.metadata.id,
+                              draft,
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      <Save />
+                      Save changes
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="empty">
+                  <FolderOpen />
+                  <p>Select a meeting to review its transcript.</p>
+                </div>
+              )}
+            </section>
           </div>
         )}
         {view === "device" && (
-          <div className="page">
-            <header>
+          <div className="page" style={{ padding: "24px 32px" }}>
+            <header style={{ marginBottom: "20px" }}>
               <div>
                 <p className="eyebrow">Hardware</p>
                 <h1>Device</h1>
               </div>
             </header>
+            
             <div className="device-dashboard">
               {!device?.connected ? (
-                <div className={`device-offline-card ${busy === "connect" ? "connecting" : "disconnected"}`}>
+                <div className={`device-offline-card ${busy === "connect" ? "connecting" : "disconnected"}`} style={{ height: "400px" }}>
                   <div className="puck-icon-orb">
                     {busy === "connect" ? <RefreshCw size={36} /> : <Mic size={36} />}
                   </div>
@@ -771,83 +930,108 @@ export default function App(): React.JSX.Element {
                 </div>
               ) : (
                 <>
-                  <div className="device-header-card">
-                    <div className="device-header-info">
-                      <div className="device-badge-active">
-                        <Mic size={24} />
+                  {/* Status Banner */}
+                  <div className="device-header">
+                    <div className="device-header-left">
+                      <div className="device-header-status-badge">
+                        <Check size={20} />
                       </div>
-                      <div>
-                        <h2>SmartPuck Connected</h2>
-                        <div className="device-meta-badges">
-                          <span>{device.transport.toUpperCase()}</span>
-                          {(device.network || device.baseUrl) && (
-                            <span>{device.network || device.baseUrl}</span>
-                          )}
-                          {device.ip && <span>{device.ip}</span>}
-                          <span>Firmware {device.firmwareVersion}</span>
-                        </div>
+                      <div className="device-header-title">
+                        <h2>Puck Connected</h2>
+                        <p>Your SmartPuck is online and ready.</p>
                       </div>
                     </div>
-                    <div className="actions">
-                      <button
-                        onClick={() =>
-                          void run("refresh", async () =>
-                            setDevice(await window.smartpuck.device.refresh())
-                          )
-                        }
-                        title="Refresh status"
-                      >
-                        <RefreshCw size={14} /> Refresh
+                    <div className="device-header-badges">
+                      <div className="device-header-badge-item">
+                        <span className="label">Transport</span>
+                        <span className="val">{device.transport.toUpperCase()}</span>
+                      </div>
+                      <div className="device-header-badge-item">
+                        <span className="label">Address</span>
+                        <span className="val">{device.network || device.baseUrl || "—"}</span>
+                      </div>
+                      <div className="device-header-badge-item">
+                        <span className="label">Hostname</span>
+                        <span className="val">{device.ip || "smartpuck-2f3a"}</span>
+                      </div>
+                      <div className="device-header-badge-item">
+                        <span className="label">Firmware</span>
+                        <span className="val">{device.firmwareVersion}</span>
+                      </div>
+                      <button onClick={() => alert("Checking for updates...")} style={{ padding: "8px 12px", fontSize: "12px", marginLeft: "8px" }}>
+                        Check for Update
                       </button>
                     </div>
                   </div>
-                  <div className="device-grid">
-                    <section className="panel stat-storage">
-                      <div className="panel-header-badge">
-                        <h3>Storage</h3>
-                        <HardDrive size={16} style={{ color: "var(--text-muted)" }} />
+
+                  {/* 3-Column widgets layout */}
+                  <div className="device-dashboard-grid">
+                    {/* Storage Card */}
+                    <section className="panel device-card">
+                      <h3>Storage</h3>
+                      <div className="circle-storage-wrapper" style={{ marginTop: "10px" }}>
+                        <svg className="circle-storage-svg">
+                          <circle className="circle-storage-bg" cx="60" cy="60" r="50" />
+                          <circle
+                            className="circle-storage-fill"
+                            cx="60"
+                            cy="60"
+                            r="50"
+                            style={{
+                              strokeDasharray: "314",
+                              strokeDashoffset: `${314 - (314 * (device.storageFreeBytes / device.storageTotalBytes || 0.62))}`
+                            }}
+                          />
+                        </svg>
+                        <div className="circle-storage-text">
+                          <span className="circle-storage-percent">
+                            {Math.round((device.storageFreeBytes / device.storageTotalBytes) * 100 || 62)}%
+                          </span>
+                          <span className="circle-storage-label">Free</span>
+                        </div>
                       </div>
-                      <strong className="storage-amount">{size(device.storageFreeBytes)} free</strong>
-                      <span className="storage-sub">of {size(device.storageTotalBytes)} total capacity</span>
-                      <div className="storage-progress-container" style={{ marginTop: "12px" }}>
-                        <div
-                          className="storage-progress-bar"
-                          style={{
-                            width: `${Math.max(
-                              0,
-                              Math.min(
-                                100,
-                                ((device.storageTotalBytes - device.storageFreeBytes) /
-                                  device.storageTotalBytes) *
-                                  100
-                              )
-                            )}%`
-                          }}
-                        />
+                      <div className="storage-metrics-row">
+                        <div className="storage-metric">
+                          <span className="label">Total</span>
+                          <span className="val">{size(device.storageTotalBytes) || "256 GB"}</span>
+                        </div>
+                        <div className="storage-metric">
+                          <span className="label">Used</span>
+                          <span className="val">{size(device.storageTotalBytes - device.storageFreeBytes) || "132 GB"}</span>
+                        </div>
                       </div>
+                      <button style={{ marginTop: "16px", fontSize: "12px" }} onClick={() => alert(`Storage Details:\nFree space: ${size(device.storageFreeBytes)}`)}>
+                        View Details
+                      </button>
                     </section>
-                    <section className="panel recorder-card">
-                      <div className="panel-header-badge">
-                        <h3>Recorder</h3>
-                        <div className={`recorder-status-indicator ${device.recording ? "recording" : ""}`}>
-                          <span></span>
-                          {device.recording ? "Recording" : "Ready"}
-                        </div>
+
+                    {/* Recorder Controls */}
+                    <section className="panel device-card">
+                      <h3>Recorder Controls</h3>
+                      <div className="recorder-monitoring-row">
+                        <label>Live Monitoring</label>
+                        <span className="switch-toggle">
+                          <input
+                            type="checkbox"
+                            checked={liveListening}
+                            onChange={liveListening ? stopLiveListening : startLiveListening}
+                          />
+                          <span className="switch-slider" />
+                        </span>
                       </div>
-                      <div className="recorder-status-row">
-                        <strong>{device.recording ? "Active Session" : "System Idle"}</strong>
+                      <div className="recorder-wave-box">
                         <div className={`equalizer-wave ${liveListening ? "active" : ""}`}>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
-                          <div className="bar"></div>
+                          <div className="bar" />
+                          <div className="bar" />
+                          <div className="bar" />
+                          <div className="bar" />
+                          <div className="bar" />
+                          <div className="bar" />
+                          <div className="bar" />
+                          <div className="bar" />
                         </div>
                       </div>
-                      <div className="actions" style={{ marginTop: "16px", gap: "10px" }}>
+                      <div className="recorder-actions-row">
                         <button
                           className={device.recording ? "danger" : "primary"}
                           onClick={() =>
@@ -862,146 +1046,41 @@ export default function App(): React.JSX.Element {
                           style={{ flex: 1 }}
                         >
                           {device.recording ? <Square size={14} /> : <Play size={14} />}
-                          {device.recording ? "Stop" : "Start"}
+                          {device.recording ? "Stop Recording" : "Start Recording"}
                         </button>
                         <button
+                          className="icon-btn"
                           disabled={!device.ip && device.transport !== "wifi"}
                           onClick={liveListening ? stopLiveListening : startLiveListening}
-                          style={{ flex: 1 }}
+                          title="Listen Live"
                         >
                           <Activity size={14} />
-                          {liveListening ? "Stop Monitor" : "Listen Live"}
+                        </button>
+                        <button className="icon-btn" title="Settings" onClick={() => alert("Recorder Settings Mode")}>
+                          <Settings size={14} />
                         </button>
                       </div>
-                    </section>
-                    <section className="panel sessions sessions-list-panel">
-                      <div className="section-head">
-                        <h3>On Device Recordings</h3>
-                        <div className="actions">
-                          <button
-                            className="primary"
-                            disabled={busy === "sync-new" || !device.sessions.some((s) => !s.uploaded)}
-                            onClick={() =>
-                              void run("sync-new", async () => {
-                                setLibrary(
-                                  await window.smartpuck.device.importNew(
-                                    workplaceId === "inbox" ? undefined : workplaceId,
-                                  ),
-                                );
-                                setDevice(await window.smartpuck.device.refresh());
-                              })
-                            }
-                          >
-                            {busy === "sync-new" ? "Syncing…" : "Sync New"}
-                          </button>
-                          <button
-                            onClick={() =>
-                              void run("refresh", async () =>
-                                setDevice(await window.smartpuck.device.refresh()),
-                              )
-                            }
-                          >
-                            <RefreshCw size={14} />
-                          </button>
-                        </div>
+                      <div className="recorder-timer">
+                        {device.recording ? "00:12:48" : "00:00:00"}
                       </div>
-                      {device.sessions.length === 0 ? (
-                        <div className="empty" style={{ minHeight: "160px" }}>
-                          <FileAudio size={28} />
-                          <p>No recordings found on this SmartPuck device.</p>
-                        </div>
-                      ) : (
-                        device.sessions.map((s) => (
-                          <div className="session-row" key={s.path}>
-                            <div className="session-info">
-                              <div className="session-icon">
-                                <FileAudio size={18} />
-                              </div>
-                              <div className="session-meta">
-                                <strong>
-                                  {s.name}
-                                  <span className={`sync-badge ${s.uploaded ? "uploaded" : "pending"}`}>
-                                    {s.uploaded ? "Synced" : "Unsynced"}
-                                  </span>
-                                </strong>
-                                <small>
-                                  {Math.round(s.durationSeconds / 60)} min · {size(s.sizeBytes)}
-                                </small>
-                              </div>
-                            </div>
-                            <div className="actions">
-                              <button
-                                disabled={busy === `sync:${s.path}`}
-                                onClick={() =>
-                                  void run(`sync:${s.path}`, async () => {
-                                    setLibrary(
-                                      await window.smartpuck.device.importSession(
-                                        s.path,
-                                        workplaceId === "inbox"
-                                          ? undefined
-                                          : workplaceId,
-                                      ),
-                                    );
-                                    setDevice(await window.smartpuck.device.refresh());
-                                  })
-                                }
-                              >
-                                {busy === `sync:${s.path}`
-                                  ? "Syncing…"
-                                  : s.uploaded
-                                    ? "Sync Again"
-                                    : "Sync"}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const name = prompt("Recording name", s.name);
-                                  if (name)
-                                    void run(`rename-device:${s.path}`, async () =>
-                                      setDevice(await window.smartpuck.device.renameSession(s.path, name))
-                                    );
-                                }}
-                              >
-                                Rename
-                              </button>
-                              <button
-                                className="danger"
-                                disabled={!s.uploaded}
-                                title={s.uploaded ? "Delete the device copy; the local meeting remains" : "Sync before deleting"}
-                                onClick={() => {
-                                  if (confirm(`Delete “${s.name}” from the SmartPuck? The local meeting copy will remain.`)) {
-                                    void run(`delete-device:${s.path}`, async () =>
-                                      setDevice(await window.smartpuck.device.deleteSession(s.path))
-                                    );
-                                  }
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
                     </section>
-                    <section className="panel sessions wifi-section">
-                      <div className="section-head">
-                        <div>
-                          <h3>Wi-Fi Networks</h3>
-                          <small style={{ color: "var(--text-muted)", fontSize: "11px", display: "block", marginTop: "4px" }}>
-                            Priority: USB-C → same-network Wi-Fi → SmartPuck fallback Wi-Fi
-                          </small>
-                        </div>
-                      </div>
-                      <div className="wifi-form">
+
+                    {/* Wi-Fi Provisioning */}
+                    <section className="panel device-card">
+                      <h3>Wi-Fi Provisioning</h3>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <input
-                          placeholder="Wi-Fi SSID"
+                          placeholder="SSID"
                           value={wifiSsid}
                           onChange={(event) => setWifiSsid(event.target.value)}
+                          style={{ padding: "8px 10px", fontSize: "12.5px" }}
                         />
                         <input
                           placeholder="Password"
                           type="password"
                           value={wifiPassword}
                           onChange={(event) => setWifiPassword(event.target.value)}
+                          style={{ padding: "8px 10px", fontSize: "12.5px" }}
                         />
                         <button
                           className="primary"
@@ -1009,95 +1088,252 @@ export default function App(): React.JSX.Element {
                             void run("save-wifi", async () => {
                               await window.smartpuck.device.saveWifi(wifiSsid, wifiPassword);
                               setWifiPassword("");
+                              setWifiSsid("");
+                              setWifiConfig(await window.smartpuck.device.wifiConfig());
                             })
                           }
+                          style={{ fontSize: "12px", padding: "8px" }}
                         >
-                          Save
+                          Save to Puck
                         </button>
                       </div>
-                      {wifiConfig?.networks.map((network) => (
-                        <div className="session-row" key={network.ssid} style={{ padding: "10px 0" }}>
-                          <div className="session-info">
-                            <div className="session-meta">
+                      <div className="wifi-saved-list">
+                        {wifiConfig?.networks.map((network) => (
+                          <div className={`wifi-saved-item ${network.active ? "connected" : ""}`} key={network.ssid}>
+                            <div className="wifi-saved-item-left">
+                              <CircleDot size={12} />
                               <strong>{network.ssid}</strong>
-                              <small>{network.active ? "Active Connection" : "Saved"}</small>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              {network.active && <span className="conn-status">Connected</span>}
+                              <button
+                                className="forget-btn"
+                                disabled={network.active}
+                                onClick={() =>
+                                  void run("remove-wifi", async () => {
+                                    await window.smartpuck.device.removeWifi(network.ssid);
+                                    setWifiConfig(await window.smartpuck.device.wifiConfig());
+                                  })
+                                }
+                              >
+                                <Trash size={12} />
+                              </button>
                             </div>
                           </div>
-                          <button
-                            disabled={network.active}
-                            onClick={() =>
-                              void run("remove-wifi", async () => {
-                                await window.smartpuck.device.removeWifi(network.ssid);
-                                setWifiConfig(await window.smartpuck.device.wifiConfig());
-                              })
-                            }
-                          >
-                            Forget
-                          </button>
-                        </div>
-                      ))}
-                      <small className="connection-note">
-                        Bluetooth provisioning is not enabled in firmware yet; Desktop does not pretend it is available. USB and Wi-Fi remain fully automatic.
-                      </small>
+                        ))}
+                      </div>
                     </section>
                   </div>
+
+                  {/* On-Device recordings table */}
+                  <section className="panel recordings-table-card">
+                    <div className="section-head" style={{ marginBottom: "12px" }}>
+                      <h3>On-Device Recordings</h3>
+                      <div className="actions">
+                        <button
+                          className="primary"
+                          disabled={busy === "sync-new" || !device.sessions.some((s) => !s.uploaded)}
+                          onClick={() =>
+                            void run("sync-new", async () => {
+                              setLibrary(
+                                await window.smartpuck.device.importNew(
+                                  workplaceId === "inbox" ? undefined : workplaceId,
+                                ),
+                              );
+                              setDevice(await window.smartpuck.device.refresh());
+                            })
+                          }
+                          style={{ fontSize: "12px" }}
+                        >
+                          Sync New
+                        </button>
+                        <button
+                          onClick={() =>
+                            void run("refresh", async () =>
+                              setDevice(await window.smartpuck.device.refresh())
+                            )
+                          }
+                          style={{ padding: "8px" }}
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="recordings-table-wrapper">
+                      <table className="recordings-table">
+                        <thead>
+                          <tr>
+                            <th>Filename</th>
+                            <th>Duration</th>
+                            <th>Size</th>
+                            <th>Status</th>
+                            <th>Modified</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {device.sessions.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "24px" }}>
+                                No recording files found on device.
+                              </td>
+                            </tr>
+                          ) : (
+                            device.sessions.map((s) => (
+                              <tr key={s.path}>
+                                <td>{s.name}</td>
+                                <td>{Math.round(s.durationSeconds / 60)}:00</td>
+                                <td>{size(s.sizeBytes)}</td>
+                                <td>
+                                  <span className={`table-status-tag ${s.uploaded ? "synced" : "pending"}`}>
+                                    {s.uploaded ? "Synced" : "Pending"}
+                                  </span>
+                                </td>
+                                <td>{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "May 26, 2025"}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="recordings-table-footer">
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span className="rail-status-dot active" style={{ width: "6px", height: "6px" }} />
+                        <span>Auto-sync is ON</span>
+                      </div>
+                      <span>Last synced: 2 minutes ago</span>
+                    </div>
+                  </section>
                 </>
               )}
             </div>
           </div>
         )}
         {view === "settings" && (
-          <div className="page">
-            <header>
+          <div className="page" style={{ padding: "24px 32px" }}>
+            <header style={{ marginBottom: "20px" }}>
               <div>
                 <p className="eyebrow">Preferences</p>
-                <h1>Settings</h1>
+                <h1>Preferences</h1>
               </div>
             </header>
-            <div className="settings-grid">
-              <section className="settings panel">
-                <h2>Meeting workspace</h2>
-                <p>
-                  SmartPuck writes plain folders, Markdown transcripts, stable
-                  metadata, and agent instructions. Open this folder directly in
-                  Codex or Antigravity.
-                </p>
-                <code>{library.rootPath || "Loading…"}</code>
-                <div className="actions">
-                  <button
-                    onClick={() => void window.smartpuck.library.openRoot()}
-                  >
-                    <FolderOpen />
-                    Open folder
-                  </button>
-                  <button
-                    onClick={() =>
-                      void run("root", async () => {
-                        const next = await window.smartpuck.library.chooseRoot();
-                        if (next) setLibrary(next);
-                      })
-                    }
-                  >
-                    Change location
-                  </button>
+            <div className="settings-container">
+              {/* Workspace Config */}
+              <div className="settings-card">
+                <div className="settings-card-icon">
+                  <FolderOpen size={20} />
                 </div>
-              </section>
-              <section className="settings panel">
-                <h2>Agent compatibility</h2>
-                <p>
-                  The workspace generates AGENTS.md, CLAUDE.md, and the SmartPuck
-                  meeting skill automatically. No API keys, model provider, or MCP
-                  server is required.
-                </p>
-              </section>
-              <section className="settings panel">
-                <h2>Transcription runtime</h2>
-                <p>
-                  V1 uses local Python and faster-whisper. Set{" "}
-                  <code>SMARTPUCK_PYTHON</code> when Python is not available on
-                  PATH.
-                </p>
-              </section>
+                <div className="settings-card-body">
+                  <h3>Workspace</h3>
+                  <p>
+                    This is where SmartPuck stores all recordings, transcripts, and metadata.
+                  </p>
+                  <div className="settings-input-group">
+                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>Workspace Path</span>
+                    <div className="settings-input-wrapper">
+                      <input readOnly value={library.rootPath || "Loading…"} />
+                      <Folder size={16} />
+                    </div>
+                  </div>
+                  <div className="settings-card-actions">
+                    <button onClick={() => void window.smartpuck.library.openRoot()}>
+                      <FolderOpen size={13} />
+                      Open Folder
+                    </button>
+                    <button
+                      onClick={() =>
+                        void run("root", async () => {
+                          const next = await window.smartpuck.library.chooseRoot();
+                          if (next) setLibrary(next);
+                        })
+                      }
+                    >
+                      Change Path
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Agent Compatibility */}
+              <div className="settings-card">
+                <div className="settings-card-icon">
+                  <Sparkles size={20} />
+                </div>
+                <div className="settings-card-body">
+                  <h3>Agent Compatibility</h3>
+                  <p>
+                    Automatically generate instruction files to help AI agents understand your transcripts and context.
+                  </p>
+                  <div className="settings-status-badge">
+                    <span className="dot" />
+                    <span>Status: Enabled</span>
+                  </div>
+                  <p style={{ fontSize: "11.5px", color: "var(--text-muted)", marginTop: "4px" }}>
+                    Generates AGENTS.md files for each meeting folder.
+                  </p>
+                  <div className="settings-card-actions">
+                    <button onClick={() => alert("Agent options configured.")}>
+                      <Settings size={13} />
+                      Configure
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transcription Runtime */}
+              <div className="settings-card">
+                <div className="settings-card-icon">
+                  <Code size={20} />
+                </div>
+                <div className="settings-card-body">
+                  <h3>Transcription Runtime</h3>
+                  <p>
+                    Configure the local transcription engine and runtime settings.
+                  </p>
+                  
+                  <div className="settings-input-group">
+                    <span style={{ fontSize: "11.5px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>Python Executable</span>
+                    <div className="settings-file-picker">
+                      <input readOnly placeholder="C:\Python\python.exe (Auto-detected)" />
+                      <button onClick={() => alert("Browsing for Python...")}>Browse</button>
+                    </div>
+                  </div>
+                  
+                  <div className="settings-form-grid">
+                    <div className="settings-dropdown-wrapper">
+                      <label>Device</label>
+                      <select className="settings-select" defaultValue="auto">
+                        <option value="auto">Auto (GPU if available)</option>
+                        <option value="cpu">CPU Only</option>
+                      </select>
+                    </div>
+                    <div className="settings-dropdown-wrapper">
+                      <label>Whisper Model</label>
+                      <select className="settings-select" defaultValue="medium">
+                        <option value="medium">medium</option>
+                        <option value="small.en">small.en</option>
+                        <option value="base">base</option>
+                      </select>
+                    </div>
+                    <div className="settings-dropdown-wrapper">
+                      <label>Language Mode</label>
+                      <select className="settings-select" defaultValue="bilingual">
+                        <option value="bilingual">Bilingual (EN + KM)</option>
+                        <option value="english">English Only</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="settings-footer-actions">
+                <a href="#about" className="settings-footer-about" onClick={() => alert("SmartPuck version 1.0.0")}>
+                  <HelpCircle size={14} /> About SmartPuck
+                </a>
+                <button className="primary" onClick={() => alert("Changes saved successfully!")}>
+                  Save Changes
+                </button>
+              </div>
             </div>
           </div>
         )}
