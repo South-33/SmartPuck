@@ -54,6 +54,6 @@ SmartPuck/
   Workspaces/
     workspace-name/
       .smartpuck-workspace.json
-      README.md
+      meetings.md
   Trash/
 ```

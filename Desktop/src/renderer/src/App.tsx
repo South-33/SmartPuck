@@ -79,7 +79,6 @@ export default function App(): React.JSX.Element {
   
   // Collapsible & Resizable Panes States
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
-  const [railWidth, setRailWidth] = useState(240);
   const [workspacesWidth, setWorkspacesWidth] = useState(220);
   const [meetingsWidth, setMeetingsWidth] = useState(380);
 
@@ -129,6 +128,28 @@ export default function App(): React.JSX.Element {
     void window.smartpuck.device.wifiConfig().then(setWifiConfig).catch(() => setWifiConfig(null));
   }, [view, device?.connected, device?.ip]);
   
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const activeRailWidth = isRailCollapsed ? 68 : 240;
+      const availableWidth = window.innerWidth - activeRailWidth;
+      const minDetailWidth = 350;
+      const currentCombined = workspacesWidth + meetingsWidth;
+      const neededCombined = availableWidth - minDetailWidth;
+      
+      if (currentCombined > neededCombined) {
+        const excess = currentCombined - neededCombined;
+        const newMeetingsWidth = Math.max(200, meetingsWidth - excess);
+        setMeetingsWidth(newMeetingsWidth);
+        const remainingExcess = excess - (meetingsWidth - newMeetingsWidth);
+        if (remainingExcess > 0) {
+          const newWorkspacesWidth = Math.max(150, workspacesWidth - remainingExcess);
+          setWorkspacesWidth(newWorkspacesWidth);
+        }
+      }
+    };
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [isRailCollapsed, workspacesWidth, meetingsWidth]);
   useEffect(() => {
     const close = (): void => setContextMenu(null);
     window.addEventListener("click", close);
@@ -489,7 +510,10 @@ export default function App(): React.JSX.Element {
     const startX = e.clientX;
     const startWidth = workspacesWidth;
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(150, Math.min(400, startWidth + (moveEvent.clientX - startX)));
+      const activeRailWidth = isRailCollapsed ? 68 : 240;
+      const availableWidth = window.innerWidth - activeRailWidth;
+      const maxW = Math.max(150, availableWidth - meetingsWidth - 350);
+      const newWidth = Math.max(150, Math.min(maxW, startWidth + (moveEvent.clientX - startX)));
       setWorkspacesWidth(newWidth);
     };
     const handleMouseUp = () => {
@@ -505,24 +529,11 @@ export default function App(): React.JSX.Element {
     const startX = e.clientX;
     const startWidth = meetingsWidth;
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(200, Math.min(500, startWidth + (moveEvent.clientX - startX)));
+      const activeRailWidth = isRailCollapsed ? 68 : 240;
+      const availableWidth = window.innerWidth - activeRailWidth;
+      const maxW = Math.max(200, availableWidth - workspacesWidth - 350);
+      const newWidth = Math.max(200, Math.min(maxW, startWidth + (moveEvent.clientX - startX)));
       setMeetingsWidth(newWidth);
-    };
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  };
-
-  const handleRailResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = railWidth;
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(160, Math.min(320, startWidth + (moveEvent.clientX - startX)));
-      setRailWidth(newWidth);
     };
     const handleMouseUp = () => {
       document.removeEventListener("mousemove", handleMouseMove);
@@ -640,18 +651,17 @@ export default function App(): React.JSX.Element {
   const charCount = draft ? draft.length : 0;
 
   return (
-    <div className="app" style={{ gridTemplateColumns: isRailCollapsed ? "68px 4px 1fr" : `${railWidth}px 4px 1fr` }}>
-      <aside className={`rail ${isRailCollapsed ? "collapsed" : ""}`} style={{ width: isRailCollapsed ? 68 : railWidth }}>
-        <div
-          className="brand"
-          onClick={() => setIsRailCollapsed(!isRailCollapsed)}
-          style={{ cursor: "pointer" }}
-          title={isRailCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <span>
-            {isRailCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </span>
-          {!isRailCollapsed && <strong>SmartPuck</strong>}
+    <div className="app" style={{ gridTemplateColumns: isRailCollapsed ? "68px 1fr" : "240px 1fr" }}>
+      <aside className={`rail ${isRailCollapsed ? "collapsed" : ""}`} style={{ width: isRailCollapsed ? 68 : 240 }}>
+        <div className="brand">
+          <button
+            className="rail-collapse-toggle top-toggle"
+            onClick={() => setIsRailCollapsed(!isRailCollapsed)}
+            title={isRailCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isRailCollapsed ? <ChevronRight size={22} /> : <ChevronLeft size={22} />}
+          </button>
+          <strong>SmartPuck</strong>
         </div>
         <nav>
           <button
@@ -659,21 +669,21 @@ export default function App(): React.JSX.Element {
             onClick={() => setView("library")}
           >
             <FolderOpen />
-            {!isRailCollapsed && <span>Library</span>}
+            <span className="label">Library</span>
           </button>
           <button
             className={view === "device" ? "active" : ""}
             onClick={() => setView("device")}
           >
             <Mic />
-            {!isRailCollapsed && <span>Device</span>}
+            <span className="label">Device</span>
             {device?.connected ? (
               <span style={{
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
                 background: device.recording ? "var(--accent-red)" : "var(--accent-lime)",
-                marginLeft: isRailCollapsed ? "0" : "auto",
+                marginLeft: "auto",
                 boxShadow: device.recording ? "0 0 10px var(--accent-red)" : "0 0 8px var(--accent-lime)",
                 animation: device.recording ? "status-pulse 1.5s infinite" : "none"
               }} />
@@ -683,7 +693,7 @@ export default function App(): React.JSX.Element {
                 height: 6,
                 borderRadius: "50%",
                 background: "var(--text-muted)",
-                marginLeft: isRailCollapsed ? "0" : "auto",
+                marginLeft: "auto",
                 opacity: 0.4
               }} />
             )}
@@ -693,11 +703,10 @@ export default function App(): React.JSX.Element {
             onClick={() => setView("settings")}
           >
             <Settings />
-            {!isRailCollapsed && <span>Settings</span>}
+            <span className="label">Settings</span>
           </button>
         </nav>
       </aside>
-      <div className="resize-handle" onMouseDown={handleRailResize} />
       <main>
         {error && <div className="global-error-toast"><AlertCircle size={16} />{error}</div>}
         {workspaceDialog && (
@@ -825,7 +834,7 @@ export default function App(): React.JSX.Element {
           </div>
         )}
         {view === "library" && (
-          <div className="library-container" style={{ gridTemplateColumns: `${workspacesWidth}px 4px ${meetingsWidth}px 4px 1fr` }}>
+          <div className="library-container" style={{ gridTemplateColumns: `${workspacesWidth}px 1px ${meetingsWidth}px 1px 1fr` }}>
             {/* Column 1: Workspaces */}
             <aside className="lib-col-workspaces">
               <div className="col-header">
@@ -1151,34 +1160,46 @@ export default function App(): React.JSX.Element {
                           spellCheck
                           placeholder="Edit transcript text..."
                         />
-                        <div className="transcript-footer">
-                          <span>{charCount.toLocaleString()} characters • {wordCount.toLocaleString()} words</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border-color)", display: "flex", justifyContent: "flex-end", gap: "10px", background: "var(--bg-sidebar)" }}>
-                    <button
-                      onClick={() =>
-                        void run("transcribe", async () =>
-                          setLibrary(
-                            await window.smartpuck.library.transcribe(
-                              selected.metadata.id,
-                            ),
-                          ),
-                        )
-                      }
-                      disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
-                    >
-                      <Sparkles />
-                      {selected.metadata.status === "error"
-                        ? "Retry transcription"
-                        : selected.metadata.status === "transcribing"
-                          ? "Transcribing…"
-                          : "Re-transcribe"}
-                    </button>
-                  </div>
+                         <div className="transcript-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                           <span>{charCount.toLocaleString()} characters • {wordCount.toLocaleString()} words</span>
+                           <button
+                             onClick={() =>
+                               void run("transcribe", async () =>
+                                 setLibrary(
+                                   await window.smartpuck.library.transcribe(
+                                     selected.metadata.id,
+                                   ),
+                                 ),
+                               )
+                             }
+                             disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
+                             style={{
+                               padding: "6px 12px",
+                               fontSize: "12px",
+                               fontWeight: "600",
+                               background: "rgba(255, 255, 255, 0.05)",
+                               border: "1px solid var(--border-color)",
+                               borderRadius: "var(--radius-sm)",
+                               color: "var(--text-secondary)",
+                               cursor: "pointer",
+                               display: "flex",
+                               alignItems: "center",
+                               gap: "6px",
+                               transition: "var(--transition)",
+                               outline: "none"
+                             }}
+                           >
+                             <Sparkles size={13} />
+                             {selected.metadata.status === "error"
+                               ? "Retry transcription"
+                               : selected.metadata.status === "transcribing"
+                                 ? "Transcribing…"
+                                 : "Re-transcribe"}
+                           </button>
+                         </div>
+                       </div>
+                     </div>
+                   </div>
                 </>
               ) : (
                 <div className="empty">

@@ -82,7 +82,7 @@ button, input, textarea, select {
 .app {
   display: grid;
   min-height: 100vh;
-  transition: grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: grid-template-columns 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Sidebar Navigation Rail */
@@ -90,54 +90,77 @@ button, input, textarea, select {
   position: sticky;
   top: 0;
   height: 100vh;
-  padding: 24px 16px;
+  padding: 24px 0;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   z-index: 10;
   overflow: hidden;
-  transition: padding 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 4px 12px 28px;
+  padding: 4px 18px 28px 18px;
   font-family: 'Plus Jakarta Sans', sans-serif;
   justify-content: flex-start;
 }
 
-.brand span {
-  display: grid;
-  place-items: center;
+.rail-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  color: #000;
-  background: var(--accent-lime);
-  box-shadow: 0 0 16px rgba(157, 255, 0, 0.25);
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
   flex-shrink: 0;
+}
+
+.rail-collapse-toggle svg {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+.rail-collapse-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
 }
 
 .brand strong {
   font-weight: 800;
   font-size: 19px;
   letter-spacing: -0.02em;
-  transition: opacity 0.15s;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-block;
+  opacity: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rail nav {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  padding: 0 12px;
 }
 
 .rail nav button {
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 12px 13px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -145,9 +168,18 @@ button, input, textarea, select {
   text-align: left;
   cursor: pointer;
   font-weight: 600;
-  transition: var(--transition);
+  transition: background 0.2s, color 0.2s;
   position: relative;
   justify-content: flex-start;
+}
+
+.rail nav button span.label {
+  position: absolute;
+  left: 43px;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-block;
+  opacity: 1;
+  white-space: nowrap;
 }
 
 .rail nav button svg {
@@ -175,46 +207,16 @@ button, input, textarea, select {
 /* Collapsed rail overrides */
 .rail.collapsed {
   width: 68px;
-  padding: 24px 8px;
-}
-
-.rail.collapsed .brand {
-  padding-left: 10px;
 }
 
 .rail.collapsed .brand strong {
   opacity: 0;
-  width: 0;
-  overflow: hidden;
   pointer-events: none;
 }
 
-.rail.collapsed nav button {
-  padding: 12px;
-  justify-content: center;
-}
-
-.rail.collapsed nav button span {
-  display: none;
-}
-
-.rail-collapse-toggle {
-  margin-top: auto;
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  padding: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--transition);
-}
-
-.rail-collapse-toggle:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.03);
+.rail.collapsed nav button span.label {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Main Display */
@@ -308,14 +310,23 @@ main {
 
 /* Divider Handles for Pane Resizing */
 .resize-handle {
-  width: 4px;
-  background: transparent;
+  width: 1px;
+  background: var(--border-color);
   cursor: col-resize;
-  z-index: 5;
+  z-index: 10;
   position: relative;
-  margin-left: -2px;
-  margin-right: -2px;
   transition: background 0.15s;
+}
+
+.resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  background: transparent;
+  z-index: 11;
 }
 
 .resize-handle:hover, .resize-handle.active {
@@ -525,7 +536,7 @@ main {
 
 /* Detail Pane Column */
 .detail-header-wrapper {
-  padding: 24px 24px 12px 12px;
+  padding: 24px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -560,7 +571,7 @@ main {
 .detail-scroller {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 24px 24px 12px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;

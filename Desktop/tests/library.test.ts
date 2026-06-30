@@ -104,7 +104,7 @@ describe("filesystem-first meeting library", () => {
     state = library.snapshot();
     expect(state.inbox.find((item) => item.metadata.id === meeting.metadata.id)).toBeUndefined();
     expect(state.workplaces.find((item) => item.metadata.id === workspace.metadata.id)?.meetings[0].metadata.id).toBe(meeting.metadata.id);
-    expect(readFileSync(join(workspace.path, "README.md"), "utf8")).toContain("agent-filesystem");
+    expect(readFileSync(join(workspace.path, "meetings.md"), "utf8")).toContain("agent-filesystem");
 
     const manualWorkspacePath = join(root, "Workspaces", "manually-made");
     mkdirSync(manualWorkspacePath, { recursive: true });

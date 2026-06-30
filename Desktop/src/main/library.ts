@@ -272,23 +272,54 @@ function writeWorkplace(workplace: Workplace): void {
 
 function writeWorkspaceIndexes(workplaces: Workplace[]): void {
   for (const workplace of workplaces) {
-    const lines = [
-      `# ${workplace.metadata.name}`,
-      "",
-      "This workspace is a playlist-like view. The canonical meeting folders live under the library's `Meetings/` directory; do not copy audio or transcripts here.",
+    const meetingsPath = join(workplace.path, "meetings.md");
+    let customNotes = "";
+    
+    if (existsSync(meetingsPath)) {
+      const currentContent = readFileSync(meetingsPath, "utf8");
+      const dividerIndex = currentContent.indexOf("## Linked Meetings");
+      if (dividerIndex !== -1) {
+        let rawNotes = currentContent.substring(0, dividerIndex).trim();
+        while (rawNotes.endsWith("---")) {
+          rawNotes = rawNotes.substring(0, rawNotes.length - 3).trim();
+        }
+        customNotes = rawNotes + "\n\n";
+      } else {
+        customNotes = currentContent.trim() + "\n\n";
+      }
+    } else {
+      customNotes = `# ${workplace.metadata.name}\n\n## Memory & Notes\nUse this section to store workspace-specific jargon, names, and memory. AI agents will read this to get context.\n\n`;
+    }
+
+    const indexLines = [
+      "## Linked Meetings",
+      "This section is automatically updated by SmartPuck. Do not edit manually.",
       "",
     ];
+
     if (workplace.meetings.length === 0) {
-      lines.push("_No meetings linked yet._", "");
+      indexLines.push("_No meetings linked yet._", "");
     } else {
       for (const meeting of workplace.meetings) {
         const transcript = relative(workplace.path, join(meeting.path, "transcript.md")).replaceAll("\\", "/");
         const metadata = relative(workplace.path, join(meeting.path, "meeting.json")).replaceAll("\\", "/");
-        lines.push(`- [${meeting.metadata.title}](${transcript}) — [metadata](${metadata})`);
+        indexLines.push(`- [${meeting.metadata.title}](${transcript}) — [metadata](${metadata})`);
       }
-      lines.push("");
+      indexLines.push("");
     }
-    writeFileSync(join(workplace.path, "README.md"), `${lines.join("\n")}\n`, "utf8");
+
+    // Clean up legacy files
+    const oldReadme = join(workplace.path, "README.md");
+    if (existsSync(oldReadme)) {
+      try { rmSync(oldReadme); } catch {}
+    }
+    const oldMemoryMd = join(workplace.path, "memory.md");
+    if (existsSync(oldMemoryMd)) {
+      try { rmSync(oldMemoryMd); } catch {}
+    }
+
+    const finalContent = customNotes.trim() + "\n\n---\n\n" + indexLines.join("\n") + "\n";
+    writeFileSync(meetingsPath, finalContent, "utf8");
   }
 }
 
