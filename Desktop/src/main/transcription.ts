@@ -16,6 +16,7 @@ interface PipelineSegment {
   start: number;
   end: number;
   text: string;
+  speaker?: number;
 }
 
 interface PipelineResult {
@@ -117,6 +118,7 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
         denoise_mode: "off",
         normalize: true,
         beam_size: 5,
+        diarize: true,
       }),
     });
     if (!response.ok) throw new Error(`Transcription failed (${response.status}): ${(await response.text()).slice(0, 500)}`);
@@ -125,7 +127,10 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
     if (!Array.isArray(result.segments) || typeof result.full_text !== "string") {
       throw new Error("The transcription pipeline returned an invalid result.");
     }
-    const lines = result.segments.map((segment) => `[${timestamp(segment.start)}] ${segment.text.trim()}`);
+    const lines = result.segments.map((segment) => {
+      const speakerTag = segment.speaker !== undefined ? `[Speaker ${segment.speaker}] ` : "";
+      return `[${timestamp(segment.start)}] ${speakerTag}${segment.text.trim()}`;
+    });
     const durationSeconds = result.segments.reduce((maximum, segment) => Math.max(maximum, Number(segment.end) || 0), 0);
     writeFileSync(join(meeting.path, "transcript.segments.json"), JSON.stringify(result.segments, null, 2));
     writeFileSync(

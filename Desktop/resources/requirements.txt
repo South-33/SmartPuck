@@ -4,3 +4,4 @@ faster-whisper>=1.0.3
 python-multipart>=0.0.6
 torch
 numpy
+sherpa-onnx

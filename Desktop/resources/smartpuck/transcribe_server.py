@@ -10,6 +10,11 @@ import traceback
 import subprocess
 import shutil
 import asyncio
+import urllib.request
+import tarfile
+import wave
+import time
+import numpy as np
 from typing import Optional, Tuple
 
 # Auto-resolve Windows DLL search paths for pip-installed nvidia-cu12 packages
@@ -57,6 +62,7 @@ class LocalTranscriptionRequest(BaseModel):
     denoise_mode: str = "auto"  # "off", "auto", "strong"
     normalize: bool = True
     beam_size: int = Field(default=5, ge=1, le=10)
+    diarize: bool = False
 
 MODEL_PROFILES = {
     "auto": {
@@ -174,6 +180,115 @@ def get_model(resolved_model: str, force_cpu: bool = False):
                 raise HTTPException(status_code=500, detail=f"CPU fallback failed: {cpu_err}")
         else:
             raise HTTPException(status_code=500, detail=f"Model load failed: {e}")
+
+
+def ensure_diarization_models(model_dir: str):
+    """Automatically download and extract speaker diarization ONNX models if not present."""
+    os.makedirs(model_dir, exist_ok=True)
+    
+    seg_tar_path = os.path.join(model_dir, "segmentation.tar.bz2")
+    seg_model_dir = os.path.join(model_dir, "sherpa-onnx-pyannote-segmentation-3-0")
+    seg_model_path = os.path.join(seg_model_dir, "model.onnx")
+    embed_model_path = os.path.join(model_dir, "eres2net.onnx")
+    
+    seg_url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
+    embed_url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx"
+    
+    # Download and extract segmentation model
+    if not os.path.exists(seg_model_path):
+        if not os.path.exists(seg_tar_path):
+            print(f"[SmartPuck STT] Downloading speaker segmentation model from {seg_url}...", flush=True)
+            urllib.request.urlretrieve(seg_url, seg_tar_path)
+        print(f"[SmartPuck STT] Extracting speaker segmentation model...", flush=True)
+        with tarfile.open(seg_tar_path, "r:bz2") as tar:
+            tar.extractall(path=model_dir)
+        try:
+            os.remove(seg_tar_path)
+        except Exception:
+            pass
+            
+    # Download embedding model
+    if not os.path.exists(embed_model_path):
+        print(f"[SmartPuck STT] Downloading speaker embedding model from {embed_url}...", flush=True)
+        urllib.request.urlretrieve(embed_url, embed_model_path)
+        
+    return seg_model_path, embed_model_path
+
+
+def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[list]:
+    """Extract speaker segments from audio using sherpa-onnx diarization."""
+    try:
+        import sherpa_onnx
+    except ImportError:
+        print("[SmartPuck STT] Warning: sherpa-onnx is not installed. Skipping speaker diarization.", flush=True)
+        return None
+        
+    try:
+        # Determine model cache directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_dir = os.path.join(current_dir, "diarization_models")
+        
+        # Download models if needed
+        seg_model_path, embed_model_path = ensure_diarization_models(model_dir)
+        
+        # Slices to temporary 16kHz WAV
+        temp_wav = os.path.join(tempfile.gettempdir(), f"temp_diar_{int(time.time())}.wav")
+        if os.path.exists(temp_wav):
+            try: os.remove(temp_wav)
+            except OSError: pass
+            
+        cmd = [
+            "ffmpeg", "-y", "-i", audio_path,
+            "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+            temp_wav
+        ]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        
+        with wave.open(temp_wav, "rb") as w:
+            params = w.getparams()
+            frames = w.readframes(params.nframes)
+            samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+            
+        try: os.remove(temp_wav)
+        except OSError: pass
+        
+        # Set up config
+        pyannote_config = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg_model_path)
+        seg_config = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+            pyannote=pyannote_config,
+            provider=provider
+        )
+        embed_config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=embed_model_path,
+            provider=provider
+        )
+        clustering_config = sherpa_onnx.FastClusteringConfig(
+            num_clusters=-1,  # Auto clustering
+            threshold=0.5
+        )
+        
+        config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+            segmentation=seg_config,
+            embedding=embed_config,
+            clustering=clustering_config
+        )
+        
+        sd = sherpa_onnx.OfflineSpeakerDiarization(config)
+        
+        print("[SmartPuck STT] Running speaker diarization...", flush=True)
+        t_start = time.time()
+        result = sd.process(samples=samples)
+        print(f"[SmartPuck STT] Speaker diarization finished in {time.time() - t_start:.2f}s (detected {result.num_speakers} speakers).", flush=True)
+        
+        raw_segments = result.sort_by_start_time()
+        return [
+            {"start": s.start, "end": s.end, "speaker": int(s.speaker)}
+            for s in raw_segments
+        ]
+    except Exception as err:
+        print(f"[SmartPuck STT] Warning: Diarization failed gracefully: {err}", flush=True)
+        traceback.print_exc()
+        return None
 
 
 def should_reroute_to_khmer(profile_key: str, detected_language: Optional[str], language_probability: float):
@@ -1100,6 +1215,33 @@ def transcribe_local(request: LocalTranscriptionRequest):
                 stderr=subprocess.PIPE,
                 check=True,
             )
+            
+        # Run speaker diarization and align results if requested
+        if request.diarize:
+            cuda_available = False
+            try:
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() > 0:
+                    cuda_available = True
+            except Exception:
+                pass
+            provider = "cuda" if cuda_available else "cpu"
+            
+            diar_segments = run_speaker_diarization(audio_path, provider=provider)
+            if diar_segments:
+                for seg in result.get("segments", []):
+                    t_mid = (seg["start"] + seg["end"]) / 2.0
+                    speaker = None
+                    for d_seg in diar_segments:
+                        if d_seg["start"] <= t_mid <= d_seg["end"]:
+                            speaker = d_seg["speaker"]
+                            break
+                    if speaker is None and diar_segments:
+                        nearest = min(diar_segments, key=lambda s: min(abs(s["start"] - t_mid), abs(s["end"] - t_mid)))
+                        speaker = nearest["speaker"]
+                    if speaker is not None:
+                        seg["speaker"] = speaker
+                        
         return result
     except HTTPException:
         raise
