@@ -39,6 +39,7 @@ Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled cha
 The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
 Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
+Use the CLI manager utility to execute library changes programmatically: run 'node Desktop/scripts/manage-library.js <command>' (commands: 'create-workspace <name>', 'link <meeting-id> <workspace-name>', 'unlink <meeting-id> <workspace-name>', 'rebuild'). Never run raw file moves or manually edit generated index files.
 `;
 
 const CLAUDE_INSTRUCTIONS = `@AGENTS.md
@@ -66,6 +67,7 @@ Transcript files are UTF-8. A legacy Windows console may garble Khmer display; u
 The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
 Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
+Use the CLI manager utility to execute library changes programmatically: run 'node Desktop/scripts/manage-library.js <command>' (commands: 'create-workspace <name>', 'link <meeting-id> <workspace-name>', 'unlink <meeting-id> <workspace-name>', 'rebuild'). Never run raw file moves or manually edit generated index files.
 `;
 
 const WORKSPACE_GUIDE = `# SmartPuck workspace schema
