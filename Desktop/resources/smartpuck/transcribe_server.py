@@ -242,7 +242,7 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
             "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
             temp_wav
         ]
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
         with wave.open(temp_wav, "rb") as w:
             params = w.getparams()
@@ -256,11 +256,13 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
         pyannote_config = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg_model_path)
         seg_config = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=pyannote_config,
-            provider=provider
+            provider=provider,
+            num_threads=4
         )
         embed_config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
             model=embed_model_path,
-            provider=provider
+            provider=provider,
+            num_threads=4
         )
         clustering_config = sherpa_onnx.FastClusteringConfig(
             num_clusters=-1,  # Auto clustering
@@ -275,9 +277,30 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
         
         sd = sherpa_onnx.OfflineSpeakerDiarization(config)
         
-        print("[SmartPuck STT] Running speaker diarization...", flush=True)
+        import threading
+        duration = len(samples) / 16000.0
+        estimated_diar_time = max(2.0, duration / 30.0)
+        stop_event = threading.Event()
+        
+        def diar_progress_loop():
+            start_time = time.time()
+            while not stop_event.is_set():
+                elapsed = time.time() - start_time
+                ratio = min(0.99, elapsed / estimated_diar_time)
+                progress = 90 + int(9 * ratio)
+                print(f"[SmartPuck STT] Progress: {progress}% | Stage: Diarizing Speakers for {audio_path}", flush=True)
+                stop_event.wait(0.5)
+                
+        progress_thread = threading.Thread(target=diar_progress_loop, daemon=True)
+        progress_thread.start()
+        
         t_start = time.time()
-        result = sd.process(samples=samples)
+        try:
+            result = sd.process(samples=samples)
+        finally:
+            stop_event.set()
+            progress_thread.join(timeout=1.0)
+            
         print(f"[SmartPuck STT] Speaker diarization finished in {time.time() - t_start:.2f}s (detected {result.num_speakers} speakers).", flush=True)
         
         raw_segments = result.sort_by_start_time()
@@ -292,9 +315,9 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
 
 
 def should_reroute_to_khmer(profile_key: str, detected_language: Optional[str], language_probability: float):
-    if profile_key != "auto":
-        return False
-    return detected_language == "km" and language_probability >= 0.35
+    # The new unified hybrid bilingual pipeline handles English and Khmer in a single pass.
+    # We never need to reroute.
+    return False
 
 
 def average_logprob(result: dict) -> float:
@@ -311,11 +334,8 @@ def prefer_khmer_result(original: dict, khmer_result: dict) -> bool:
 
 
 def should_upgrade_uncertain_multilingual(profile_key: str, result: dict) -> bool:
-    return (
-        profile_key == "auto"
-        and result.get("language") != "km"
-        and float(result.get("language_probability") or 0) < 0.80
-    )
+    # Disable upgrade pass since the hybrid pipeline already runs specialist models.
+    return False
 
 
 def transcript_quality_flags(segments, language: Optional[str], language_probability: float):
@@ -419,7 +439,7 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
                     temp_48k
                 ]
                 print(f"[SmartPuck STT] Resampling & normalizing to 48k: {cmd}")
-                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
                 # Run DeepFilterNet denoising
                 fd, denoised_48k = tempfile.mkstemp(suffix="_denoised_48k.wav")
@@ -443,7 +463,7 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
                     "-ar", "16000", "-ac", "1",
                     final_16k
                 ]
-                subprocess.run(cmd_16k, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                subprocess.run(cmd_16k, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                 current_path = final_16k
 
                 # Save a persistent copy of resampled denoised audio if requested
@@ -469,7 +489,7 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
                     normalized_16k
                 ]
                 print(f"[SmartPuck STT] Normalizing & resampling to 16k: {cmd}")
-                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                 current_path = normalized_16k
                 if denoised_output_path:
                     try:
@@ -634,9 +654,14 @@ def run_bilingual_transcription(
             os.remove(denoised_output_path)
         except OSError:
             pass
+            
+    path_to_log = original_audio_path or temp_path
+    print(f"[SmartPuck STT] Progress: 0% | Stage: Analyzing Audio for {path_to_log}", flush=True)
+    
     processed_path, temp_files = preprocess_audio(
         temp_path, preprocessing_mode, False, denoised_output_path
     )
+    print(f"[SmartPuck STT] Progress: 5% | Stage: Analyzing Audio for {path_to_log}", flush=True)
 
     try:
         audio = decode_audio(processed_path, sampling_rate=16000)
@@ -705,9 +730,9 @@ def run_bilingual_transcription(
 
             if speech_chunks:
                 routed_count = min(batch_start + len(batch_chunks), len(speech_chunks))
-                progress = int(40 * routed_count / len(speech_chunks))
+                progress = 5 + int(15 * routed_count / len(speech_chunks))
                 path_to_log = original_audio_path or temp_path
-                print(f"[SmartPuck STT] Progress: {progress}% for {path_to_log}", flush=True)
+                print(f"[SmartPuck STT] Progress: {progress}% | Stage: Classifying Languages for {path_to_log}", flush=True)
 
         en_ratio = route_counts["en"] / len(speech_chunks)
         km_ratio = 1.0 - en_ratio
@@ -725,6 +750,7 @@ def run_bilingual_transcription(
                 condition_on_previous_text=True,
             )
             output_segments = []
+            duration = len(audio) / 16000
             for segment in segments_iter:
                 text = segment.text.strip()
                 if text:
@@ -737,8 +763,11 @@ def run_bilingual_transcription(
                         "route_language": "en",
                         "route_probability": 1.0,
                     })
+                if duration > 0:
+                    progress = min(89, 20 + int(70 * segment.end / duration))
+                    print(f"[SmartPuck STT] Progress: {progress}% | Stage: Transcribing (English) for {path_to_log}", flush=True)
             path_to_log = original_audio_path or temp_path
-            print(f"[SmartPuck STT] Progress: 95% for {path_to_log}", flush=True)
+            print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
 
             output_segments.sort(key=lambda s: s["start"])
             full_text_parts = [s["text"] for s in output_segments]
@@ -776,6 +805,7 @@ def run_bilingual_transcription(
                 temperature=0,
             )
             output_segments = []
+            duration = len(audio) / 16000
             for segment in segments_iter:
                 text = segment.text.strip()
                 if text:
@@ -792,8 +822,11 @@ def run_bilingual_transcription(
                         "route_language": routing["route_language"],
                         "route_probability": round(routing["route_probability"], 4),
                     })
+                if duration > 0:
+                    progress = min(89, 20 + int(70 * segment.end / duration))
+                    print(f"[SmartPuck STT] Progress: {progress}% | Stage: Transcribing (Khmer) for {path_to_log}", flush=True)
             path_to_log = original_audio_path or temp_path
-            print(f"[SmartPuck STT] Progress: 95% for {path_to_log}", flush=True)
+            print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
 
             output_segments.sort(key=lambda s: s["start"])
             full_text_parts = [s["text"] for s in output_segments]
@@ -899,10 +932,11 @@ def run_bilingual_transcription(
                         })
 
             completed_groups += 1
-            progress = 40 + int(55 * completed_groups / len(groups))
+            progress = 20 + int(70 * completed_groups / len(groups))
             path_to_log = original_audio_path or temp_path
-            print(f"[SmartPuck STT] Progress: {progress}% for {path_to_log}", flush=True)
+            print(f"[SmartPuck STT] Progress: {progress}% | Stage: Transcribing (Bilingual) for {path_to_log}", flush=True)
 
+        print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
         output_segments.sort(key=lambda s: s["start"])
         full_text_parts = [s["text"] for s in output_segments]
 
@@ -980,9 +1014,9 @@ def run_transcription_inner(
                 })
                 full_text_parts.append(text)
             if duration and duration > 0:
-                progress_percent = min(100, int((segment.end / duration) * 100))
+                progress_percent = min(89, 5 + int(85 * segment.end / duration))
                 path_to_log = original_audio_path or temp_path
-                print(f"[SmartPuck STT] Progress: {progress_percent}% for {path_to_log}", flush=True)
+                print(f"[SmartPuck STT] Progress: {progress_percent}% | Stage: Transcribing for {path_to_log}", flush=True)
     except Exception as e:
         import ctranslate2
         cuda_available = False
@@ -1016,6 +1050,8 @@ def run_transcription_inner(
                 try: os.remove(f)
                 except: pass
 
+    path_to_log = original_audio_path or temp_path
+    print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
     language_probability = round(float(info.language_probability or 0), 4)
     return {
         "profile": profile_key,
@@ -1218,16 +1254,8 @@ def transcribe_local(request: LocalTranscriptionRequest):
             
         # Run speaker diarization and align results if requested
         if request.diarize:
-            cuda_available = False
-            try:
-                import ctranslate2
-                if ctranslate2.get_cuda_device_count() > 0:
-                    cuda_available = True
-            except Exception:
-                pass
-            provider = "cuda" if cuda_available else "cpu"
-            
-            diar_segments = run_speaker_diarization(audio_path, provider=provider)
+            diar_segments = run_speaker_diarization(audio_path, provider="cpu")
+            print(f"[SmartPuck STT] Progress: 97% | Stage: Diarizing Speakers for {audio_path}", flush=True)
             if diar_segments:
                 for seg in result.get("segments", []):
                     t_mid = (seg["start"] + seg["end"]) / 2.0

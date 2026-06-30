@@ -471,7 +471,6 @@ main {
 .meeting-card-duration {
   font-size: 11.5px;
   color: var(--text-muted);
-  margin-top: auto;
   text-align: right;
 }
 
@@ -484,6 +483,7 @@ main {
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
+  margin-top: auto;
 }
 
 .status-badge.ready {

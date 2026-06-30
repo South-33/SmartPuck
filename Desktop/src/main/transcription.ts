@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { existsSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { app } from "electron";
+import http from "http";
 import { meetingById, snapshot, updateMeetingMetadata } from "./library";
 
 const PORT = 8765;
@@ -83,10 +84,14 @@ async function ensureWorker(): Promise<void> {
       const lines = workerStdoutBuffer.split(/\r?\n/);
       workerStdoutBuffer = lines.pop() || "";
       for (const line of lines) {
-        const match = /^\[SmartPuck STT\] Progress:\s*(\d+)%\s+for\s+(.+)$/.exec(line.trim());
+        const match = /^\[SmartPuck STT\] Progress:\s*(\d+)%(?:\s*\|\s*Stage:\s*([^|]+))?\s+for\s+(.+)$/.exec(line.trim());
         if (!match) continue;
-        const meetingId = activeAudioJobs.get(match[2].trim());
-        if (meetingId) updateMeetingMetadata(meetingId, { progressPercent: Math.min(95, Number(match[1])) });
+        const meetingId = activeAudioJobs.get(match[3].trim());
+        if (meetingId) {
+          const progressPercent = Math.min(95, Number(match[1]));
+          const progressStage = match[2] ? match[2].trim() : undefined;
+          updateMeetingMetadata(meetingId, { progressPercent, progressStage });
+        }
       }
     });
     worker.stderr?.on("data", (chunk: Buffer) => console.warn("[SmartPuck STT]", chunk.toString("utf8").trimEnd()));
@@ -101,28 +106,70 @@ function timestamp(seconds: number): string {
   return new Date(Math.max(0, seconds) * 1000).toISOString().slice(11, 19);
 }
 
+function httpPost(urlStr: string, body: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const postData = JSON.stringify(body);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || undefined,
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(postData),
+      },
+    };
+
+    const req = http.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => {
+        data += chunk;
+      });
+      res.on("end", () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e: any) {
+            reject(new Error(`Failed to parse response: ${e.message}`));
+          }
+        } else {
+          reject(new Error(`Server returned status ${res.statusCode}: ${data.slice(0, 500)}`));
+        }
+      });
+    });
+
+    req.on("error", (e) => {
+      reject(e);
+    });
+
+    req.on("socket", (socket) => {
+      socket.setTimeout(0); // Disable socket timeouts
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 export async function transcribeMeeting(meetingId: string): Promise<ReturnType<typeof snapshot>> {
   const meeting = meetingById(meetingId);
   const audioPath = join(meeting.path, meeting.metadata.audioFile);
-  updateMeetingMetadata(meetingId, { status: "transcribing", progressPercent: 5, error: undefined });
+  updateMeetingMetadata(meetingId, { status: "transcribing", progressPercent: -1, error: undefined });
   try {
     await ensureWorker();
     activeAudioJobs.set(audioPath, meetingId);
-    const response = await fetch(`${BASE_URL}/transcribe-local`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        audio_path: audioPath,
-        model_name: "auto",
-        language: null,
-        denoise_mode: "off",
-        normalize: true,
-        beam_size: 5,
-        diarize: true,
-      }),
-    });
-    if (!response.ok) throw new Error(`Transcription failed (${response.status}): ${(await response.text()).slice(0, 500)}`);
-    const result = (await response.json()) as PipelineResult;
+    
+    const result = await httpPost(`${BASE_URL}/transcribe-local`, {
+      audio_path: audioPath,
+      model_name: "auto",
+      language: null,
+      denoise_mode: "off",
+      normalize: true,
+      beam_size: 5,
+      diarize: true,
+    }) as PipelineResult;
+    
     activeAudioJobs.delete(audioPath);
     if (!Array.isArray(result.segments) || typeof result.full_text !== "string") {
       throw new Error("The transcription pipeline returned an invalid result.");

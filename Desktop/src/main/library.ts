@@ -26,11 +26,18 @@ Treat this workspace like a small, living project whose source material happens 
 
 Start with NEW.md: it is a disposable view of recordings whose meeting.json still says curationStatus is pending. Then use SMARTPUCK.md and compact meeting metadata before opening full transcripts. When asked to curate new work, give each meeting a specific title and short summary, keep the transcript.md heading and Summary aligned with them, and link it to sensible workspaces by editing meeting.json.workspaceIds when the evidence is clear. A curated meeting may remain unlinked/Inbox when its destination is genuinely unclear.
 
-You may reshape the organization as the library evolves: create, rename, merge, split, or retire workspaces instead of treating today's folders as permanent taxonomy. A meeting lives once under Meetings/; Workspaces/ folders are generated playlist-like views over meeting ids. meeting.json.workspaceIds connects that same meeting to zero, one, or many workspaces without copying files. Edit the canonical meeting.json and transcript.md under Meetings/; do not treat generated workspace README files as source of truth. Preserve stable JSON ids, original audio, and transcript.segments.json; those are the app's identity and raw evidence. transcript.md is the readable working copy, but only rewrite its wording when the user asks. Put summaries, decisions, and action items in clearly named sections and keep inference distinct from what was actually said.
+You may reshape the organization as the library evolves: create, rename, merge, split, or retire workspaces instead of treating today's folders as permanent taxonomy. A meeting lives once under Meetings/; Workspaces/ folders are generated playlist-like views over meeting ids. meeting.json.workspaceIds connects that same meeting to zero, one, or many workspaces without copying files. Edit the canonical meeting.json and transcript.md under Meetings/; do not treat generated workspace meetings.md files as source of truth. Preserve stable JSON ids, original audio, and transcript.segments.json; those are the app's identity and raw evidence. transcript.md is the readable working copy, but only rewrite its wording when the user asks. Put summaries, decisions, and action items in clearly named sections and keep inference distinct from what was actually said.
+
+Workspace meetings.md is auto-generated; agents must never edit the meetings list under "## Linked Meetings" directly. Use the "Memory & Notes" section at the top of meetings.md to store workspace-specific jargon, notes, names, and memory. Agents must proactively build and update this memory section with new jargon, project context, and names of people mentioned during transcription or curation, without waiting for explicit user requests (but keep it selective to avoid clutter).
+
+When untagged meetings share a clear theme, suggest creating a new workspace (by creating a folder in Workspaces/ with a .smartpuck-workspace.json manifest) and ask the user for confirmation.
 
 When answering questions, cite useful timestamps and be candid when the recording does not establish a person, date, decision, or deadline. Move unwanted meetings intact to Trash so they remain recoverable.
 
 Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
+`;
+
+const CLAUDE_INSTRUCTIONS = `@AGENTS.md
 `;
 
 const SKILL = `---
@@ -42,7 +49,11 @@ description: Search, analyze, summarize, clean, rename, and organize meetings in
 
 This is a meeting library shaped like a small code project. Help the user turn raw recordings into useful memory without loading the whole library into context.
 
-Approach this as repository work: orient cheaply, change coherent files, and leave the library easier to understand than you found it. Begin with NEW.md and mention its pending count naturally. It is only a generated index; meeting.json remains canonical. If the user wants those recordings processed, inspect their transcripts, choose specific titles and compact summaries, keep the transcript.md heading and Summary aligned with those choices, and link them to the best existing workspaces by editing meeting.json.workspaceIds when the evidence is clear. Then set curationStatus to curated; the app rebuilds NEW.md and workspace README files from metadata whenever it scans. Inbox means unassigned, not necessarily unfinished. Workspaces are useful views, not permanent ontology: improve them as patterns change. Keep one canonical meeting directory under Meetings/; use workspaceIds when the same meeting belongs in several contexts.
+Approach this as repository work: orient cheaply, change coherent files, and leave the library easier to understand than you found it. Begin with NEW.md and mention its pending count naturally. It is only a generated index; meeting.json remains canonical. If the user wants those recordings processed, inspect their transcripts, choose specific titles and compact summaries, keep the transcript.md heading and Summary aligned with those choices, and link them to the best existing workspaces by editing meeting.json.workspaceIds when the evidence is clear. Then set curationStatus to curated; the app rebuilds NEW.md and workspace meetings.md files from metadata whenever it scans. Inbox means unassigned, not necessarily unfinished. Workspaces are useful views, not permanent ontology: improve them as patterns change. Keep one canonical meeting directory under Meetings/; use workspaceIds when the same meeting belongs in several contexts.
+
+Workspace meetings.md is auto-generated; agents must never edit the meetings list under "## Linked Meetings" directly. Use the "Memory & Notes" section at the top of meetings.md to store workspace-specific jargon, notes, names, and memory. Agents must proactively build and update this memory section with new jargon, project context, and names of people mentioned during transcription or curation, without waiting for explicit user requests (but keep it selective to avoid clutter).
+
+When untagged meetings share a clear theme, suggest creating a new workspace (by creating a folder in Workspaces/ with a .smartpuck-workspace.json manifest) and ask the user for confirmation.
 
 For questions, search meeting titles and summaries first, then rg transcript.md and read only the relevant passages. Use timestamps as evidence. Stable ids, original audio, and transcript.segments.json must survive unchanged; transcript.md and descriptive metadata are the working layer. Reorganize freely when useful, but only rewrite transcript wording when explicitly asked. Move unwanted meeting directories intact to Trash.
 
@@ -52,7 +63,7 @@ Transcript files are UTF-8. A legacy Windows console may garble Khmer display; u
 const WORKSPACE_GUIDE = `# SmartPuck workspace schema
 
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio when available, transcript.md, and immutable transcript.segments.json.
-- Workspaces/ contains playlist-like workspace folders. Each README is a generated view with links back to canonical meetings and may be overwritten by the app.
+- Workspaces/ contains playlist-like workspace folders. Each meetings.md is a generated view with links back to canonical meetings and may be overwritten by the app.
 - Inbox is the app's view of imported meetings not yet assigned to any workspace.
 - Trash contains recoverable meetings removed from the active library. Ignore it during normal search unless the user asks about deleted material.
 - NEW.md is a disposable pending-work index rebuilt from meeting.json curationStatus. Curated means a meeting has a useful title and summary; it may remain in Inbox if placement is genuinely ambiguous.
@@ -65,6 +76,38 @@ const WORKSPACE_GUIDE = `# SmartPuck workspace schema
 - transcript.md is editable when the user asks for cleanup. Preserve timestamps and evidence meaning. Put derived material only under Summary, Key Points, Decisions, or Action Items.
 - transcript.segments.json is immutable recovery evidence. Never edit it to match transcript cleanup.
 - App-managed AGENTS.md, CLAUDE.md, and skill files are created once; user additions are preserved.
+
+## JSON Schemas
+
+### Workplace Manifest (\`Workspaces/<slug>/.smartpuck-workspace.json\`)
+\`\`\`json
+{
+  "schemaVersion": 1,
+  "id": "<UUID-v4>",
+  "name": "<Workspace Display Name>",
+  "sortOrder": <integer>,
+  "createdAt": "<ISO-8601-timestamp>",
+  "updatedAt": "<ISO-8601-timestamp>"
+}
+\`\`\`
+
+### Meeting Metadata (\`Meetings/<meeting-id>/meeting.json\`)
+\`\`\`json
+{
+  "schemaVersion": 1,
+  "id": "<UUID-v4>",
+  "title": "<Curation Title>",
+  "status": "pending" | "processing" | "ready" | "error",
+  "curationStatus": "pending" | "curated",
+  "workspaceIds": ["<workspace-id>"],
+  "capturedAt": "<ISO-8601-timestamp>",
+  "updatedAt": "<ISO-8601-timestamp>",
+  "audioFile": "recording.wav",
+  "processedAudioFile": "recording.processed.wav",
+  "durationSeconds": <number-or-null>,
+  "error": "<error-message-or-null>"
+}
+\`\`\`
 `;
 
 let rootOverride = "";
@@ -125,7 +168,7 @@ export function ensureLibrary(): string {
   mkdirSync(join(root, WORKSPACES_DIR), { recursive: true });
   mkdirSync(join(root, "Trash"), { recursive: true });
   upgradeLegacyGeneratedFile(join(root, "AGENTS.md"), WORKSPACE_INSTRUCTIONS, "# SmartPuck meeting library");
-  upgradeLegacyGeneratedFile(join(root, "CLAUDE.md"), WORKSPACE_INSTRUCTIONS, "# SmartPuck meeting library");
+  upgradeLegacyGeneratedFile(join(root, "CLAUDE.md"), CLAUDE_INSTRUCTIONS, "# SmartPuck meeting library");
   writeIfChanged(join(root, "SMARTPUCK.md"), WORKSPACE_GUIDE);
   writeIfChanged(join(root, "NEW.md"), "# New SmartPuck meetings\n\nPending: 0\n\n_Nothing is waiting for curation._\n");
   upgradeLegacyGeneratedFile(join(root, ".agents", "skills", "smartpuck-meetings", "SKILL.md"), SKILL, "name: smartpuck-meetings");

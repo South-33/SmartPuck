@@ -256,12 +256,14 @@ export default function App(): React.JSX.Element {
         let changed = false;
         for (const m of transcribing) {
           const id = m.metadata.id;
-          const target = m.metadata.progressPercent || 5;
+          const rawTarget = m.metadata.progressPercent !== undefined ? m.metadata.progressPercent : 5;
+          const target = rawTarget >= 90 ? 99 : rawTarget;
           const current = prev[id] !== undefined ? prev[id] : 5;
           
           if (current < target) {
             const diff = target - current;
-            const step = Math.max(0.1, diff * 0.05);
+            const speedFactor = rawTarget >= 90 ? 0.015 : 0.05;
+            const step = Math.max(0.05, diff * speedFactor);
             next[id] = Math.min(target, current + step);
             changed = true;
           } else if (current > target) {
@@ -939,52 +941,75 @@ export default function App(): React.JSX.Element {
                       }}
                       onDoubleClick={() => rename(m)}
                     >
-                      <div className="meeting-card-info">
-                        <strong>{m.metadata.title}</strong>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", fontSize: "12.5px", color: "var(--text-secondary)", marginTop: "4px" }}>
-                          <span>{new Date(m.metadata.capturedAt).toLocaleDateString()}</span>
-                          <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-muted)", opacity: 0.6, flexShrink: 0 }} />
-                          <span>{new Date(m.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          {workplaceId === "all" && meetingWorkspaces(m).map((name) => (
-                            <span key={name} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-muted)", opacity: 0.6, flexShrink: 0 }} />
-                              <span style={{
-                                fontSize: "10px",
-                                background: "var(--bg-panel)",
-                                color: "var(--text-secondary)",
-                                padding: "1px 5px",
-                                borderRadius: "3px",
-                                border: "1px solid var(--border-color)",
-                                lineHeight: 1
-                              }}>
-                                {name}
-                              </span>
-                            </span>
-                          ))}
+                      <div style={{ display: "flex", flexDirection: "column", width: "100%", gap: "6px" }}>
+                        {/* Row 1: Title + Duration */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", width: "100%", gap: "12px" }}>
+                          <strong style={{
+                            fontSize: "14px",
+                            fontWeight: 600,
+                            color: "var(--text-primary)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            flex: 1,
+                            minWidth: 0
+                          }}>{m.metadata.title}</strong>
+                          <span className="meeting-card-duration" style={{ flexShrink: 0 }}>
+                            {m.metadata.durationSeconds
+                              ? `${Math.floor(m.metadata.durationSeconds / 60)}:${String(Math.floor(m.metadata.durationSeconds % 60)).padStart(2, "0")}`
+                              : "0:00"}
+                          </span>
                         </div>
-                      </div>
-                      <div className="meeting-card-meta">
-                        <span className={`status-badge ${m.metadata.status}`}>
-                          {m.metadata.status === "transcribing" ? (() => {
-                            const val = smoothProgressMap[m.metadata.id] !== undefined
-                              ? Math.round(smoothProgressMap[m.metadata.id])
-                              : (m.metadata.progressPercent || 5);
-                            if (val < 15) return "Loading Models…";
-                            if (val < 40) return "Analyzing Audio…";
-                            if (val >= 95) return "Diarizing Speakers…";
-                            return `Transcribing ${val}%`;
-                          })() : m.metadata.status}
-                        </span>
-                        <span className="meeting-card-duration">
-                          {m.metadata.durationSeconds
-                            ? `${Math.floor(m.metadata.durationSeconds / 60)}:${String(Math.floor(m.metadata.durationSeconds % 60)).padStart(2, "0")}`
-                            : "0:00"}
-                        </span>
+
+                        {/* Row 2: Date + Status Badge */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", fontSize: "12.5px", color: "var(--text-secondary)", minWidth: 0, flex: 1 }}>
+                            <span>{new Date(m.metadata.capturedAt).toLocaleDateString()}</span>
+                            <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-muted)", opacity: 0.6, flexShrink: 0 }} />
+                            <span>{new Date(m.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {workplaceId === "all" && meetingWorkspaces(m).map((name) => (
+                              <span key={name} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-muted)", opacity: 0.6, flexShrink: 0 }} />
+                                <span style={{
+                                  fontSize: "10px",
+                                  background: "var(--bg-panel)",
+                                  color: "var(--text-secondary)",
+                                  padding: "1px 5px",
+                                  borderRadius: "3px",
+                                  border: "1px solid var(--border-color)",
+                                  lineHeight: 1
+                                }}>
+                                  {name}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                          <span className={`status-badge ${m.metadata.status}`} style={{ flexShrink: 0, marginTop: 0 }}>
+                            {m.metadata.status === "transcribing" ? (() => {
+                              const val = smoothProgressMap[m.metadata.id] !== undefined
+                                ? Math.round(smoothProgressMap[m.metadata.id])
+                                : (m.metadata.progressPercent !== undefined ? m.metadata.progressPercent : 5);
+                              const displayVal = Math.min(100, Math.max(0, val));
+                              if (m.metadata.progressStage) {
+                                const stage = m.metadata.progressStage;
+                                if (val >= 0 && val < 100) {
+                                  return `${stage} ${displayVal}%`;
+                                }
+                                return stage;
+                              }
+                              if (val < 0) return "Loading Models…";
+                              if (val < 40) return `Analyzing Audio ${displayVal}%`;
+                              if (val >= 95) return `Diarizing Speakers ${displayVal}%`;
+                              return `Transcribing ${displayVal}%`;
+                            })() : m.metadata.status}
+                          </span>
+                        </div>
                       </div>
                       {m.metadata.status === "transcribing" && (() => {
                         const val = smoothProgressMap[m.metadata.id] !== undefined
                           ? Math.round(smoothProgressMap[m.metadata.id])
-                          : (m.metadata.progressPercent || 5);
+                          : (m.metadata.progressPercent !== undefined ? m.metadata.progressPercent : 5);
+                        const widthVal = Math.min(100, Math.max(0, val));
                         return (
                           <div style={{
                             position: "absolute",
@@ -996,7 +1021,7 @@ export default function App(): React.JSX.Element {
                           }}>
                             <div style={{
                               height: "100%",
-                              width: `${val}%`,
+                              width: `${widthVal}%`,
                               background: "var(--accent-blue)",
                               transition: "width 0.1s linear"
                             }} />

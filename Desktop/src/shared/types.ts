@@ -18,6 +18,7 @@ export interface MeetingMetadata {
   processedAudioFile?: string;
   status: MeetingStatus;
   progressPercent?: number;
+  progressStage?: string;
   curationStatus: "pending" | "curated";
   summary?: string;
   capturedAt: string;
