@@ -509,17 +509,11 @@ def run_bilingual_transcription(
     original_audio_path: Optional[str] = None,
     beam_size: int = 5,
 ):
-    """Route short speech islands to English or Khmer specialist models."""
+    """Route speech segments dynamically using hybrid contiguous block grouping."""
     from faster_whisper.audio import decode_audio
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-    # "auto" denoising used to run whole-file ASR two or three times. For the
-    # bilingual path, preserve the source waveform and reserve DeepFilterNet
-    # for explicit strong denoising; specialist passes are faster and safer.
     preprocessing_mode = "strong" if denoise_mode == "strong" else "off"
-    # Dynamic compression/loudness normalization created false speech at the
-    # head of the benchmark clip and damaged quiet Khmer words. Specialists
-    # work from the original waveform; explicit strong mode still denoises.
     if denoised_output_path and os.path.exists(denoised_output_path):
         try:
             os.remove(denoised_output_path)
@@ -543,19 +537,30 @@ def run_bilingual_transcription(
             ),
         )
 
+        if not speech_chunks:
+            return {
+                "profile": "auto",
+                "profile_label": MODEL_PROFILES["auto"]["label"],
+                "model": "small guide + small.en + whisper-small-khmer",
+                "language": "en",
+                "language_probability": 0.0,
+                "segments": [],
+                "full_text": "",
+                "quality_flags": [],
+                "route_counts": {"en": 0, "km": 0},
+            }
+
         guide = get_model(MODEL_PROFILES["auto"]["model"], force_cpu=force_cpu)
         english = get_model(MODEL_PROFILES["english-fast"]["model"], force_cpu=force_cpu)
         khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
 
-        routed_chunks = {"en": [], "km": []}
+        classified_chunks = []
         route_counts = {"en": 0, "km": 0}
-        duration = len(audio) / 16000
         specialist_beam = min(3, beam_size)
 
         import numpy as np
 
-        # Language ID only needs the encoder and language-token logits. Batch
-        # those directly instead of generating guide transcripts we discard.
+        # Step 1: Language Identification on VAD chunks
         for batch_start in range(0, len(speech_chunks), 16):
             batch_chunks = speech_chunks[batch_start : batch_start + 16]
             features = []
@@ -573,42 +578,79 @@ def run_bilingual_transcription(
             for chunk, candidates in zip(batch_chunks, language_results):
                 language_token, guide_probability = candidates[0]
                 guide_language = language_token[2:-2]
-
-                # Khmer is often mislabeled as Vietnamese/Tamil, while English
-                # is consistently English. The product targets these two.
                 route = "en" if guide_language == "en" and guide_probability >= 0.45 else "km"
                 route_counts[route] += 1
-                routed_chunks[route].append({
-                    "start": chunk["start"] / 16000,
-                    "end": chunk["end"] / 16000,
+                classified_chunks.append({
+                    "start": chunk["start"],
+                    "end": chunk["end"],
+                    "lang": route,
                     "route_language": guide_language,
-                    "route_probability": float(guide_probability),
+                    "route_probability": float(guide_probability)
                 })
+
             if speech_chunks:
                 routed_count = min(batch_start + len(batch_chunks), len(speech_chunks))
                 progress = int(40 * routed_count / len(speech_chunks))
                 path_to_log = original_audio_path or temp_path
                 print(f"[SmartPuck STT] Progress: {progress}% for {path_to_log}", flush=True)
 
-        # Specialist chunks are independent, so batch them on one cached model
-        # instead of launching hundreds of tiny GPU decoding calls serially.
-        from faster_whisper import BatchedInferencePipeline
+        en_ratio = route_counts["en"] / len(speech_chunks)
+        km_ratio = 1.0 - en_ratio
 
-        output_segments = []
-        completed_specialists = 0
-        active_specialists = sum(bool(chunks) for chunks in routed_chunks.values())
-        for route, model in (("en", english), ("km", khmer)):
-            route_chunks = routed_chunks[route]
-            if not route_chunks:
-                continue
-            pipeline = BatchedInferencePipeline(model=model)
+        # Step 2: Pure-Language Early Exits
+        if en_ratio >= 0.85:
+            # Pure English continuous run
+            print("[SmartPuck STT] Audio classified as pure English. Running continuous English model...", flush=True)
+            segments_iter, info = english.transcribe(
+                processed_path,
+                language="en",
+                task="transcribe",
+                vad_filter=True,
+                beam_size=specialist_beam,
+                condition_on_previous_text=True,
+            )
+            output_segments = []
+            for segment in segments_iter:
+                text = segment.text.strip()
+                if text:
+                    output_segments.append({
+                        "start": round(segment.start, 2),
+                        "end": round(segment.end, 2),
+                        "text": text,
+                        "avg_logprob": round(segment.avg_logprob, 4),
+                        "language": "en",
+                        "route_language": "en",
+                        "route_probability": 1.0,
+                    })
+            path_to_log = original_audio_path or temp_path
+            print(f"[SmartPuck STT] Progress: 95% for {path_to_log}", flush=True)
+
+            output_segments.sort(key=lambda s: s["start"])
+            full_text_parts = [s["text"] for s in output_segments]
+            return {
+                "profile": "auto",
+                "profile_label": MODEL_PROFILES["auto"]["label"],
+                "model": f"auto-routed ({MODEL_PROFILES['english-fast']['model']})",
+                "language": "en",
+                "language_probability": round(float(info.language_probability or 1.0), 4),
+                "segments": output_segments,
+                "full_text": " ".join(full_text_parts),
+                "quality_flags": transcript_quality_flags(output_segments, "en", 1.0),
+                "route_counts": route_counts,
+            }
+
+        if km_ratio >= 0.85:
+            # Pure Khmer chunk-by-chunk run for completeness
+            print("[SmartPuck STT] Audio classified as pure Khmer. Running chunk-by-chunk Khmer specialist...", flush=True)
+            from faster_whisper import BatchedInferencePipeline
+            pipeline = BatchedInferencePipeline(model=khmer)
             segments_iter, _ = pipeline.transcribe(
                 audio,
-                language=route,
+                language="km",
                 task="transcribe",
                 clip_timestamps=[
-                    {"start": chunk["start"], "end": chunk["end"]}
-                    for chunk in route_chunks
+                    {"start": chunk["start"] / 16000, "end": chunk["end"] / 16000}
+                    for chunk in classified_chunks
                 ],
                 batch_size=8,
                 beam_size=specialist_beam,
@@ -618,43 +660,149 @@ def run_bilingual_transcription(
                 no_speech_threshold=0.6,
                 temperature=0,
             )
+            output_segments = []
             for segment in segments_iter:
                 text = segment.text.strip()
-                if not text:
-                    continue
-                routing = min(
-                    route_chunks,
-                    key=lambda chunk: abs(chunk["start"] - segment.start),
+                if text:
+                    routing = min(
+                        classified_chunks,
+                        key=lambda chunk: abs((chunk["start"] / 16000) - segment.start),
+                    )
+                    output_segments.append({
+                        "start": round(segment.start, 2),
+                        "end": round(segment.end, 2),
+                        "text": text,
+                        "avg_logprob": round(segment.avg_logprob, 4),
+                        "language": "km",
+                        "route_language": routing["route_language"],
+                        "route_probability": round(routing["route_probability"], 4),
+                    })
+            path_to_log = original_audio_path or temp_path
+            print(f"[SmartPuck STT] Progress: 95% for {path_to_log}", flush=True)
+
+            output_segments.sort(key=lambda s: s["start"])
+            full_text_parts = [s["text"] for s in output_segments]
+            return {
+                "profile": "auto",
+                "profile_label": MODEL_PROFILES["auto"]["label"],
+                "model": f"auto-routed ({MODEL_PROFILES['khmer-better']['model']})",
+                "language": "km",
+                "language_probability": 1.0,
+                "segments": output_segments,
+                "full_text": " ".join(full_text_parts),
+                "quality_flags": transcript_quality_flags(output_segments, "km", 1.0),
+                "route_counts": route_counts,
+            }
+
+        # Step 3: Group Contiguous Chunks for Mixed Bilingual Audio
+        groups = []
+        current_group = []
+        for chunk in classified_chunks:
+            if not current_group:
+                current_group.append(chunk)
+            elif current_group[-1]["lang"] == chunk["lang"]:
+                current_group.append(chunk)
+            else:
+                groups.append(current_group)
+                current_group = [chunk]
+        if current_group:
+            groups.append(current_group)
+
+        output_segments = []
+        completed_groups = 0
+        from faster_whisper import BatchedInferencePipeline
+
+        for idx, g in enumerate(groups):
+            lang = g[0]["lang"]
+
+            if lang == "km":
+                pipeline = BatchedInferencePipeline(model=khmer)
+                segments_iter, _ = pipeline.transcribe(
+                    audio,
+                    language="km",
+                    task="transcribe",
+                    clip_timestamps=[
+                        {"start": chunk["start"] / 16000, "end": chunk["end"] / 16000}
+                        for chunk in g
+                    ],
+                    batch_size=8,
+                    beam_size=specialist_beam,
+                    condition_on_previous_text=False,
+                    compression_ratio_threshold=2.4,
+                    log_prob_threshold=-1.0,
+                    no_speech_threshold=0.6,
+                    temperature=0,
                 )
-                output_segments.append({
-                    "start": round(segment.start, 2),
-                    "end": round(segment.end, 2),
-                    "text": text,
-                    "avg_logprob": round(segment.avg_logprob, 4),
-                    "language": route,
-                    "route_language": routing["route_language"],
-                    "route_probability": round(routing["route_probability"], 4),
-                })
-            completed_specialists += 1
-            # Reserve the final 5% for desktop persistence/status finalization.
-            progress = 40 + int(55 * completed_specialists / active_specialists)
+                for segment in segments_iter:
+                    text = segment.text.strip()
+                    if text:
+                        routing = min(
+                            g,
+                            key=lambda chunk: abs((chunk["start"] / 16000) - segment.start),
+                        )
+                        output_segments.append({
+                            "start": round(segment.start, 2),
+                            "end": round(segment.end, 2),
+                            "text": text,
+                            "avg_logprob": round(segment.avg_logprob, 4),
+                            "language": "km",
+                            "route_language": routing["route_language"],
+                            "route_probability": round(routing["route_probability"], 4),
+                        })
+            else:
+                # English contiguous blocks run continuously with 100ms padding
+                pad_samples = int(0.1 * 16000)
+                clip_start = max(0, g[0]["start"] - pad_samples)
+                clip_end = min(len(audio), g[-1]["end"] + pad_samples)
+                group_audio = audio[clip_start:clip_end]
+
+                segments_iter, info = english.transcribe(
+                    group_audio,
+                    language="en",
+                    task="transcribe",
+                    vad_filter=True,
+                    beam_size=specialist_beam,
+                    condition_on_previous_text=True,
+                )
+
+                offset = clip_start / 16000
+                for segment in segments_iter:
+                    text = segment.text.strip()
+                    if text:
+                        routing = min(
+                            g,
+                            key=lambda chunk: abs((chunk["start"] / 16000) - (segment.start + offset)),
+                        )
+                        output_segments.append({
+                            "start": round(segment.start + offset, 2),
+                            "end": round(segment.end + offset, 2),
+                            "text": text,
+                            "avg_logprob": round(segment.avg_logprob, 4),
+                            "language": "en",
+                            "route_language": routing["route_language"],
+                            "route_probability": round(routing["route_probability"], 4),
+                        })
+
+            completed_groups += 1
+            progress = 40 + int(55 * completed_groups / len(groups))
             path_to_log = original_audio_path or temp_path
             print(f"[SmartPuck STT] Progress: {progress}% for {path_to_log}", flush=True)
 
-        output_segments.sort(key=lambda segment: (segment["start"], segment["end"]))
-        full_text_parts = [segment["text"] for segment in output_segments]
+        output_segments.sort(key=lambda s: s["start"])
+        full_text_parts = [s["text"] for s in output_segments]
 
         return {
             "profile": "auto",
             "profile_label": MODEL_PROFILES["auto"]["label"],
-            "model": "small guide + small.en + whisper-small-khmer",
-            "language": "mixed" if route_counts["en"] and route_counts["km"] else ("en" if route_counts["en"] else "km"),
+            "model": "small guide + small.en + whisper-small-khmer (hybrid)",
+            "language": "mixed",
             "language_probability": 1.0 if output_segments else 0.0,
             "segments": output_segments,
             "full_text": " ".join(full_text_parts),
             "quality_flags": transcript_quality_flags(output_segments, "mixed", 1.0),
             "route_counts": route_counts,
         }
+
     finally:
         for path in temp_files:
             if os.path.exists(path):
