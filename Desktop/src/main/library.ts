@@ -35,6 +35,10 @@ When untagged meetings share a clear theme, suggest creating a new workspace (by
 When answering questions, cite useful timestamps and be candid when the recording does not establish a person, date, decision, or deadline. Move unwanted meetings intact to Trash so they remain recoverable.
 
 Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
+
+SmartPuck data library is at C:\\Users\\Venom\\Documents\\SmartPuck. Go directly to this folder; never list or crawl the parent C:\\Users\\Venom\\Documents directory (which is out of scope and slow).
+Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
+Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
 `;
 
 const CLAUDE_INSTRUCTIONS = `@AGENTS.md
@@ -58,6 +62,10 @@ When untagged meetings share a clear theme, suggest creating a new workspace (by
 For questions, search meeting titles and summaries first, then rg transcript.md and read only the relevant passages. Use timestamps as evidence. Stable ids, original audio, and transcript.segments.json must survive unchanged; transcript.md and descriptive metadata are the working layer. Reorganize freely when useful, but only rewrite transcript wording when explicitly asked. Move unwanted meeting directories intact to Trash.
 
 Transcript files are UTF-8. A legacy Windows console may garble Khmer display; use an UTF-8-aware read before concluding the text is damaged.
+
+SmartPuck data library is at C:\\Users\\Venom\\Documents\\SmartPuck. Go directly to this folder; never list or crawl the parent C:\\Users\\Venom\\Documents directory (which is out of scope and slow).
+Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
+Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
 `;
 
 const WORKSPACE_GUIDE = `# SmartPuck workspace schema
