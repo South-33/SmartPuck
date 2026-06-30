@@ -1247,8 +1247,8 @@ def transcribe_local(request: LocalTranscriptionRequest):
                     "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
                     denoised_dest,
                 ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 check=True,
             )
             
