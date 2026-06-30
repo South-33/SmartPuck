@@ -1,0 +1,14 @@
+packages:
+  - "."
+
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  "@serialport/bindings-cpp": true
+
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
+  - "@serialport/bindings-cpp"

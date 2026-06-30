@@ -34,7 +34,7 @@
   #define SMARTPUCK_DEVICE_TOKEN ""
 #endif
 
-#define SMARTPUCK_FIRMWARE_VERSION "0.1.0"
+#define SMARTPUCK_FIRMWARE_VERSION "0.2.0"
 #define SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING (64ULL * 1024ULL * 1024ULL)
 #define SMARTPUCK_MAX_SESSIONS_JSON 40
 #define SMARTPUCK_MAX_SAVED_WIFI_NETWORKS 5
@@ -202,9 +202,11 @@ void handleRoot();
 void handleDownload();
 void handleSessions();
 void handleSessionUploaded();
+void handleRenameSession();
 void handleDeleteSession();
 void handleWiFiConfig();
 void handleStream();
+void streamAudioTask(void* parameter);
 void handleStartRecord();
 void handleStopRecord();
 void handleStatus();
@@ -217,6 +219,7 @@ bool isSafeSessionPath(String path);
 bool isSafeAudioPath(String path);
 bool sessionHasUploadedMarker(String sessionPath);
 bool markSessionUploaded(String sessionPath);
+bool updateSessionDisplayName(String sessionPath, String displayName);
 bool removeSessionRecursive(String sessionPath);
 void cleanupUploadedSessionsIfNeeded();
 bool parseRangeHeader(size_t fileSize, size_t& rangeStart, size_t& rangeEnd);
@@ -443,7 +446,9 @@ bool repairWavHeader(String wavPath) {
     return false;
   }
 
-  wav = SD_DEVICE.open(wavPath, FILE_WRITE);
+  // FILE_WRITE maps to truncating "w" on ESP32 FS. Header recovery must use
+  // update mode or every healthy recording is reduced to a 44-byte header.
+  wav = SD_DEVICE.open(wavPath, "r+");
   if (!wav) {
     return false;
   }
@@ -482,6 +487,57 @@ String readManifestField(String sessionPath, String field) {
 
   manifest.close();
   return "";
+}
+
+bool updateSessionDisplayName(String sessionPath, String displayName) {
+  if (!isSafeSessionPath(sessionPath)) return false;
+  displayName.trim();
+  if (displayName.length() == 0 || displayName.length() > 80) return false;
+
+  String cleanName = "";
+  for (size_t i = 0; i < displayName.length(); i++) {
+    const char c = displayName.charAt(i);
+    if ((uint8_t)c >= 32) cleanName += c;
+  }
+  if (cleanName.length() == 0) return false;
+
+  const String manifestPath = sessionPath + "/manifest.json";
+  const String tempPath = sessionPath + "/manifest.tmp";
+  const String backupPath = sessionPath + "/manifest.bak";
+  const String name = readManifestField(sessionPath, "name");
+  const String createdAt = readManifestField(sessionPath, "createdAt");
+  const String network = readManifestField(sessionPath, "network");
+  const String ip = readManifestField(sessionPath, "ip");
+  const String storageMode = readManifestField(sessionPath, "storageMode");
+
+  SD_DEVICE.remove(tempPath);
+  File manifest = SD_DEVICE.open(tempPath, FILE_WRITE);
+  if (!manifest) return false;
+  manifest.println("{");
+  manifest.println("  \"version\": 1,");
+  manifest.println("  \"device\": \"SmartPuck-MVP\",");
+  manifest.println("  \"name\": \"" + jsonEscape(name) + "\",");
+  manifest.println("  \"displayName\": \"" + jsonEscape(cleanName) + "\",");
+  manifest.println("  \"createdAt\": \"" + jsonEscape(createdAt) + "\",");
+  manifest.println("  \"network\": \"" + jsonEscape(network) + "\",");
+  manifest.println("  \"ip\": \"" + jsonEscape(ip) + "\",");
+  manifest.println("  \"storageMode\": \"" + jsonEscape(storageMode) + "\",");
+  manifest.println("  \"audio\": \"audio_000.wav\"");
+  manifest.println("}");
+  manifest.flush();
+  manifest.close();
+
+  SD_DEVICE.remove(backupPath);
+  if (!SD_DEVICE.rename(manifestPath, backupPath)) {
+    SD_DEVICE.remove(tempPath);
+    return false;
+  }
+  if (!SD_DEVICE.rename(tempPath, manifestPath)) {
+    SD_DEVICE.rename(backupPath, manifestPath);
+    return false;
+  }
+  SD_DEVICE.remove(backupPath);
+  return true;
 }
 
 void repairIncompleteSessions() {
@@ -1875,12 +1931,36 @@ void handleDownload() {
 }
 
 // Low-latency real-time live PCM streaming handler
+void streamAudioTask(void* parameter) {
+  WiFiClient* client = static_cast<WiFiClient*>(parameter);
+  while (client->connected()) {
+    size_t receivedBytes = 0;
+    void* data = xRingbufferReceiveUpTo(audioRingBuf, &receivedBytes, pdMS_TO_TICKS(50), 512);
+    if (data != NULL) {
+      if (client->write((const uint8_t*)data, receivedBytes) != receivedBytes) {
+        vRingbufferReturnItem(audioRingBuf, data);
+        break;
+      }
+      vRingbufferReturnItem(audioRingBuf, data);
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  client->stop();
+  delete client;
+  isStreaming = false;
+  Serial.println("[Stream] Client disconnected. Live audio stream closed.");
+  vTaskDelete(NULL);
+}
+
 void handleStream() {
+  if (isStreaming) {
+    server.send(409, "text/plain", "A live listener is already connected.");
+    return;
+  }
+
   Serial.println("[Stream] Client connected. Starting live raw audio stream...");
-  
   WiFiClient client = server.client();
-  client.setNoDelay(true); // Disable Nagle's algorithm for low-latency transmission
-  
+  client.setNoDelay(true);
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: audio/wav");
   client.println("Access-Control-Allow-Origin: *");
@@ -1889,43 +1969,26 @@ void handleStream() {
   client.println("Access-Control-Allow-Private-Network: true");
   client.println("Connection: close");
   client.println();
-  
-  // Send 2GB WAV header (infinite open-ended stream)
+
   uint8_t header[44];
   fillWavHeader(header, 0x7FFFFFFF);
   client.write(header, 44);
-  
-  // Clear ring buffer of any stale audio before starting
+
   size_t tempBytes = 0;
   while (true) {
     void* temp = xRingbufferReceive(audioRingBuf, &tempBytes, 0);
     if (temp == NULL) break;
     vRingbufferReturnItem(audioRingBuf, temp);
   }
-  
+
   isStreaming = true;
-  
-  while (client.connected()) {
-    size_t receivedBytes = 0;
-    // Receive processed PCM data from Core 1 audioTask (wait up to 50ms)
-    void* data = xRingbufferReceiveUpTo(audioRingBuf, &receivedBytes, pdMS_TO_TICKS(50), 512);
-    
-    if (data != NULL) {
-      if (client.write((const uint8_t*)data, receivedBytes) != receivedBytes) {
-        vRingbufferReturnItem(audioRingBuf, data);
-        break; // socket write error or client disconnected
-      }
-      vRingbufferReturnItem(audioRingBuf, data);
-    }
-    
-    // Check button inside streaming loop to preserve button responsiveness
-    checkButton();
-    
-    yield();
+  WiFiClient* taskClient = new WiFiClient(client);
+  if (taskClient == nullptr || xTaskCreatePinnedToCore(streamAudioTask, "audioStream", 4096, taskClient, 1, nullptr, 0) != pdPASS) {
+    if (taskClient != nullptr) delete taskClient;
+    isStreaming = false;
+    client.stop();
+    Serial.println("[Stream] ERROR: Could not start streaming task.");
   }
-  
-  isStreaming = false;
-  Serial.println("[Stream] Client disconnected. Live audio stream closed.");
 }
 
 // Remote Control endpoints
@@ -2090,6 +2153,29 @@ void handleSessionUploaded() {
     bool ok = markSessionUploaded(path);
     xSemaphoreGive(fileMutex);
     server.send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Could not mark uploaded\"}");
+  } else {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"Storage busy\"}");
+  }
+}
+
+void handleRenameSession() {
+  sendCorsHeaders();
+  if (!server.hasArg("path") || !server.hasArg("name")) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Missing path or name\"}");
+    return;
+  }
+
+  const String path = urlDecode(server.arg("path"));
+  const String name = urlDecode(server.arg("name"));
+  if (!isSafeSessionPath(path)) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid session path\"}");
+    return;
+  }
+
+  if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
+    const bool ok = updateSessionDisplayName(path, name);
+    xSemaphoreGive(fileMutex);
+    server.send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Could not rename session\"}");
   } else {
     server.send(503, "application/json", "{\"ok\":false,\"error\":\"Storage busy\"}");
   }
@@ -2342,6 +2428,7 @@ void setup() {
   server.on("/status", HTTP_OPTIONS, handleCorsOptions);
   server.on("/sessions", HTTP_OPTIONS, handleCorsOptions);
   server.on("/session_uploaded", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/session_rename", HTTP_OPTIONS, handleCorsOptions);
   server.on("/session", HTTP_OPTIONS, handleCorsOptions);
   server.on("/stream", HTTP_OPTIONS, handleCorsOptions);
   server.on("/download", HTTP_OPTIONS, handleCorsOptions);
@@ -2351,6 +2438,7 @@ void setup() {
   server.on("/download", handleDownload);
   server.on("/sessions", handleSessions);
   server.on("/session_uploaded", HTTP_POST, handleSessionUploaded);
+  server.on("/session_rename", HTTP_POST, handleRenameSession);
   server.on("/session", HTTP_DELETE, handleDeleteSession);
   server.on("/wifi", handleWiFiConfig);
   server.on("/stream", handleStream);
@@ -2390,7 +2478,21 @@ void handleUsbCommand(String command) {
     Serial.println(markSessionUploaded(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not mark session uploaded");
   } else if (command.startsWith("DELETE ")) {
     const String sessionPath = command.substring(7);
-    Serial.println(removeSessionRecursive(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not delete session");
+    if (!sessionHasUploadedMarker(sessionPath)) {
+      Serial.println("@SPK ERROR Session has not been uploaded");
+    } else {
+      Serial.println(removeSessionRecursive(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not delete session");
+    }
+  } else if (command.startsWith("RENAME ")) {
+    const String payload = command.substring(7);
+    const int separator = payload.indexOf('\t');
+    if (separator < 1) {
+      Serial.println("@SPK ERROR Invalid rename command");
+    } else {
+      const String sessionPath = payload.substring(0, separator);
+      const String displayName = payload.substring(separator + 1);
+      Serial.println(updateSessionDisplayName(sessionPath, displayName) ? "@SPK OK" : "@SPK ERROR Could not rename session");
+    }
   } else {
     Serial.println("@SPK ERROR Unknown command");
   }

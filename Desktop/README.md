@@ -1,0 +1,59 @@
+# SmartPuck Desktop V1
+
+A small local-first desktop app for connecting a SmartPuck, importing recordings, transcribing them locally, and organizing an agent-readable meeting workspace.
+
+## Product boundary
+
+- Automatic USB-C or mDNS/Wi-Fi device discovery, recording controls, idempotent sync, and storage state
+- Live low-latency monitoring, device-session rename/delete, saved Wi-Fi management, and fallback-AP recovery
+- Workspace and meeting organization using plain directories, playlist-like links, search, playback, assignment, and editable transcripts
+- The proven SmartPuck bilingual pipeline: normalization, adaptive denoise, pause-aware English/Khmer routing, quality flags, and GPU fallback
+- Editable Markdown transcripts and preserved raw timestamp segments
+- Preserved original audio plus the pipeline-selected processed review waveform
+- Generated `AGENTS.md`, `CLAUDE.md`, and SmartPuck skills
+- Generated `NEW.md` orientation index backed by canonical `meeting.json` curation state
+
+There is intentionally no embedded AI chat, model provider, OAuth flow, MCP server, or Hermes runtime.
+
+## Development
+
+```powershell
+pnpm install
+python -m pip install -r resources/requirements.txt
+pnpm dev
+```
+
+Set `SMARTPUCK_HOME` to use a disposable meeting library and `SMARTPUCK_PYTHON` when Python is not available on PATH.
+
+## Verification
+
+```powershell
+pnpm test
+pnpm build
+$env:SMARTPUCK_E2E_AUDIO = "C:\path\to\a\recording.mp3"
+node scripts/e2e-foundation.cjs
+```
+
+The native E2E run uses an isolated library under the system temp directory and removes it, including its copied audio, when the run finishes. Set `SMARTPUCK_KEEP_E2E=1` only when the temporary workspace is needed for debugging.
+
+## Workspace shape
+
+```text
+SmartPuck/
+  AGENTS.md
+  CLAUDE.md
+  SMARTPUCK.md
+  NEW.md
+  Meetings/
+    meeting-title-1234abcd/
+      meeting.json
+      audio.wav
+      recording.processed.wav
+      transcript.md
+      transcript.segments.json
+  Workspaces/
+    workspace-name/
+      .smartpuck-workspace.json
+      README.md
+  Trash/
+```
