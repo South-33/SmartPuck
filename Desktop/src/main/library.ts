@@ -29,20 +29,7 @@ Your goal is to help the user turn raw imported recordings into organized, searc
 - **Respect Idle States**: If NEW.md is clean (Pending: 0), do not invent busy-work, crawl directories, or modify indexes. Simply report that the library is up to date, briefly highlight recent curated context, and wait for instructions.
 - **Communication Style**: Speak with professional clarity and brevity. Avoid generic robotic AI filler ("How may I assist you?"). Present summaries and key decisions using clean, scannable bullet points.
 
-## 2. Curation Lifecycle
-\`\`\`mermaid
-graph TD
-    A[Start: Read NEW.md] --> B{Pending Recordings?}
-    B -- Yes --> C[Read Meetings/<id>/transcript.md & summary]
-    B -- No --> Exit[Stop / Go Idle]
-    C --> D[Identify Title, Summary, & Workspace category]
-    D --> E[Run curate command: node .agents/manage-library.js curate...]
-    E --> F[Optional: Edit transcript.md for formatting/typos]
-    F --> G[Update meetings.md 'Memory & Notes' with new jargon/names]
-    G --> B
-\`\`\`
-
-## 3. Command Reference Cheat Sheet
+## 2. Command Reference Cheat Sheet
 The library root contains \`node .agents/manage-library.js\`. Use this script for **all** structural modifications. Never edit JSON files or move directories manually.
 
 | Action | Command Example | When to use it |
@@ -55,14 +42,14 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 | **Trash Meeting** | \`node .agents/manage-library.js trash <meeting-id>\` | Move a meeting folder safely to Trash and rebuild indexes. |
 | **Rebuild Indexes** | \`node .agents/manage-library.js rebuild\` | Force rebuild NEW.md and workspace meetings.md files. |
 
-## 4. Playbook Rules (How to avoid mistakes)
+## 3. Playbook Rules (How to avoid mistakes)
 - The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 - Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
 - Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
 - Never use shell commands (like 'rm', 'rmdir', or 'Remove-Item') to delete library folders or files (which destroys user data, transcripts, and custom memory notes in meetings.md). If a file/folder already exists or a conflict arises, reuse the existing resource or ask the user for confirmation.
 - Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
 
-## 5. SmartPuck Workspace & JSON Schema Reference
+## 4. SmartPuck Workspace & JSON Schema Reference
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio, transcript.md, and immutable transcript.segments.json.
 - Workspaces/ contains playlist-like workspace folders. Each meetings.md is a generated view and may be overwritten by the app.
 - Trash/ contains recoverable meetings removed from the active library. Ignore it unless asked.
@@ -120,20 +107,7 @@ Your goal is to help the user turn raw imported recordings into organized, searc
 - **Respect Idle States**: If NEW.md is clean (Pending: 0), do not invent busy-work, crawl directories, or modify indexes. Simply report that the library is up to date, briefly highlight recent curated context, and wait for instructions.
 - **Communication Style**: Speak with professional clarity and brevity. Avoid generic robotic AI filler ("How may I assist you?"). Present summaries and key decisions using clean, scannable bullet points.
 
-## 2. Curation Lifecycle
-\`\`\`mermaid
-graph TD
-    A[Start: Read NEW.md] --> B{Pending Recordings?}
-    B -- Yes --> C[Read Meetings/<id>/transcript.md & summary]
-    B -- No --> Exit[Stop / Go Idle]
-    C --> D[Identify Title, Summary, & Workspace category]
-    D --> E[Run curate command: node .agents/manage-library.js curate...]
-    E --> F[Optional: Edit transcript.md for formatting/typos]
-    F --> G[Update meetings.md 'Memory & Notes' with new jargon/names]
-    G --> B
-\`\`\`
-
-## 3. Command Reference Cheat Sheet
+## 2. Command Reference Cheat Sheet
 The library root contains \`node .agents/manage-library.js\`. Use this script for **all** structural modifications. Never edit JSON files or move directories manually.
 
 | Action | Command Example | When to use it |
@@ -146,14 +120,14 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 | **Trash Meeting** | \`node .agents/manage-library.js trash <meeting-id>\` | Move a meeting folder safely to Trash and rebuild indexes. |
 | **Rebuild Indexes** | \`node .agents/manage-library.js rebuild\` | Force rebuild NEW.md and workspace meetings.md files. |
 
-## 4. Playbook Rules (How to avoid mistakes)
+## 3. Playbook Rules (How to avoid mistakes)
 - The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 - Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
 - Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
 - Never use shell commands (like 'rm', 'rmdir', or 'Remove-Item') to delete library folders or files (which destroys user data, transcripts, and custom memory notes in meetings.md). If a file/folder already exists or a conflict arises, reuse the existing resource or ask the user for confirmation.
 - Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
 
-## 5. SmartPuck Workspace & JSON Schema Reference
+## 4. SmartPuck Workspace & JSON Schema Reference
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio, transcript.md, and immutable transcript.segments.json.
 - Workspaces/ contains playlist-like workspace folders. Each meetings.md is a generated view and may be overwritten by the app.
 - Trash/ contains recoverable meetings removed from the active library. Ignore it unless asked.
