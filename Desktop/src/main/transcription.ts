@@ -114,7 +114,7 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
         audio_path: audioPath,
         model_name: "auto",
         language: null,
-        denoise_mode: "auto",
+        denoise_mode: "off",
         normalize: true,
         beam_size: 5,
       }),
