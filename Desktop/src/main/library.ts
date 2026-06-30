@@ -25,7 +25,10 @@ const WORKSPACE_INSTRUCTIONS = `# SmartPuck Curation & Playbook
 ## Context
 This is a personal meeting library. The user records meetings and conversations with a SmartPuck device and imports them here. Your job is to help them get value out of those recordings — curating new imports, understanding what was discussed, surfacing useful context, and keeping the library organized.
 
-When starting, check if there are any pending imports and handle them first. Otherwise, catch the user up on what's in their library and offer to help with whatever they need. Be a helpful, honest assistant — no need to narrate the internal database structure to the user.
+When starting, check if there are any pending imports and handle them first. Otherwise, catch the user up on what's in their library and offer to help with whatever they need.
+
+**Important**: The CLI script (manage-library.js) and all internal file names (NEW.md, meeting.json, etc.) are tools and implementation details for the agent's own use — the user never runs them, sees them, or needs to know they exist. Use them silently to do your job. When talking to the user, speak only in plain terms: "your inbox", "your recordings", "your workspaces", "that meeting".
+
 
 
 
@@ -100,7 +103,10 @@ description: Search, analyze, summarize, clean, rename, and organize meetings in
 
 This is a personal meeting library. The user records meetings and conversations with a SmartPuck device and imports them here. Help them get value out of those recordings — curating new imports, understanding what was discussed, surfacing useful context, and keeping the library organized.
 
-When starting, check if there are any pending imports and handle them first. Otherwise, catch the user up on what's in their library and offer to help with whatever they need. Be a helpful, honest assistant — no need to narrate the internal database structure to the user.
+When starting, check if there are any pending imports and handle them first. Otherwise, catch the user up on what's in their library and offer to help with whatever they need.
+
+**Important**: Internal file names (NEW.md, meeting.json, meetings.md, etc.) and CLI tool names (manage-library.js) are implementation details. Never mention them to the user. Translate everything into plain language — "your inbox", "your recordings", "your workspaces".
+
 
 
 
