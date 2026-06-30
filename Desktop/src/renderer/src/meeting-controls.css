@@ -1,64 +1,102 @@
 .search {
-  width: 220px;
-  border: 1px solid #303238;
-  border-radius: 9px;
-  background: #131417;
-  color: #fff;
-  padding: 8px 11px;
+  width: 240px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  padding: 10px 14px 10px 36px; /* extra left padding for search icon */
   outline: none;
+  transition: var(--transition);
+  font-size: 13.5px;
 }
 
 .search:focus {
-  border-color: #626a46;
+  border-color: var(--accent-lime-border);
+  box-shadow: 0 0 12px rgba(201, 253, 54, 0.08);
 }
 
 .audio-player {
   width: 100%;
-  height: 36px;
-  margin-bottom: 12px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  outline: none;
+  background: #0B0C10;
+}
+
+/* Audio Player Webkit Custom Colors if supported by browser */
+.audio-player::-webkit-media-controls-panel {
+  background-color: #0E0F14;
+}
+.audio-player::-webkit-media-controls-current-time-display,
+.audio-player::-webkit-media-controls-time-remaining-display {
+  color: var(--text-secondary);
 }
 
 .meeting-summary {
-  color: #a8abb1;
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0 0 12px;
+  background: rgba(255, 255, 255, 0.015);
+  border-left: 3px solid var(--accent-lime);
+  padding: 14px 16px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  margin-bottom: 16px;
+  font-style: italic;
 }
 
 .detail-actions select {
   margin-right: auto;
   max-width: 220px;
-  border: 1px solid #303238;
-  border-radius: 9px;
-  background: #1b1d21;
-  color: #d7d7d4;
-  padding: 8px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: #191B22;
+  color: var(--text-primary);
+  padding: 9px 14px;
+  cursor: pointer;
+  outline: none;
+  transition: var(--transition);
+}
+
+.detail-actions select:focus {
+  border-color: var(--accent-lime-border);
 }
 
 .wifi-form {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-  margin: 12px 0;
+  gap: 10px;
+  margin: 16px 0;
 }
 
 .wifi-form input {
   min-width: 0;
-  border: 1px solid #303238;
-  border-radius: 9px;
-  background: #0e0f11;
-  color: #fff;
-  padding: 9px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: #0B0C10;
+  color: var(--text-primary);
+  padding: 10px 14px;
+  font-size: 13px;
+  outline: none;
+  transition: var(--transition);
+}
+
+.wifi-form input:focus {
+  border-color: var(--accent-lime-border);
+}
+
+.wifi-form button {
+  padding: 10px 16px;
 }
 
 .connection-note {
   display: block;
-  color: #737780;
-  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: 14px;
 }
 
-.session > .actions {
+.session-row .actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 6px;
 }

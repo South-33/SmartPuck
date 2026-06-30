@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
+  AlertCircle,
   Check,
   CircleDot,
+  Copy,
+  FileAudio,
   FolderOpen,
+  HardDrive,
   Import,
   Mic,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
+  Play,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Settings,
   Sparkles,
+  Square,
   Tags,
   Trash2,
 } from "lucide-react";
@@ -63,6 +73,8 @@ export default function App(): React.JSX.Element {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [draggingWorkplaceId, setDraggingWorkplaceId] = useState("");
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogState>(null);
+  const [showWorkplaces, setShowWorkplaces] = useState(true);
+  const [copied, setCopied] = useState(false);
   const streamAbort = useRef<AbortController | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const monitorGain = useRef<GainNode | null>(null);
@@ -166,10 +178,12 @@ export default function App(): React.JSX.Element {
       }
     })();
   }, [device, liveListening]);
+
   const allMeetings = useMemo(
     () => [...new Map([...library.inbox, ...library.workplaces.flatMap((w) => w.meetings)].map((meeting) => [meeting.metadata.id, meeting])).values()],
     [library],
   );
+
   const meetings = useMemo(() => {
     const scoped = workplaceId === "inbox"
         ? library.inbox
@@ -181,10 +195,12 @@ export default function App(): React.JSX.Element {
       `${meeting.metadata.title}\n${meeting.metadata.summary || ""}\n${meeting.transcript}`.toLocaleLowerCase().includes(needle),
     );
   }, [allMeetings, library, workplaceId, query]);
+
   const inboxPending = useMemo(
     () => library.inbox.filter((meeting) => meeting.metadata.curationStatus === "pending").length,
     [library.inbox],
   );
+
   const selected = useMemo(
     () =>
       allMeetings.find(
@@ -192,6 +208,7 @@ export default function App(): React.JSX.Element {
       ) || null,
     [allMeetings, selectedId],
   );
+
   useEffect(() => {
     setDraft(selected?.transcript || "");
   }, [selected?.metadata.id, selected?.transcript]);
@@ -210,6 +227,7 @@ export default function App(): React.JSX.Element {
       setBusy("");
     }
   };
+
   const importFiles = (): void => {
     void run("import", async () => {
       const paths = await window.smartpuck.dialogs.chooseAudio();
@@ -222,6 +240,7 @@ export default function App(): React.JSX.Element {
         );
     });
   };
+
   const openCreateWorkspace = (): void => setWorkspaceDialog({ type: "create", name: "" });
   const submitWorkspaceDialog = (): void => {
     if (!workspaceDialog) return;
@@ -247,6 +266,7 @@ export default function App(): React.JSX.Element {
       });
     }
   };
+
   const rename = (meeting: Meeting): void => {
     const title = prompt("Meeting title", meeting.metadata.title);
     if (title)
@@ -259,9 +279,11 @@ export default function App(): React.JSX.Element {
         ),
       );
   };
+
   const renameWorkplace = (workplace: Workplace): void => {
     setWorkspaceDialog({ type: "rename", workplace, name: workplace.metadata.name });
   };
+
   const deleteWorkplace = (workplace: Workplace): void => {
     if (!confirm(`Delete workspace "${workplace.metadata.name}"? Meetings will become unassigned; audio and transcripts stay safe.`)) return;
     void run("delete-workplace", async () => {
@@ -270,17 +292,20 @@ export default function App(): React.JSX.Element {
       setSelectedId("");
     });
   };
+
   const addToWorkplace = (meeting: Meeting, targetId: string): void => {
     void run("add-workplace", async () =>
       setLibrary(await window.smartpuck.library.addMeetingToWorkplace(meeting.metadata.id, targetId)),
     );
   };
+
   const removeFromWorkplace = (meeting: Meeting, targetId: string): void => {
     void run("remove-workplace", async () => {
       setLibrary(await window.smartpuck.library.removeMeetingFromWorkplace(meeting.metadata.id, targetId));
       if (workplaceId === targetId) setSelectedId("");
     });
   };
+
   const deleteMeeting = (meeting: Meeting): void => {
     if (!confirm(`Move "${meeting.metadata.title}" to Trash?`)) return;
     void run("delete-meeting", async () => {
@@ -288,12 +313,15 @@ export default function App(): React.JSX.Element {
       setSelectedId("");
     });
   };
+
   const meetingWorkspaceIds = (meeting: Meeting): Set<string> =>
     new Set(meeting.metadata.workspaceIds || []);
+
   const quickAddWorkplaces = (meeting: Meeting): Workplace[] => {
     const linked = meetingWorkspaceIds(meeting);
     return library.workplaces.filter((workplace) => !linked.has(workplace.metadata.id)).slice(0, 3);
   };
+
   const reorderWorkplaceDrop = (targetId: string): void => {
     if (!draggingWorkplaceId || draggingWorkplaceId === targetId) return;
     const ids = library.workplaces.map((workplace) => workplace.metadata.id);
@@ -327,6 +355,16 @@ export default function App(): React.JSX.Element {
           >
             <Mic />
             Device
+            {device?.connected && (
+              <span style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "var(--accent-green)",
+                marginLeft: "auto",
+                boxShadow: "0 0 8px var(--accent-green)"
+              }} />
+            )}
           </button>
           <button
             className={view === "settings" ? "active" : ""}
@@ -341,7 +379,7 @@ export default function App(): React.JSX.Element {
         </div>
       </aside>
       <main>
-        {error && <div className="error">{error}</div>}
+        {error && <div className="error"><AlertCircle size={16} />{error}</div>}
         {workspaceDialog && (
           <div className="modal-backdrop" onClick={() => setWorkspaceDialog(null)}>
             <form
@@ -436,13 +474,25 @@ export default function App(): React.JSX.Element {
                 <h1>Library</h1>
               </div>
               <div className="actions">
-                <input
-                  className="search"
-                  aria-label="Search meetings"
-                  placeholder="Search meetings"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
+                <div className="search-container">
+                  <span style={{ position: "absolute", left: 12, color: "var(--text-muted)", display: "flex", alignItems: "center" }}>
+                    <Search size={16} />
+                  </span>
+                  <input
+                    className="search"
+                    aria-label="Search meetings"
+                    placeholder="Search meetings..."
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={() => setShowWorkplaces(!showWorkplaces)}
+                  title={showWorkplaces ? "Collapse Workspaces" : "Expand Workspaces"}
+                  style={{ padding: "10px" }}
+                >
+                  {showWorkplaces ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+                </button>
                 <button onClick={openCreateWorkspace}>
                   <Plus />
                   Workspace
@@ -453,8 +503,8 @@ export default function App(): React.JSX.Element {
                 </button>
               </div>
             </header>
-            <div className="library-grid">
-              <section className="workplaces panel">
+            <div className="library-grid" style={{ gridTemplateColumns: showWorkplaces ? "220px minmax(300px, 380px) 1fr" : "380px 1fr" }}>
+              <section className={`workplaces panel ${showWorkplaces ? "" : "collapsed"}`}>
                 <h3>Workspaces</h3>
                 <button
                   className={workplaceId === "inbox" ? "selected" : ""}
@@ -594,55 +644,75 @@ export default function App(): React.JSX.Element {
                     {selected.metadata.summary && (
                       <p className="meeting-summary">{selected.metadata.summary}</p>
                     )}
-                    <audio
-                      className="audio-player"
-                      controls
-                      preload="metadata"
-                      src={`smartpuck://audio/${encodeURIComponent(selected.metadata.id)}`}
-                    />
+                    <div className="audio-player-wrapper">
+                      <audio
+                        className="audio-player"
+                        controls
+                        preload="metadata"
+                        src={`smartpuck://audio/${encodeURIComponent(selected.metadata.id)}`}
+                      />
+                    </div>
                     <textarea
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       spellCheck
+                      placeholder="Start transcribing or edit transcript..."
                     />
-                    <div className="detail-actions">
-                      <button
-                        onClick={() =>
-                          void run("transcribe", async () =>
-                            setLibrary(
-                              await window.smartpuck.library.transcribe(
-                                selected.metadata.id,
+                    <div className="editor-toolbar">
+                      <div className="editor-stats">
+                        <span>{draft ? draft.trim().split(/\s+/).filter(Boolean).length : 0} words</span>
+                        <span>{draft ? draft.length : 0} characters</span>
+                      </div>
+                      <div className="actions">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(draft);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}
+                          title="Copy transcript"
+                        >
+                          {copied ? <Check size={14} /> : <Copy size={14} />}
+                          {copied ? "Copied" : "Copy"}
+                        </button>
+                        <button
+                          onClick={() =>
+                            void run("transcribe", async () =>
+                              setLibrary(
+                                await window.smartpuck.library.transcribe(
+                                  selected.metadata.id,
+                                ),
                               ),
-                            ),
-                          )
-                        }
-                        disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
-                      >
-                        <Sparkles />
-                        {selected.metadata.status === "error"
-                          ? "Retry transcription"
-                          : selected.metadata.status === "ready"
-                            ? "Transcribe again"
-                            : selected.metadata.status === "transcribing"
-                              ? "Transcribing…"
-                              : "Transcribe now"}
-                      </button>
-                      <button
-                        className="primary"
-                        onClick={() =>
-                          void run("save", async () =>
-                            setLibrary(
-                              await window.smartpuck.library.saveTranscript(
-                                selected.metadata.id,
-                                draft,
+                            )
+                          }
+                          disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
+                        >
+                          <Sparkles />
+                          {selected.metadata.status === "error"
+                            ? "Retry transcription"
+                            : selected.metadata.status === "ready"
+                              ? "Transcribe again"
+                              : selected.metadata.status === "transcribing"
+                                ? "Transcribing…"
+                                : "Transcribe now"}
+                        </button>
+                        <button
+                          className="primary"
+                          onClick={() =>
+                            void run("save", async () =>
+                              setLibrary(
+                                await window.smartpuck.library.saveTranscript(
+                                  selected.metadata.id,
+                                  draft,
+                                ),
                               ),
-                            ),
-                          )
-                        }
-                      >
-                        <Save />
-                        Save transcript
-                      </button>
+                            )
+                          }
+                        >
+                          <Save />
+                          Save transcript
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -663,162 +733,317 @@ export default function App(): React.JSX.Element {
                 <h1>Device</h1>
               </div>
             </header>
-            <section className="hero panel">
-              <div className={`orb ${device?.connected ? "online" : ""}`}>
-                <Mic />
-              </div>
-              <div>
-                <h2>
-                  {device?.connected
-                    ? "SmartPuck connected"
-                    : "Connect your SmartPuck"}
-                </h2>
-                <p>
-                  {device?.connected
-                    ? `${device.transport.toUpperCase()} · ${device.network || device.baseUrl} · Firmware ${device.firmwareVersion}`
-                    : "USB-C and smartpuck.local are checked automatically. You can also enter a Wi-Fi address."}
-                </p>
-              </div>
-              <div className="connect">
-                <input
-                  value={deviceUrl}
-                  onChange={(e) => setDeviceUrl(e.target.value)}
-                />
-                <button
-                  className="primary"
-                  onClick={() =>
-                    void run("connect", async () =>
-                      setDevice(
-                        await window.smartpuck.device.connect(deviceUrl),
-                      ),
-                    )
-                  }
-                >
-                  {busy === "connect" ? "Connecting…" : "Connect"}
-                </button>
-              </div>
-            </section>
-            {device?.connected && (
-              <div className="device-grid">
-                <section className="panel stat">
-                  <small>Storage</small>
-                  <strong>{size(device.storageFreeBytes)} free</strong>
-                  <span>of {size(device.storageTotalBytes)}</span>
-                </section>
-                <section className="panel stat">
-                  <small>Recorder</small>
-                  <strong>{device.recording ? "Recording" : "Ready"}</strong>
-                  <div className="actions">
+            <div className="device-dashboard">
+              {!device?.connected ? (
+                <div className={`device-offline-card ${busy === "connect" ? "connecting" : "disconnected"}`}>
+                  <div className="puck-icon-orb">
+                    {busy === "connect" ? <RefreshCw size={36} /> : <Mic size={36} />}
+                  </div>
+                  <h2>
+                    {busy === "connect" ? "Connecting to SmartPuck..." : "Connect your SmartPuck"}
+                  </h2>
+                  <p>
+                    {busy === "connect"
+                      ? `Locating and connecting to SmartPuck at ${deviceUrl}...`
+                      : "USB-C and smartpuck.local are checked automatically. You can also specify your device's Wi-Fi network address below."}
+                  </p>
+                  <div className="connect-panel">
+                    <input
+                      disabled={busy === "connect"}
+                      placeholder="http://smartpuck.local or IP address"
+                      value={deviceUrl}
+                      onChange={(e) => setDeviceUrl(e.target.value)}
+                    />
                     <button
+                      className="primary"
+                      disabled={busy === "connect"}
                       onClick={() =>
-                        void run("record", async () =>
+                        void run("connect", async () =>
                           setDevice(
-                            await window.smartpuck.device.setRecording(
-                              device.recording ? "stop" : "start",
-                            ),
+                            await window.smartpuck.device.connect(deviceUrl),
                           ),
                         )
                       }
                     >
-                      {device.recording ? "Stop" : "Start"}
-                    </button>
-                    <button
-                      disabled={!device.ip && device.transport !== "wifi"}
-                      onClick={liveListening ? stopLiveListening : startLiveListening}
-                    >
-                      {liveListening ? "Stop listening" : "Listen live"}
+                      {busy === "connect" ? "Connecting…" : "Connect"}
                     </button>
                   </div>
-                </section>
-                <section className="panel sessions">
-                  <div className="section-head">
-                    <h3>On device</h3>
-                    <div className="actions"><button
-                      disabled={busy === "sync-new" || !device.sessions.some((s) => !s.uploaded)}
-                      onClick={() => void run("sync-new", async () => {
-                        setLibrary(await window.smartpuck.device.importNew(workplaceId === "inbox" ? undefined : workplaceId));
-                        setDevice(await window.smartpuck.device.refresh());
-                      })}
-                    >{busy === "sync-new" ? "Syncing…" : "Sync new"}</button><button
-                      onClick={() =>
-                        void run("refresh", async () =>
-                          setDevice(await window.smartpuck.device.refresh()),
-                        )
-                      }
-                    >
-                      <RefreshCw />
-                    </button></div>
-                  </div>
-                  {device.sessions.map((s) => (
-                    <div className="session" key={s.path}>
-                      <div>
-                        <strong>{s.name}</strong>
-                        <small>
-                          {Math.round(s.durationSeconds / 60)} min ·{" "}
-                          {size(s.sizeBytes)}
-                        </small>
+                </div>
+              ) : (
+                <>
+                  <div className="device-header-card">
+                    <div className="device-header-info">
+                      <div className="device-badge-active">
+                        <Mic size={24} />
                       </div>
-                      <div className="actions"><button
-                        disabled={busy === `sync:${s.path}`}
+                      <div>
+                        <h2>SmartPuck Connected</h2>
+                        <div className="device-meta-badges">
+                          <span>{device.transport.toUpperCase()}</span>
+                          {(device.network || device.baseUrl) && (
+                            <span>{device.network || device.baseUrl}</span>
+                          )}
+                          {device.ip && <span>{device.ip}</span>}
+                          <span>Firmware {device.firmwareVersion}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="actions">
+                      <button
                         onClick={() =>
-                          void run(`sync:${s.path}`, async () => {
-                            setLibrary(
-                              await window.smartpuck.device.importSession(
-                                s.path,
-                                workplaceId === "inbox"
-                                  ? undefined
-                                  : workplaceId,
-                              ),
-                            );
-                            setDevice(await window.smartpuck.device.refresh());
-                          })
+                          void run("refresh", async () =>
+                            setDevice(await window.smartpuck.device.refresh())
+                          )
                         }
+                        title="Refresh status"
                       >
-                        {busy === `sync:${s.path}`
-                          ? "Syncing…"
-                          : s.uploaded
-                            ? "Sync again"
-                            : "Sync"}
-                      </button><button
-                        onClick={() => {
-                          const name = prompt("Recording name", s.name);
-                          if (name) void run(`rename-device:${s.path}`, async () => setDevice(await window.smartpuck.device.renameSession(s.path, name)));
-                        }}
-                      >Rename</button><button
-                        disabled={!s.uploaded}
-                        title={s.uploaded ? "Delete the device copy; the local meeting remains" : "Sync before deleting"}
-                        onClick={() => {
-                          if (confirm(`Delete “${s.name}” from the SmartPuck? The local meeting copy will remain.`)) {
-                            void run(`delete-device:${s.path}`, async () => setDevice(await window.smartpuck.device.deleteSession(s.path)));
-                          }
-                        }}
-                      >Delete</button></div>
+                        <RefreshCw size={14} /> Refresh
+                      </button>
                     </div>
-                  ))}
-                </section>
-                <section className="panel sessions">
-                  <div className="section-head"><div><h3>Connections</h3><small>Priority: USB-C → same-network Wi-Fi → SmartPuck fallback Wi-Fi</small></div></div>
-                  <div className="wifi-form">
-                    <input placeholder="Wi-Fi name" value={wifiSsid} onChange={(event) => setWifiSsid(event.target.value)} />
-                    <input placeholder="Password" type="password" value={wifiPassword} onChange={(event) => setWifiPassword(event.target.value)} />
-                    <button onClick={() => void run("save-wifi", async () => {
-                      await window.smartpuck.device.saveWifi(wifiSsid, wifiPassword);
-                      setWifiPassword("");
-                    })}>Save and reconnect</button>
                   </div>
-                  {wifiConfig?.networks.map((network) => (
-                    <div className="session" key={network.ssid}>
-                      <div><strong>{network.ssid}</strong><small>{network.active ? "Active" : "Saved"}</small></div>
-                      <button disabled={network.active} onClick={() => void run("remove-wifi", async () => {
-                        await window.smartpuck.device.removeWifi(network.ssid);
-                        setWifiConfig(await window.smartpuck.device.wifiConfig());
-                      })}>Forget</button>
-                    </div>
-                  ))}
-                  <small className="connection-note">Bluetooth provisioning is not enabled in firmware yet; Desktop does not pretend it is available. USB and Wi-Fi remain fully automatic.</small>
-                </section>
-              </div>
-            )}
+                  <div className="device-grid">
+                    <section className="panel stat-storage">
+                      <div className="panel-header-badge">
+                        <h3>Storage</h3>
+                        <HardDrive size={16} style={{ color: "var(--text-muted)" }} />
+                      </div>
+                      <strong className="storage-amount">{size(device.storageFreeBytes)} free</strong>
+                      <span className="storage-sub">of {size(device.storageTotalBytes)} total capacity</span>
+                      <div className="storage-progress-container" style={{ marginTop: "12px" }}>
+                        <div
+                          className="storage-progress-bar"
+                          style={{
+                            width: `${Math.max(
+                              0,
+                              Math.min(
+                                100,
+                                ((device.storageTotalBytes - device.storageFreeBytes) /
+                                  device.storageTotalBytes) *
+                                  100
+                              )
+                            )}%`
+                          }}
+                        />
+                      </div>
+                    </section>
+                    <section className="panel recorder-card">
+                      <div className="panel-header-badge">
+                        <h3>Recorder</h3>
+                        <div className={`recorder-status-indicator ${device.recording ? "recording" : ""}`}>
+                          <span></span>
+                          {device.recording ? "Recording" : "Ready"}
+                        </div>
+                      </div>
+                      <div className="recorder-status-row">
+                        <strong>{device.recording ? "Active Session" : "System Idle"}</strong>
+                        <div className={`equalizer-wave ${liveListening ? "active" : ""}`}>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                          <div className="bar"></div>
+                        </div>
+                      </div>
+                      <div className="actions" style={{ marginTop: "16px", gap: "10px" }}>
+                        <button
+                          className={device.recording ? "danger" : "primary"}
+                          onClick={() =>
+                            void run("record", async () =>
+                              setDevice(
+                                await window.smartpuck.device.setRecording(
+                                  device.recording ? "stop" : "start",
+                                ),
+                              ),
+                            )
+                          }
+                          style={{ flex: 1 }}
+                        >
+                          {device.recording ? <Square size={14} /> : <Play size={14} />}
+                          {device.recording ? "Stop" : "Start"}
+                        </button>
+                        <button
+                          disabled={!device.ip && device.transport !== "wifi"}
+                          onClick={liveListening ? stopLiveListening : startLiveListening}
+                          style={{ flex: 1 }}
+                        >
+                          <Activity size={14} />
+                          {liveListening ? "Stop Monitor" : "Listen Live"}
+                        </button>
+                      </div>
+                    </section>
+                    <section className="panel sessions sessions-list-panel">
+                      <div className="section-head">
+                        <h3>On Device Recordings</h3>
+                        <div className="actions">
+                          <button
+                            className="primary"
+                            disabled={busy === "sync-new" || !device.sessions.some((s) => !s.uploaded)}
+                            onClick={() =>
+                              void run("sync-new", async () => {
+                                setLibrary(
+                                  await window.smartpuck.device.importNew(
+                                    workplaceId === "inbox" ? undefined : workplaceId,
+                                  ),
+                                );
+                                setDevice(await window.smartpuck.device.refresh());
+                              })
+                            }
+                          >
+                            {busy === "sync-new" ? "Syncing…" : "Sync New"}
+                          </button>
+                          <button
+                            onClick={() =>
+                              void run("refresh", async () =>
+                                setDevice(await window.smartpuck.device.refresh()),
+                              )
+                            }
+                          >
+                            <RefreshCw size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      {device.sessions.length === 0 ? (
+                        <div className="empty" style={{ minHeight: "160px" }}>
+                          <FileAudio size={28} />
+                          <p>No recordings found on this SmartPuck device.</p>
+                        </div>
+                      ) : (
+                        device.sessions.map((s) => (
+                          <div className="session-row" key={s.path}>
+                            <div className="session-info">
+                              <div className="session-icon">
+                                <FileAudio size={18} />
+                              </div>
+                              <div className="session-meta">
+                                <strong>
+                                  {s.name}
+                                  <span className={`sync-badge ${s.uploaded ? "uploaded" : "pending"}`}>
+                                    {s.uploaded ? "Synced" : "Unsynced"}
+                                  </span>
+                                </strong>
+                                <small>
+                                  {Math.round(s.durationSeconds / 60)} min · {size(s.sizeBytes)}
+                                </small>
+                              </div>
+                            </div>
+                            <div className="actions">
+                              <button
+                                disabled={busy === `sync:${s.path}`}
+                                onClick={() =>
+                                  void run(`sync:${s.path}`, async () => {
+                                    setLibrary(
+                                      await window.smartpuck.device.importSession(
+                                        s.path,
+                                        workplaceId === "inbox"
+                                          ? undefined
+                                          : workplaceId,
+                                      ),
+                                    );
+                                    setDevice(await window.smartpuck.device.refresh());
+                                  })
+                                }
+                              >
+                                {busy === `sync:${s.path}`
+                                  ? "Syncing…"
+                                  : s.uploaded
+                                    ? "Sync Again"
+                                    : "Sync"}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const name = prompt("Recording name", s.name);
+                                  if (name)
+                                    void run(`rename-device:${s.path}`, async () =>
+                                      setDevice(await window.smartpuck.device.renameSession(s.path, name))
+                                    );
+                                }}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                className="danger"
+                                disabled={!s.uploaded}
+                                title={s.uploaded ? "Delete the device copy; the local meeting remains" : "Sync before deleting"}
+                                onClick={() => {
+                                  if (confirm(`Delete “${s.name}” from the SmartPuck? The local meeting copy will remain.`)) {
+                                    void run(`delete-device:${s.path}`, async () =>
+                                      setDevice(await window.smartpuck.device.deleteSession(s.path))
+                                    );
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </section>
+                    <section className="panel sessions wifi-section">
+                      <div className="section-head">
+                        <div>
+                          <h3>Wi-Fi Networks</h3>
+                          <small style={{ color: "var(--text-muted)", fontSize: "11px", display: "block", marginTop: "4px" }}>
+                            Priority: USB-C → same-network Wi-Fi → SmartPuck fallback Wi-Fi
+                          </small>
+                        </div>
+                      </div>
+                      <div className="wifi-form">
+                        <input
+                          placeholder="Wi-Fi SSID"
+                          value={wifiSsid}
+                          onChange={(event) => setWifiSsid(event.target.value)}
+                        />
+                        <input
+                          placeholder="Password"
+                          type="password"
+                          value={wifiPassword}
+                          onChange={(event) => setWifiPassword(event.target.value)}
+                        />
+                        <button
+                          className="primary"
+                          onClick={() =>
+                            void run("save-wifi", async () => {
+                              await window.smartpuck.device.saveWifi(wifiSsid, wifiPassword);
+                              setWifiPassword("");
+                            })
+                          }
+                        >
+                          Save
+                        </button>
+                      </div>
+                      {wifiConfig?.networks.map((network) => (
+                        <div className="session-row" key={network.ssid} style={{ padding: "10px 0" }}>
+                          <div className="session-info">
+                            <div className="session-meta">
+                              <strong>{network.ssid}</strong>
+                              <small>{network.active ? "Active Connection" : "Saved"}</small>
+                            </div>
+                          </div>
+                          <button
+                            disabled={network.active}
+                            onClick={() =>
+                              void run("remove-wifi", async () => {
+                                await window.smartpuck.device.removeWifi(network.ssid);
+                                setWifiConfig(await window.smartpuck.device.wifiConfig());
+                              })
+                            }
+                          >
+                            Forget
+                          </button>
+                        </div>
+                      ))}
+                      <small className="connection-note">
+                        Bluetooth provisioning is not enabled in firmware yet; Desktop does not pretend it is available. USB and Wi-Fi remain fully automatic.
+                      </small>
+                    </section>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
         {view === "settings" && (
@@ -829,49 +1054,51 @@ export default function App(): React.JSX.Element {
                 <h1>Settings</h1>
               </div>
             </header>
-            <section className="settings panel">
-              <h2>Meeting workspace</h2>
-              <p>
-                SmartPuck writes plain folders, Markdown transcripts, stable
-                metadata, and agent instructions. Open this folder directly in
-                Codex or Antigravity.
-              </p>
-              <code>{library.rootPath || "Loading…"}</code>
-              <div className="actions">
-                <button
-                  onClick={() => void window.smartpuck.library.openRoot()}
-                >
-                  <FolderOpen />
-                  Open folder
-                </button>
-                <button
-                  onClick={() =>
-                    void run("root", async () => {
-                      const next = await window.smartpuck.library.chooseRoot();
-                      if (next) setLibrary(next);
-                    })
-                  }
-                >
-                  Change location
-                </button>
-              </div>
-            </section>
-            <section className="settings panel">
-              <h2>Agent compatibility</h2>
-              <p>
-                The workspace generates AGENTS.md, CLAUDE.md, and the SmartPuck
-                meeting skill automatically. No API keys, model provider, or MCP
-                server is required.
-              </p>
-            </section>
-            <section className="settings panel">
-              <h2>Transcription runtime</h2>
-              <p>
-                V1 uses local Python and faster-whisper. Set{" "}
-                <code>SMARTPUCK_PYTHON</code> when Python is not available on
-                PATH.
-              </p>
-            </section>
+            <div className="settings-grid">
+              <section className="settings panel">
+                <h2>Meeting workspace</h2>
+                <p>
+                  SmartPuck writes plain folders, Markdown transcripts, stable
+                  metadata, and agent instructions. Open this folder directly in
+                  Codex or Antigravity.
+                </p>
+                <code>{library.rootPath || "Loading…"}</code>
+                <div className="actions">
+                  <button
+                    onClick={() => void window.smartpuck.library.openRoot()}
+                  >
+                    <FolderOpen />
+                    Open folder
+                  </button>
+                  <button
+                    onClick={() =>
+                      void run("root", async () => {
+                        const next = await window.smartpuck.library.chooseRoot();
+                        if (next) setLibrary(next);
+                      })
+                    }
+                  >
+                    Change location
+                  </button>
+                </div>
+              </section>
+              <section className="settings panel">
+                <h2>Agent compatibility</h2>
+                <p>
+                  The workspace generates AGENTS.md, CLAUDE.md, and the SmartPuck
+                  meeting skill automatically. No API keys, model provider, or MCP
+                  server is required.
+                </p>
+              </section>
+              <section className="settings panel">
+                <h2>Transcription runtime</h2>
+                <p>
+                  V1 uses local Python and faster-whisper. Set{" "}
+                  <code>SMARTPUCK_PYTHON</code> when Python is not available on
+                  PATH.
+                </p>
+              </section>
+            </div>
           </div>
         )}
       </main>
