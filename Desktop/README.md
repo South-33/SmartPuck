@@ -7,7 +7,7 @@ A small local-first desktop app for connecting a SmartPuck, importing recordings
 - Automatic USB-C or mDNS/Wi-Fi device discovery, recording controls, idempotent sync, and storage state
 - Live low-latency monitoring, device-session rename/delete, saved Wi-Fi management, and fallback-AP recovery
 - Workspace and meeting organization using plain directories, playlist-like links, search, playback, assignment, and editable transcripts
-- The proven SmartPuck bilingual pipeline: normalization, adaptive denoise, pause-aware English/Khmer routing, quality flags, and GPU fallback
+- The proven SmartPuck bilingual pipeline: normalization, optional/on-demand denoise, pause-aware English/Khmer routing, quality flags, and GPU fallback
 - Editable Markdown transcripts and preserved raw timestamp segments
 - Preserved original audio plus the pipeline-selected processed review waveform
 - Generated `AGENTS.md`, `CLAUDE.md`, and SmartPuck skills
