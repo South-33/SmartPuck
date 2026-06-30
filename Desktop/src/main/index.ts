@@ -15,9 +15,25 @@ import { connectDevice, deleteDeviceSession, getDeviceWifiConfig, importDeviceSe
 let mainWindow: BrowserWindow | null = null;
 let watcher: ReturnType<typeof chokidar.watch> | null = null;
 let automationTimer: NodeJS.Timeout | null = null;
+const pendingTimers = new Set<NodeJS.Timeout>();
 let automationRunning = false;
+let quitting = false;
 let transcriptionTail: Promise<unknown> = Promise.resolve();
 const transcriptionJobs = new Map<string, Promise<ReturnType<typeof snapshot>>>();
+
+function safeSend(channel: string, ...args: unknown[]): void {
+  if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send(channel, ...args);
+}
+
+function schedule(delayMs: number, task: () => void): void {
+  if (quitting) return;
+  const timer = setTimeout(() => {
+    pendingTimers.delete(timer);
+    if (!quitting) task();
+  }, delayMs);
+  pendingTimers.add(timer);
+}
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "smartpuck", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
@@ -65,8 +81,12 @@ function watchLibrary(): void {
   watcher = chokidar.watch(libraryRoot(), { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 50 } });
   let timer: NodeJS.Timeout | null = null;
   watcher.on("all", () => {
+    if (quitting) return;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => mainWindow?.webContents.send("library-changed"), 300);
+    timer = setTimeout(() => {
+      timer = null;
+      safeSend("library-changed");
+    }, 300);
   });
 }
 
@@ -77,6 +97,7 @@ function createWindow(): void {
     webPreferences: { preload: join(__dirname, "../preload/index.js"), sandbox: false, contextIsolation: true },
   });
   mainWindow.on("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("closed", () => { mainWindow = null; });
   if (process.env.ELECTRON_RENDERER_URL) void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 }
@@ -92,8 +113,8 @@ function enqueueTranscription(meetingId: string): Promise<ReturnType<typeof snap
   transcriptionJobs.set(meetingId, job);
   transcriptionTail = job.catch(() => undefined);
   void job.then(
-    () => { transcriptionJobs.delete(meetingId); mainWindow?.webContents.send("library-changed"); },
-    () => { transcriptionJobs.delete(meetingId); mainWindow?.webContents.send("library-changed"); },
+    () => { transcriptionJobs.delete(meetingId); safeSend("library-changed"); },
+    () => { transcriptionJobs.delete(meetingId); safeSend("library-changed"); },
   );
   return job;
 }
@@ -147,11 +168,11 @@ async function runDeviceAutomation(): Promise<void> {
         if (!device.connected) device = await connectDevice("http://192.168.4.1");
       }
     }
-    mainWindow?.webContents.send("device-changed", device);
+    safeSend("device-changed", device);
     if (device.connected && !device.recording && device.sessions.some((session) => !session.uploaded)) {
       await syncNewDeviceSessions();
       device = await refreshDevice();
-      mainWindow?.webContents.send("device-changed", device);
+      safeSend("device-changed", device);
     }
   } catch {
     // Discovery is best-effort. The manual connection UI remains available.
@@ -162,7 +183,7 @@ async function runDeviceAutomation(): Promise<void> {
 
 function startDeviceAutomation(): void {
   if (process.env.SMARTPUCK_DISABLE_AUTO_SYNC === "1") return;
-  setTimeout(() => void runDeviceAutomation(), 1_000);
+  schedule(1_000, () => void runDeviceAutomation());
   automationTimer = setInterval(() => void runDeviceAutomation(), 30_000);
 }
 
@@ -200,19 +221,19 @@ function registerIpc(): void {
   });
   ipcMain.handle("device:connect", async (_e, url: string) => {
     const device = await connectDevice(url);
-    mainWindow?.webContents.send("device-changed", device);
-    if (device.connected) setTimeout(() => void runDeviceAutomation(), 0);
+    safeSend("device-changed", device);
+    if (device.connected) schedule(0, () => void runDeviceAutomation());
     return device;
   });
   ipcMain.handle("device:refresh", async () => {
     const device = await refreshDevice();
-    mainWindow?.webContents.send("device-changed", device);
+    safeSend("device-changed", device);
     return device;
   });
   ipcMain.handle("device:record", async (_e, action: "start" | "stop") => {
     const device = await setDeviceRecording(action);
-    mainWindow?.webContents.send("device-changed", device);
-    if (action === "stop") setTimeout(() => void runDeviceAutomation(), 0);
+    safeSend("device-changed", device);
+    if (action === "stop") schedule(0, () => void runDeviceAutomation());
     return device;
   });
   ipcMain.handle("device:import", async (_e, path: string, workplaceId?: string) => {
@@ -225,18 +246,18 @@ function registerIpc(): void {
   ipcMain.handle("device:import-new", (_e, workplaceId?: string) => syncNewDeviceSessions(workplaceId));
   ipcMain.handle("device:rename-session", async (_e, path: string, name: string) => {
     const device = await renameDeviceSession(path, name);
-    mainWindow?.webContents.send("device-changed", device);
+    safeSend("device-changed", device);
     return device;
   });
   ipcMain.handle("device:delete-session", async (_e, path: string) => {
     const device = await deleteDeviceSession(path);
-    mainWindow?.webContents.send("device-changed", device);
+    safeSend("device-changed", device);
     return device;
   });
   ipcMain.handle("device:wifi-config", () => getDeviceWifiConfig());
   ipcMain.handle("device:save-wifi", async (_e, ssid: string, password: string) => {
     await saveDeviceWifi(ssid, password);
-    setTimeout(() => void runDeviceAutomation(), 2_000);
+    schedule(2_000, () => void runDeviceAutomation());
   });
   ipcMain.handle("device:remove-wifi", (_e, ssid: string) => removeDeviceWifi(ssid));
 }
@@ -247,4 +268,11 @@ app.whenReady().then(() => {
   ensureLibrary(); registerMediaProtocol(); registerIpc(); watchLibrary(); createWindow(); resumePendingTranscriptions(); startDeviceAutomation();
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { if (automationTimer) clearInterval(automationTimer); stopTranscriptionWorker(); void watcher?.close(); });
+app.on("before-quit", () => {
+  quitting = true;
+  if (automationTimer) clearInterval(automationTimer);
+  for (const timer of pendingTimers) clearTimeout(timer);
+  pendingTimers.clear();
+  stopTranscriptionWorker();
+  void watcher?.close();
+});

@@ -28,6 +28,10 @@ type ContextMenuState =
   | { type: "workplace"; workplace: Workplace; x: number; y: number }
   | { type: "meeting"; meeting: Meeting; x: number; y: number }
   | null;
+type WorkspaceDialogState =
+  | { type: "create"; name: string }
+  | { type: "rename"; workplace: Workplace; name: string }
+  | null;
 
 function size(value: number): string {
   if (!value) return "—";
@@ -58,6 +62,7 @@ export default function App(): React.JSX.Element {
   const [wifiPassword, setWifiPassword] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [draggingWorkplaceId, setDraggingWorkplaceId] = useState("");
+  const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogState>(null);
   const streamAbort = useRef<AbortController | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const monitorGain = useRef<GainNode | null>(null);
@@ -217,18 +222,30 @@ export default function App(): React.JSX.Element {
         );
     });
   };
-  const createWorkplace = (): void => {
-    const name = prompt("Workspace name");
-    if (name)
-      void run("workplace", async () => {
+  const openCreateWorkspace = (): void => setWorkspaceDialog({ type: "create", name: "" });
+  const submitWorkspaceDialog = (): void => {
+    if (!workspaceDialog) return;
+    const name = workspaceDialog.name.trim();
+    if (!name) return;
+    if (workspaceDialog.type === "create") {
+      void run("workspace", async () => {
         const next = await window.smartpuck.library.createWorkplace(name);
         setLibrary(next);
-        const created = next.workplaces.find((workplace) => workplace.metadata.name === name.trim());
+        const created = next.workplaces.find((workspace) => workspace.metadata.name === name);
         if (created) {
           setWorkplaceId(created.metadata.id);
           setSelectedId("");
         }
+        setWorkspaceDialog(null);
       });
+    } else {
+      void run("rename-workspace", async () => {
+        const next = await window.smartpuck.library.renameWorkplace(workspaceDialog.workplace.metadata.id, name);
+        setLibrary(next);
+        setWorkplaceId(workspaceDialog.workplace.metadata.id);
+        setWorkspaceDialog(null);
+      });
+    }
   };
   const rename = (meeting: Meeting): void => {
     const title = prompt("Meeting title", meeting.metadata.title);
@@ -243,16 +260,10 @@ export default function App(): React.JSX.Element {
       );
   };
   const renameWorkplace = (workplace: Workplace): void => {
-    const name = prompt("Workspace name", workplace.metadata.name);
-    if (!name) return;
-    void run("rename-workplace", async () => {
-      const next = await window.smartpuck.library.renameWorkplace(workplace.metadata.id, name);
-      setLibrary(next);
-      setWorkplaceId(workplace.metadata.id);
-    });
+    setWorkspaceDialog({ type: "rename", workplace, name: workplace.metadata.name });
   };
   const deleteWorkplace = (workplace: Workplace): void => {
-    if (!confirm(`Delete workspace "${workplace.metadata.name}"? Meetings will move back to Inbox; audio and transcripts stay safe.`)) return;
+    if (!confirm(`Delete workspace "${workplace.metadata.name}"? Meetings will become unassigned; audio and transcripts stay safe.`)) return;
     void run("delete-workplace", async () => {
       setLibrary(await window.smartpuck.library.deleteWorkplace(workplace.metadata.id));
       setWorkplaceId("inbox");
@@ -331,6 +342,36 @@ export default function App(): React.JSX.Element {
       </aside>
       <main>
         {error && <div className="error">{error}</div>}
+        {workspaceDialog && (
+          <div className="modal-backdrop" onClick={() => setWorkspaceDialog(null)}>
+            <form
+              className="modal"
+              onClick={(event) => event.stopPropagation()}
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitWorkspaceDialog();
+              }}
+            >
+              <h2>{workspaceDialog.type === "create" ? "New workspace" : "Rename workspace"}</h2>
+              <p>
+                Workspaces are playlist-like folders. Meetings stay in one canonical place and can belong to many workspaces.
+              </p>
+              <input
+                autoFocus
+                aria-label="Workspace name"
+                placeholder="Workspace name"
+                value={workspaceDialog.name}
+                onChange={(event) => setWorkspaceDialog({ ...workspaceDialog, name: event.target.value })}
+              />
+              <div className="actions">
+                <button type="button" onClick={() => setWorkspaceDialog(null)}>Cancel</button>
+                <button className="primary" type="submit" disabled={!workspaceDialog.name.trim() || busy === "workspace" || busy === "rename-workspace"}>
+                  {workspaceDialog.type === "create" ? "Create workspace" : "Save name"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
         {contextMenu && (
           <div
             className="context-menu"
@@ -353,6 +394,11 @@ export default function App(): React.JSX.Element {
                 </button>
                 <div className="menu-section">
                   <span>Add to workspace</span>
+                  {library.workplaces.length === 0 && (
+                    <button disabled>
+                      <Plus /> Create a workspace first
+                    </button>
+                  )}
                   {library.workplaces.map((workplace) => {
                     const linked = meetingWorkspaceIds(contextMenu.meeting).has(workplace.metadata.id);
                     return (
@@ -397,7 +443,7 @@ export default function App(): React.JSX.Element {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <button onClick={createWorkplace}>
+                <button onClick={openCreateWorkspace}>
                   <Plus />
                   Workspace
                 </button>
@@ -417,12 +463,20 @@ export default function App(): React.JSX.Element {
                     setSelectedId("");
                   }}
                 >
-                  <span>Inbox</span>
+                  <span>Unassigned</span>
                   <b>
                     {library.inbox.length}
                     {inboxPending > 0 ? ` · ${inboxPending} to curate` : ""}
                   </b>
                 </button>
+                {library.workplaces.length === 0 && (
+                  <div className="workspace-hint">
+                    <p>No workspaces yet.</p>
+                    <button onClick={openCreateWorkspace}>
+                      <Plus /> Create one
+                    </button>
+                  </div>
+                )}
                 {library.workplaces.map((w) => (
                   <button
                     key={w.metadata.id}
