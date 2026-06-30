@@ -266,7 +266,7 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
         )
         clustering_config = sherpa_onnx.FastClusteringConfig(
             num_clusters=-1,  # Auto clustering
-            threshold=0.5
+            threshold=0.70
         )
         
         config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
