@@ -19,7 +19,7 @@ This is the project's AGENTS.md
 - When untagged meetings share a clear theme, suggest creating a new workspace (by creating a folder in `Workspaces/` with a `.smartpuck-workspace.json` manifest) and ask the user for confirmation.
 - Python `subprocess.run` calls for verbose tools like `ffmpeg` must use `stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL` instead of `PIPE` to prevent OS buffer deadlocks on long files.
 - Electron transcription request uses native `http.request` with `socket.setTimeout(0)` to disable default Undici/fetch 5-minute body timeouts during compute-heavy CPU diarization.
-- SmartPuck data library is at `C:\Users\Venom\Documents\SmartPuck`. Go directly to this folder; never list or crawl the parent `C:\Users\Venom\Documents` directory (which is out of scope and slow).
+- The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 - Always keep canonical meeting folders under `Meetings/`. To link a meeting to a workspace, only append the workspace ID to `meeting.json.workspaceIds`. Never physically move folders from `Meetings/` to `Workspaces/` (which is a legacy layout).
 - Follow a strict curation order: read `NEW.md` first to locate inbox/pending meetings, update `meeting.json` metadata under `Meetings/<id>/`, and let the app auto-generate workspace index files.
 
