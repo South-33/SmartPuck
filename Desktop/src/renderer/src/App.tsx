@@ -1765,7 +1765,7 @@ export default function App(): React.JSX.Element {
                           setModelDropdownOpen(false);
                         }}
                       >
-                        <span>{langVal === "bilingual" ? "Bilingual (EN + KM)" : "English Only"}</span>
+                        <span>{langVal === "bilingual" ? "Bilingual (EN + KH)" : "English Only"}</span>
                         <span className="arrow">▾</span>
                       </div>
                       {langDropdownOpen && (
@@ -1777,7 +1777,7 @@ export default function App(): React.JSX.Element {
                               setLangDropdownOpen(false);
                             }}
                           >
-                            Bilingual (EN + KM)
+                            Bilingual (EN + KH)
                           </div>
                           <div 
                             className={`custom-select-option ${langVal === "english" ? "selected" : ""}`}
