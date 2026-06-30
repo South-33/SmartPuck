@@ -969,7 +969,10 @@ export default function App(): React.JSX.Element {
                             const val = smoothProgressMap[m.metadata.id] !== undefined
                               ? Math.round(smoothProgressMap[m.metadata.id])
                               : (m.metadata.progressPercent || 5);
-                            return val < 15 ? "Loading Model" : `Transcribing ${val}%`;
+                            if (val < 15) return "Loading Models…";
+                            if (val < 40) return "Analyzing Audio…";
+                            if (val >= 95) return "Diarizing Speakers…";
+                            return `Transcribing ${val}%`;
                           })() : m.metadata.status}
                         </span>
                         <span className="meeting-card-duration">
