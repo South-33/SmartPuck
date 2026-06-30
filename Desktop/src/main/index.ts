@@ -9,7 +9,7 @@ import {
   moveMeeting, meetingById, removeMeetingFromWorkplace, renameMeeting, renameWorkplace, reorderWorkplaces, saveTranscript,
   setLibraryRoot, snapshot,
 } from "./library";
-import { transcribeMeeting, stopTranscriptionWorker } from "./transcription";
+import { transcribeMeeting, stopTranscriptionWorker, prestartTranscriptionWorker } from "./transcription";
 import { connectDevice, deleteDeviceSession, getDeviceWifiConfig, importDeviceSession, refreshDevice, removeDeviceWifi, renameDeviceSession, saveDeviceWifi, setDeviceRecording } from "./device";
 
 let mainWindow: BrowserWindow | null = null;
@@ -265,7 +265,7 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId("com.smartpuck.desktop");
   app.on("browser-window-created", (_, window) => optimizer.watchWindowShortcuts(window));
-  ensureLibrary(); registerMediaProtocol(); registerIpc(); watchLibrary(); createWindow(); resumePendingTranscriptions(); startDeviceAutomation();
+  ensureLibrary(); prestartTranscriptionWorker(); registerMediaProtocol(); registerIpc(); watchLibrary(); createWindow(); resumePendingTranscriptions(); startDeviceAutomation();
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("before-quit", () => {

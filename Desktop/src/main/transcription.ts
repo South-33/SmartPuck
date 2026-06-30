@@ -85,7 +85,7 @@ async function ensureWorker(): Promise<void> {
         const match = /^\[SmartPuck STT\] Progress:\s*(\d+)%\s+for\s+(.+)$/.exec(line.trim());
         if (!match) continue;
         const meetingId = activeAudioJobs.get(match[2].trim());
-        if (meetingId) updateMeetingMetadata(meetingId, { progressPercent: Math.min(95, Math.max(15, Number(match[1]))) });
+        if (meetingId) updateMeetingMetadata(meetingId, { progressPercent: Math.min(95, Number(match[1])) });
       }
     });
     worker.stderr?.on("data", (chunk: Buffer) => console.warn("[SmartPuck STT]", chunk.toString("utf8").trimEnd()));
@@ -106,7 +106,6 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
   updateMeetingMetadata(meetingId, { status: "transcribing", progressPercent: 5, error: undefined });
   try {
     await ensureWorker();
-    updateMeetingMetadata(meetingId, { progressPercent: 15 });
     activeAudioJobs.set(audioPath, meetingId);
     const response = await fetch(`${BASE_URL}/transcribe-local`, {
       method: "POST",
@@ -157,4 +156,10 @@ export function stopTranscriptionWorker(): void {
   worker?.kill();
   worker = null;
   workerStartup = null;
+}
+
+export function prestartTranscriptionWorker(): void {
+  void ensureWorker().catch((err) => {
+    console.warn("[SmartPuck STT] Failed to prestart worker on launch:", err.message);
+  });
 }

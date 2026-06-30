@@ -7,21 +7,20 @@ import {
   ChevronRight,
   CircleDot,
   Code,
-  Filter,
   Folder,
   FolderOpen,
   HelpCircle,
+  Import,
+  List,
   Mic,
   Pencil,
   Play,
   Plus,
   RefreshCw,
-  Save,
   Search,
   Settings,
   Sparkles,
   Square,
-  Tags,
   Trash,
   Trash2,
   Volume1,
@@ -82,8 +81,7 @@ export default function App(): React.JSX.Element {
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
   const [railWidth, setRailWidth] = useState(240);
   const [workspacesWidth, setWorkspacesWidth] = useState(220);
-  const [meetingsWidth, setMeetingsWidth] = useState(320);
-  const [curationFilter, setCurationFilter] = useState<'all' | 'curated' | 'pending'>('all');
+  const [meetingsWidth, setMeetingsWidth] = useState(380);
 
   // Custom Audio Player States
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -92,6 +90,26 @@ export default function App(): React.JSX.Element {
   const [playSpeed, setPlaySpeed] = useState("1x");
   const [progressPercent, setProgressPercent] = useState(0);
   const [volume, setVolume] = useState(1.0);
+
+  // Device Audio Player States
+  const [activeDeviceSession, setActiveDeviceSession] = useState<any | null>(null);
+  const [isDeviceAudioPlaying, setIsDeviceAudioPlaying] = useState(false);
+  const [deviceAudioTimeStr, setDeviceAudioTimeStr] = useState("00:00");
+  const [deviceAudioDurationStr, setDeviceAudioDurationStr] = useState("00:00");
+  const [deviceAudioProgress, setDeviceAudioProgress] = useState(0);
+  const [deviceAudioSrc, setDeviceAudioSrc] = useState("");
+  const deviceAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Settings Dropdown States
+  const [deviceVal, setDeviceVal] = useState("auto");
+  const [modelVal, setModelVal] = useState("medium");
+  const [langVal, setLangVal] = useState("bilingual");
+  const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+
+  // Smooth Progress State
+  const [smoothProgressMap, setSmoothProgressMap] = useState<Record<string, number>>({});
 
   const streamAbort = useRef<AbortController | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
@@ -120,6 +138,7 @@ export default function App(): React.JSX.Element {
       window.removeEventListener("blur", close);
     };
   }, []);
+
 
   const stopLiveListening = useCallback((): void => {
     streamAbort.current?.abort();
@@ -203,11 +222,49 @@ export default function App(): React.JSX.Element {
     [library],
   );
 
+  useEffect(() => {
+    const transcribing = allMeetings.filter((m) => m.metadata.status === "transcribing");
+    if (transcribing.length === 0) {
+      if (Object.keys(smoothProgressMap).length > 0) setSmoothProgressMap({});
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setSmoothProgressMap((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const m of transcribing) {
+          const id = m.metadata.id;
+          const target = m.metadata.progressPercent || 5;
+          const current = prev[id] !== undefined ? prev[id] : 5;
+          
+          if (current < target) {
+            const diff = target - current;
+            const step = Math.max(0.1, diff * 0.05);
+            next[id] = Math.min(target, current + step);
+            changed = true;
+          } else if (current > target) {
+            next[id] = target;
+            changed = true;
+          } else if (current < 95) {
+            next[id] = Math.min(95, current + 0.02);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [allMeetings]);
+
   const meetings = useMemo(() => {
-    const scoped = workplaceId === "inbox"
-        ? library.inbox
-        : library.workplaces.find((w) => w.metadata.id === workplaceId)
-            ?.meetings || [];
+    const scoped = workplaceId === "all"
+        ? allMeetings
+        : workplaceId === "inbox"
+            ? library.inbox
+            : library.workplaces.find((w) => w.metadata.id === workplaceId)
+                ?.meetings || [];
             
     let filtered = scoped;
     
@@ -219,15 +276,8 @@ export default function App(): React.JSX.Element {
       );
     }
     
-    // Filter by curation status if selected
-    if (curationFilter === "pending") {
-      filtered = filtered.filter(m => m.metadata.curationStatus === "pending");
-    } else if (curationFilter === "curated") {
-      filtered = filtered.filter(m => m.metadata.curationStatus === "curated");
-    }
-    
     return filtered;
-  }, [allMeetings, library, workplaceId, query, curationFilter]);
+  }, [allMeetings, library, workplaceId, query]);
 
   const selected = useMemo(
     () =>
@@ -243,6 +293,21 @@ export default function App(): React.JSX.Element {
     setCurrentTimeStr("00:00");
     setProgressPercent(0);
   }, [selected?.metadata.id, selected?.transcript]);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (draft === selected.transcript) return;
+    const timer = setTimeout(() => {
+      void window.smartpuck.library.saveTranscript(selected.metadata.id, draft)
+        .then((next) => {
+          setLibrary(next);
+        })
+        .catch((err) => {
+          setError(err.message);
+        });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [draft, selected?.metadata.id]);
 
   const run = async (
     label: string,
@@ -262,13 +327,10 @@ export default function App(): React.JSX.Element {
   const importFiles = (): void => {
     void run("import", async () => {
       const paths = await window.smartpuck.dialogs.chooseAudio();
-      if (paths.length)
-        setLibrary(
-          await window.smartpuck.library.importAudio(
-            paths,
-            workplaceId === "inbox" ? undefined : workplaceId,
-          ),
-        );
+      if (paths.length) {
+        const targetId = workplaceId === "inbox" || workplaceId === "all" ? undefined : workplaceId;
+        setLibrary(await window.smartpuck.library.importAudio(paths, targetId));
+      }
     });
   };
 
@@ -470,17 +532,126 @@ export default function App(): React.JSX.Element {
     document.addEventListener("mouseup", handleMouseUp);
   };
 
+  const meetingWorkspaces = (meeting: Meeting): string[] => {
+    const ids = new Set(meeting.metadata.workspaceIds || []);
+    return library.workplaces
+      .filter((w) => ids.has(w.metadata.id))
+      .map((w) => w.metadata.name);
+  };
+
+  const parseDeviceDate = (dateStr?: string): string => {
+    if (!dateStr) return "Unknown Date";
+    const match = dateStr.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+    if (match) {
+      const [_, y, m, d, hh, mm, ss] = match;
+      const date = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+      return date.toLocaleString();
+    }
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? dateStr : parsed.toLocaleString();
+  };
+
+  const toggleDeviceAudio = (session: any) => {
+    if (activeDeviceSession?.path === session.path) {
+      if (isDeviceAudioPlaying) {
+        deviceAudioRef.current?.pause();
+      } else {
+        deviceAudioRef.current?.play().catch(() => {});
+      }
+    } else {
+      if (deviceAudioRef.current) {
+        deviceAudioRef.current.pause();
+      }
+      const match = allMeetings.find((m) =>
+        m.metadata.title.includes(session.name) ||
+        m.metadata.id.includes(session.name) ||
+        session.name.includes(m.metadata.id)
+      );
+      const src = match 
+        ? `smartpuck://audio/${encodeURIComponent(match.metadata.id)}` 
+        : `${device?.baseUrl || ""}${session.audioPath}`;
+      setActiveDeviceSession(session);
+      setDeviceAudioSrc(src);
+      setDeviceAudioProgress(0);
+      setDeviceAudioTimeStr("00:00");
+      setTimeout(() => {
+        deviceAudioRef.current?.play().catch(() => {});
+      }, 50);
+    }
+  };
+
+  const handleDeviceAudioTimeUpdate = () => {
+    const el = deviceAudioRef.current;
+    if (!el) return;
+    const cur = el.currentTime || 0;
+    const dur = el.duration || 0;
+    
+    const curMin = Math.floor(cur / 60);
+    const curSec = Math.floor(cur % 60);
+    setDeviceAudioTimeStr(`${curMin}:${String(curSec).padStart(2, "0")}`);
+    
+    if (dur) {
+      const durMin = Math.floor(dur / 60);
+      const durSec = Math.floor(dur % 60);
+      setDeviceAudioDurationStr(`${durMin}:${String(durSec).padStart(2, "0")}`);
+      setDeviceAudioProgress((cur / dur) * 100);
+    } else {
+      setDeviceAudioDurationStr("00:00");
+      setDeviceAudioProgress(0);
+    }
+  };
+
+  const handleDeviceAudioSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = deviceAudioRef.current;
+    if (!el || !el.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    el.currentTime = percent * el.duration;
+  };
+
+  const handleDeleteDeviceSession = (session: any) => {
+    if (confirm(`Are you sure you want to delete "${session.name}" from the device?`)) {
+      void run("delete-device-session", async () => {
+        setDevice(await window.smartpuck.device.deleteSession(session.path));
+        if (activeDeviceSession?.path === session.path) {
+          if (deviceAudioRef.current) deviceAudioRef.current.pause();
+          setActiveDeviceSession(null);
+        }
+      });
+    }
+  };
+
+  const handleRenameDeviceSession = (session: any) => {
+    const newName = prompt("Enter new name for device recording:", session.name);
+    if (newName !== null) {
+      const clean = newName.trim();
+      if (clean && clean !== session.name) {
+        void run("rename-device-session", async () => {
+          setDevice(await window.smartpuck.device.renameSession(session.path, clean));
+          if (activeDeviceSession?.path === session.path) {
+            setActiveDeviceSession({ ...activeDeviceSession, name: clean });
+          }
+        });
+      }
+    }
+  };
+
   const wordCount = draft ? draft.trim().split(/\s+/).filter(Boolean).length : 0;
   const charCount = draft ? draft.length : 0;
 
   return (
     <div className="app" style={{ gridTemplateColumns: isRailCollapsed ? "68px 4px 1fr" : `${railWidth}px 4px 1fr` }}>
       <aside className={`rail ${isRailCollapsed ? "collapsed" : ""}`} style={{ width: isRailCollapsed ? 68 : railWidth }}>
-        <div className="brand">
+        <div
+          className="brand"
+          onClick={() => setIsRailCollapsed(!isRailCollapsed)}
+          style={{ cursor: "pointer" }}
+          title={isRailCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
           <span>
-            <CircleDot size={18} />
+            {isRailCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </span>
-          <strong>SmartPuck</strong>
+          {!isRailCollapsed && <strong>SmartPuck</strong>}
         </div>
         <nav>
           <button
@@ -496,14 +667,24 @@ export default function App(): React.JSX.Element {
           >
             <Mic />
             {!isRailCollapsed && <span>Device</span>}
-            {device?.connected && (
+            {device?.connected ? (
               <span style={{
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
-                background: "var(--accent-green)",
+                background: device.recording ? "var(--accent-red)" : "var(--accent-lime)",
                 marginLeft: isRailCollapsed ? "0" : "auto",
-                boxShadow: "0 0 8px var(--accent-green)"
+                boxShadow: device.recording ? "0 0 10px var(--accent-red)" : "0 0 8px var(--accent-lime)",
+                animation: device.recording ? "status-pulse 1.5s infinite" : "none"
+              }} />
+            ) : (
+              <span style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "var(--text-muted)",
+                marginLeft: isRailCollapsed ? "0" : "auto",
+                opacity: 0.4
               }} />
             )}
           </button>
@@ -515,14 +696,10 @@ export default function App(): React.JSX.Element {
             {!isRailCollapsed && <span>Settings</span>}
           </button>
         </nav>
-        
-        <button className="rail-collapse-toggle" onClick={() => setIsRailCollapsed(!isRailCollapsed)}>
-          {isRailCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
       </aside>
       <div className="resize-handle" onMouseDown={handleRailResize} />
       <main>
-        {error && <div className="error"><AlertCircle size={16} />{error}</div>}
+        {error && <div className="global-error-toast"><AlertCircle size={16} />{error}</div>}
         {workspaceDialog && (
           <div className="modal-backdrop" onClick={() => setWorkspaceDialog(null)}>
             <form
@@ -575,35 +752,71 @@ export default function App(): React.JSX.Element {
                 <button onClick={() => { rename(contextMenu.meeting); setContextMenu(null); }}>
                   <Pencil /> Rename meeting
                 </button>
+                <button
+                  disabled={busy === "transcribe" || contextMenu.meeting.metadata.status === "transcribing"}
+                  onClick={() => {
+                    void run("transcribe", async () =>
+                      setLibrary(await window.smartpuck.library.transcribe(contextMenu.meeting.metadata.id))
+                    );
+                    setContextMenu(null);
+                  }}
+                >
+                  <Sparkles /> Re-transcribe
+                </button>
                 <div className="menu-section">
-                  <span>Add to workspace</span>
+                  <span>Workspaces</span>
                   {library.workplaces.length === 0 && (
-                    <button disabled>
-                      <Plus /> Create a workspace first
-                    </button>
+                    <button disabled style={{ opacity: 0.5 }}>No workspaces created</button>
                   )}
                   {library.workplaces.map((workplace) => {
-                    const linked = meetingWorkspaceIds(contextMenu.meeting).has(workplace.metadata.id);
+                    const activeMeeting = allMeetings.find((m) => m.metadata.id === contextMenu.meeting.metadata.id) || contextMenu.meeting;
+                    const linked = meetingWorkspaceIds(activeMeeting).has(workplace.metadata.id);
                     return (
                       <button
                         key={workplace.metadata.id}
-                        disabled={linked}
                         onClick={() => {
-                          addToWorkplace(contextMenu.meeting, workplace.metadata.id);
-                          setContextMenu(null);
+                          if (linked) {
+                            removeFromWorkplace(activeMeeting, workplace.metadata.id);
+                          } else {
+                            addToWorkplace(activeMeeting, workplace.metadata.id);
+                          }
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "8px 12px",
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          boxShadow: "none",
+                          cursor: "pointer"
                         }}
                       >
-                        {linked ? <Check /> : <Plus />}
-                        {workplace.metadata.name}
+                        <div style={{
+                          width: "14px",
+                          height: "14px",
+                          borderRadius: "50%",
+                          border: linked ? "1.5px solid var(--accent-lime)" : "1.5px solid rgba(255, 255, 255, 0.3)",
+                          background: linked ? "var(--accent-lime)" : "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0
+                        }}>
+                          {linked && (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: "8px", height: "8px" }}>
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                        <span style={{ fontSize: "13.5px", fontWeight: "600", color: "rgba(255, 255, 255, 0.9)" }}>{workplace.metadata.name}</span>
                       </button>
                     );
                   })}
                 </div>
-                {workplaceId !== "inbox" && meetingWorkspaceIds(contextMenu.meeting).has(workplaceId) && (
-                  <button onClick={() => { removeFromWorkplace(contextMenu.meeting, workplaceId); setContextMenu(null); }}>
-                    <Tags /> Remove from this workspace
-                  </button>
-                )}
                 <button className="danger" onClick={() => { deleteMeeting(contextMenu.meeting); setContextMenu(null); }}>
                   <Trash2 /> Move meeting to Trash
                 </button>
@@ -624,10 +837,21 @@ export default function App(): React.JSX.Element {
               <div className="col-content">
                 <div className="workspace-tree">
                   <div
+                    className={`workspace-item ${workplaceId === "all" ? "selected" : ""}`}
+                    onClick={() => {
+                      setWorkplaceId("all");
+                    }}
+                  >
+                    <div className="workspace-item-label">
+                      <List size={16} />
+                      <span>All Recordings</span>
+                    </div>
+                    <span className="count">{allMeetings.length}</span>
+                  </div>
+                  <div
                     className={`workspace-item ${workplaceId === "inbox" ? "selected" : ""}`}
                     onClick={() => {
                       setWorkplaceId("inbox");
-                      setSelectedId("");
                     }}
                   >
                     <div className="workspace-item-label">
@@ -652,7 +876,6 @@ export default function App(): React.JSX.Element {
                       onDragEnd={() => setDraggingWorkplaceId("")}
                       onClick={() => {
                         setWorkplaceId(w.metadata.id);
-                        setSelectedId("");
                       }}
                     >
                       <div className="workspace-item-label">
@@ -673,6 +896,9 @@ export default function App(): React.JSX.Element {
             <section className="lib-col-meetings">
               <div className="col-header">
                 <h3>Meetings ({meetings.length})</h3>
+                <button onClick={importFiles} style={{ padding: "4px 8px", fontSize: "11px" }}>
+                  <Import size={12} /> Import
+                </button>
               </div>
               <div className="col-content">
                 <div className="meetings-search-row">
@@ -686,26 +912,11 @@ export default function App(): React.JSX.Element {
                       onChange={(event) => setQuery(event.target.value)}
                     />
                   </div>
-                  <button
-                    className={curationFilter !== "all" ? "active" : ""}
-                    onClick={() => {
-                      setCurationFilter(current => {
-                        if (current === "all") return "pending";
-                        if (current === "pending") return "curated";
-                        return "all";
-                      });
-                    }}
-                    title={`Filter: ${curationFilter === "all" ? "All" : curationFilter === "pending" ? "Pending Curation" : "Curated"}`}
-                    style={{ padding: "10px", color: curationFilter !== "all" ? "var(--accent-lime)" : "inherit" }}
-                  >
-                    <Filter size={15} />
-                  </button>
                 </div>
                 {meetings.length === 0 ? (
                   <div className="empty">
                     <Mic />
-                    <p>No meetings here yet.</p>
-                    <button onClick={importFiles}>Import audio</button>
+                    <p>No recordings found.</p>
                   </div>
                 ) : (
                   meetings.map((m) => (
@@ -721,18 +932,65 @@ export default function App(): React.JSX.Element {
                     >
                       <div className="meeting-card-info">
                         <strong>{m.metadata.title}</strong>
-                        <span>{new Date(m.metadata.capturedAt).toLocaleDateString()} • {new Date(m.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", fontSize: "12.5px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                          <span>{new Date(m.metadata.capturedAt).toLocaleDateString()}</span>
+                          <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-muted)", opacity: 0.6, flexShrink: 0 }} />
+                          <span>{new Date(m.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {workplaceId === "all" && meetingWorkspaces(m).map((name) => (
+                            <span key={name} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-muted)", opacity: 0.6, flexShrink: 0 }} />
+                              <span style={{
+                                fontSize: "10px",
+                                background: "var(--bg-panel)",
+                                color: "var(--text-secondary)",
+                                padding: "1px 5px",
+                                borderRadius: "3px",
+                                border: "1px solid var(--border-color)",
+                                lineHeight: 1
+                              }}>
+                                {name}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
                       </div>
                       <div className="meeting-card-meta">
+                        <span className={`status-badge ${m.metadata.status}`}>
+                          {m.metadata.status === "transcribing" ? (() => {
+                            const val = smoothProgressMap[m.metadata.id] !== undefined
+                              ? Math.round(smoothProgressMap[m.metadata.id])
+                              : (m.metadata.progressPercent || 5);
+                            return val < 15 ? "Loading Model" : `Transcribing ${val}%`;
+                          })() : m.metadata.status}
+                        </span>
                         <span className="meeting-card-duration">
                           {m.metadata.durationSeconds
                             ? `${Math.floor(m.metadata.durationSeconds / 60)}:${String(Math.floor(m.metadata.durationSeconds % 60)).padStart(2, "0")}`
                             : "0:00"}
                         </span>
-                        <span className={`status-badge ${m.metadata.status}`}>
-                          {m.metadata.status}
-                        </span>
                       </div>
+                      {m.metadata.status === "transcribing" && (() => {
+                        const val = smoothProgressMap[m.metadata.id] !== undefined
+                          ? Math.round(smoothProgressMap[m.metadata.id])
+                          : (m.metadata.progressPercent || 5);
+                        return (
+                          <div style={{
+                            position: "absolute",
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: "3px",
+                            background: "rgba(255,255,255,0.05)"
+                          }}>
+                            <div style={{
+                              height: "100%",
+                              width: `${val}%`,
+                              background: "var(--accent-blue)",
+                              transition: "width 0.1s linear"
+                            }} />
+                          </div>
+                        );
+                      })()}
                     </button>
                   ))
                 )}
@@ -755,15 +1013,16 @@ export default function App(): React.JSX.Element {
                 <>
                   <div className="detail-header-wrapper">
                     <div className="detail-header-info">
-                      <h2>{selected.metadata.title}</h2>
+                      <h2
+                        onDoubleClick={() => rename(selected)}
+                        title="Double-click to rename"
+                        style={{ cursor: "pointer" }}
+                      >
+                        {selected.metadata.title}
+                      </h2>
                       <p>
                         {new Date(selected.metadata.capturedAt).toLocaleDateString()} • {new Date(selected.metadata.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {selected.metadata.durationSeconds ? `${Math.floor(selected.metadata.durationSeconds / 60)}:${String(Math.floor(selected.metadata.durationSeconds % 60)).padStart(2, "0")}` : "0:00"} • {selected.metadata.sourceDevice?.sessionName || "SmartPuck-2F3A"}
                       </p>
-                    </div>
-                    <div className="detail-actions-top">
-                      <button onClick={() => rename(selected)}>
-                        Rename
-                      </button>
                     </div>
                   </div>
                   <div className="detail-scroller">
@@ -810,6 +1069,67 @@ export default function App(): React.JSX.Element {
                       />
                     </div>
 
+                    {selected.metadata.status === "error" && (
+                      <div className="transcription-error-card" style={{
+                        background: "rgba(255, 77, 77, 0.04)",
+                        border: "1px solid rgba(255, 77, 77, 0.15)",
+                        borderRadius: "var(--radius-lg)",
+                        padding: "20px 24px",
+                        marginBottom: "20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px"
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "var(--accent-red)" }}>
+                          <AlertCircle size={20} />
+                          <strong style={{ fontSize: "14.5px" }}>Transcription Failed</strong>
+                        </div>
+                        <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: "1.5", margin: 0 }}>
+                          SmartPuck encountered an error while attempting to transcribe this audio recording. The transcription engine reported:
+                        </p>
+                        <div style={{
+                          background: "rgba(0,0,0,0.15)",
+                          border: "1px solid rgba(255,255,255,0.04)",
+                          borderRadius: "var(--radius-md)",
+                          padding: "12px 16px",
+                          fontFamily: "var(--font-mono, monospace)",
+                          fontSize: "12px",
+                          color: "#FFC0C0",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all"
+                        }}>
+                          {selected.metadata.error || "Unknown transcription error. Please verify your Python environment and GPU configuration."}
+                        </div>
+                        <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+                          <button
+                            className="primary danger"
+                            onClick={() =>
+                              void run("transcribe", async () =>
+                                setLibrary(
+                                  await window.smartpuck.library.transcribe(
+                                    selected.metadata.id,
+                                  ),
+                                ),
+                              )
+                            }
+                            disabled={busy === "transcribe"}
+                            style={{
+                              padding: "8px 16px",
+                              fontSize: "12.5px",
+                              fontWeight: "600",
+                              background: "var(--accent-red-bg)",
+                              color: "#FFC0C0",
+                              border: "1px solid var(--accent-red-border)",
+                              borderRadius: "var(--radius-md)",
+                              cursor: "pointer"
+                            }}
+                          >
+                            {busy === "transcribe" ? "Retrying…" : "Retry Transcription"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Summary Section */}
                     {selected.metadata.summary && (
                       <div className="detail-summary-wrapper">
@@ -854,27 +1174,9 @@ export default function App(): React.JSX.Element {
                       <Sparkles />
                       {selected.metadata.status === "error"
                         ? "Retry transcription"
-                        : selected.metadata.status === "ready"
-                          ? "Transcribe again"
-                          : selected.metadata.status === "transcribing"
-                            ? "Transcribing…"
-                            : "Transcribe now"}
-                    </button>
-                    <button
-                      className="primary"
-                      onClick={() =>
-                        void run("save", async () =>
-                          setLibrary(
-                            await window.smartpuck.library.saveTranscript(
-                              selected.metadata.id,
-                              draft,
-                            ),
-                          ),
-                        )
-                      }
-                    >
-                      <Save />
-                      Save changes
+                        : selected.metadata.status === "transcribing"
+                          ? "Transcribing…"
+                          : "Re-transcribe"}
                     </button>
                   </div>
                 </>
@@ -888,7 +1190,7 @@ export default function App(): React.JSX.Element {
           </div>
         )}
         {view === "device" && (
-          <div className="page" style={{ padding: "24px 32px" }}>
+          <div className="page" style={{ padding: "24px 32px", paddingBottom: activeDeviceSession ? "100px" : "24px" }}>
             <header style={{ marginBottom: "20px" }}>
               <div>
                 <p className="eyebrow">Hardware</p>
@@ -898,7 +1200,7 @@ export default function App(): React.JSX.Element {
             
             <div className="device-dashboard">
               {!device?.connected ? (
-                <div className={`device-offline-card ${busy === "connect" ? "connecting" : "disconnected"}`} style={{ height: "400px" }}>
+                <div className={`device-offline-card ${busy === "connect" ? "connecting" : "disconnected"}`}>
                   <div className="puck-icon-orb">
                     {busy === "connect" ? <RefreshCw size={36} /> : <Mic size={36} />}
                   </div>
@@ -962,9 +1264,6 @@ export default function App(): React.JSX.Element {
                         <span className="label">Firmware</span>
                         <span className="val">{device.firmwareVersion}</span>
                       </div>
-                      <button onClick={() => alert("Checking for updates...")} style={{ padding: "8px 12px", fontSize: "12px", marginLeft: "8px" }}>
-                        Check for Update
-                      </button>
                     </div>
                   </div>
 
@@ -1004,38 +1303,12 @@ export default function App(): React.JSX.Element {
                           <span className="val">{size(device.storageTotalBytes - device.storageFreeBytes) || "132 GB"}</span>
                         </div>
                       </div>
-                      <button style={{ marginTop: "16px", fontSize: "12px" }} onClick={() => alert(`Storage Details:\nFree space: ${size(device.storageFreeBytes)}`)}>
-                        View Details
-                      </button>
                     </section>
 
                     {/* Recorder Controls */}
-                    <section className="panel device-card">
+                    <section className="panel device-card" style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: "12px", padding: "24px" }}>
                       <h3>Recorder Controls</h3>
-                      <div className="recorder-monitoring-row">
-                        <label>Live Monitoring</label>
-                        <span className="switch-toggle">
-                          <input
-                            type="checkbox"
-                            checked={liveListening}
-                            onChange={liveListening ? stopLiveListening : startLiveListening}
-                          />
-                          <span className="switch-slider" />
-                        </span>
-                      </div>
-                      <div className="recorder-wave-box">
-                        <div className={`equalizer-wave ${liveListening ? "active" : ""}`}>
-                          <div className="bar" />
-                          <div className="bar" />
-                          <div className="bar" />
-                          <div className="bar" />
-                          <div className="bar" />
-                          <div className="bar" />
-                          <div className="bar" />
-                          <div className="bar" />
-                        </div>
-                      </div>
-                      <div className="recorder-actions-row">
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, justifyContent: "center" }}>
                         <button
                           className={device.recording ? "danger" : "primary"}
                           onClick={() =>
@@ -1047,44 +1320,49 @@ export default function App(): React.JSX.Element {
                               ),
                             )
                           }
-                          style={{ flex: 1 }}
+                          style={{ padding: "12px", fontSize: "13px", fontWeight: "600", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
                         >
-                          {device.recording ? <Square size={14} /> : <Play size={14} />}
+                          {device.recording ? <Square size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
                           {device.recording ? "Stop Recording" : "Start Recording"}
                         </button>
                         <button
-                          className="icon-btn"
-                          disabled={!device.ip && device.transport !== "wifi"}
                           onClick={liveListening ? stopLiveListening : startLiveListening}
-                          title="Listen Live"
+                          style={{
+                            padding: "12px",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            background: liveListening ? "var(--accent-lime)" : "rgba(255,255,255,0.05)",
+                            color: liveListening ? "#000" : "var(--text-primary)",
+                            border: "none",
+                            borderRadius: "var(--radius-md)"
+                          }}
                         >
-                          <Activity size={14} />
+                          <Activity size={16} />
+                          {liveListening ? "Stop Live Listen" : "Live Listen"}
                         </button>
-                        <button className="icon-btn" title="Settings" onClick={() => alert("Recorder Settings Mode")}>
-                          <Settings size={14} />
-                        </button>
-                      </div>
-                      <div className="recorder-timer">
-                        {device.recording ? "00:12:48" : "00:00:00"}
                       </div>
                     </section>
 
                     {/* Wi-Fi Provisioning */}
                     <section className="panel device-card">
-                      <h3>Wi-Fi Provisioning</h3>
+                      <h3>Wi-Fi</h3>
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <input
                           placeholder="SSID"
                           value={wifiSsid}
                           onChange={(event) => setWifiSsid(event.target.value)}
-                          style={{ padding: "8px 10px", fontSize: "12.5px" }}
+                          style={{ padding: "8px 10px", fontSize: "12.5px", pointerEvents: "auto", position: "relative", zIndex: 10 }}
                         />
                         <input
                           placeholder="Password"
                           type="password"
                           value={wifiPassword}
                           onChange={(event) => setWifiPassword(event.target.value)}
-                          style={{ padding: "8px 10px", fontSize: "12.5px" }}
+                          style={{ padding: "8px 10px", fontSize: "12.5px", pointerEvents: "auto", position: "relative", zIndex: 10 }}
                         />
                         <button
                           className="primary"
@@ -1112,7 +1390,6 @@ export default function App(): React.JSX.Element {
                               {network.active && <span className="conn-status">Connected</span>}
                               <button
                                 className="forget-btn"
-                                disabled={network.active}
                                 onClick={() =>
                                   void run("remove-wifi", async () => {
                                     await window.smartpuck.device.removeWifi(network.ssid);
@@ -1131,9 +1408,9 @@ export default function App(): React.JSX.Element {
 
                   {/* On-Device recordings table */}
                   <section className="panel recordings-table-card">
-                    <div className="section-head" style={{ marginBottom: "12px" }}>
+                    <div className="section-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                       <h3>On-Device Recordings</h3>
-                      <div className="actions">
+                      <div className="actions" style={{ display: "flex", gap: "8px" }}>
                         <button
                           className="primary"
                           disabled={busy === "sync-new" || !device.sessions.some((s) => !s.uploaded)}
@@ -1157,9 +1434,9 @@ export default function App(): React.JSX.Element {
                               setDevice(await window.smartpuck.device.refresh())
                             )
                           }
-                          style={{ padding: "8px" }}
+                          style={{ fontSize: "12px", padding: "8px 12px" }}
                         >
-                          <RefreshCw size={14} />
+                          Refresh List
                         </button>
                       </div>
                     </div>
@@ -1167,32 +1444,77 @@ export default function App(): React.JSX.Element {
                       <table className="recordings-table">
                         <thead>
                           <tr>
+                            <th style={{ width: "40px" }} />
                             <th>Filename</th>
                             <th>Duration</th>
                             <th>Size</th>
-                            <th>Status</th>
                             <th>Modified</th>
+                            <th style={{ width: "40px" }} />
                           </tr>
                         </thead>
                         <tbody>
                           {device.sessions.length === 0 ? (
                             <tr>
-                              <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "24px" }}>
+                              <td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "24px" }}>
                                 No recording files found on device.
                               </td>
                             </tr>
                           ) : (
                             device.sessions.map((s) => (
                               <tr key={s.path}>
-                                <td>{s.name}</td>
-                                <td>{Math.round(s.durationSeconds / 60)}:00</td>
-                                <td>{size(s.sizeBytes)}</td>
                                 <td>
-                                  <span className={`table-status-tag ${s.uploaded ? "synced" : "pending"}`}>
-                                    {s.uploaded ? "Synced" : "Pending"}
-                                  </span>
+                                  <button
+                                    onClick={() => toggleDeviceAudio(s)}
+                                    style={{
+                                      padding: "6px",
+                                      borderRadius: "50%",
+                                      background: activeDeviceSession?.path === s.path && isDeviceAudioPlaying ? "var(--accent-lime-muted)" : "transparent",
+                                      border: "none",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      color: activeDeviceSession?.path === s.path && isDeviceAudioPlaying ? "var(--accent-lime)" : "var(--text-secondary)",
+                                      cursor: "pointer",
+                                      transition: "all 0.15s ease"
+                                    }}
+                                    title="Listen to recording"
+                                  >
+                                    {activeDeviceSession?.path === s.path && isDeviceAudioPlaying ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                                  </button>
                                 </td>
-                                <td>{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "May 26, 2025"}</td>
+                                <td
+                                  onDoubleClick={() => handleRenameDeviceSession(s)}
+                                  title="Double-click to rename"
+                                  style={{ fontWeight: "500", color: "var(--text-primary)", cursor: "pointer" }}
+                                >
+                                  {s.name}
+                                </td>
+                                <td>
+                                  {s.durationSeconds
+                                    ? `${Math.floor(s.durationSeconds / 60)}:${String(Math.floor(s.durationSeconds % 60)).padStart(2, "0")}`
+                                    : "0:00"}
+                                </td>
+                                <td>{size(s.sizeBytes)}</td>
+                                <td>{parseDeviceDate(s.createdAt)}</td>
+                                <td>
+                                  <button
+                                    className="forget-btn"
+                                    onClick={() => handleDeleteDeviceSession(s)}
+                                    style={{
+                                      padding: "6px",
+                                      background: "transparent",
+                                      border: "none",
+                                      color: "var(--text-muted)",
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center"
+                                    }}
+                                    title="Delete from device"
+                                  >
+                                    <Trash size={12} />
+                                  </button>
+                                </td>
                               </tr>
                             ))
                           )}
@@ -1207,6 +1529,73 @@ export default function App(): React.JSX.Element {
                       <span>Last synced: 2 minutes ago</span>
                     </div>
                   </section>
+
+                  {activeDeviceSession && (
+                    <div className="device-mini-player" style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "16px",
+                      background: "var(--bg-panel-header)",
+                      padding: "16px 20px",
+                      borderRadius: "var(--radius-lg)",
+                      marginTop: "16px",
+                      border: "1px solid var(--border-color)"
+                    }}>
+                      <button
+                        onClick={() => {
+                          if (isDeviceAudioPlaying) {
+                            deviceAudioRef.current?.pause();
+                          } else {
+                            deviceAudioRef.current?.play().catch(() => {});
+                          }
+                        }}
+                        style={{
+                          padding: "8px",
+                          borderRadius: "50%",
+                          background: "var(--accent-lime)",
+                          color: "#000",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
+                        }}
+                      >
+                        {isDeviceAudioPlaying ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                      </button>
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <strong style={{ fontSize: "13px", color: "var(--text-primary)" }}>{activeDeviceSession.name}</strong>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "var(--font-mono, monospace)" }}>{deviceAudioTimeStr}</span>
+                          <div
+                            onClick={handleDeviceAudioSeek}
+                            style={{ flex: 1, height: "4px", background: "rgba(255,255,255,0.1)", borderRadius: "2px", cursor: "pointer", position: "relative" }}
+                          >
+                            <div style={{ width: `${deviceAudioProgress}%`, height: "100%", background: "var(--accent-lime)", borderRadius: "2px" }} />
+                          </div>
+                          <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "var(--font-mono, monospace)" }}>{deviceAudioDurationStr}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (deviceAudioRef.current) deviceAudioRef.current.pause();
+                          setActiveDeviceSession(null);
+                        }}
+                        style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "14px" }}
+                      >
+                        ✕
+                      </button>
+                      <audio
+                        ref={deviceAudioRef}
+                        onPlay={() => setIsDeviceAudioPlaying(true)}
+                        onPause={() => setIsDeviceAudioPlaying(false)}
+                        onTimeUpdate={handleDeviceAudioTimeUpdate}
+                        onEnded={() => setIsDeviceAudioPlaying(false)}
+                        src={deviceAudioSrc}
+                        style={{ display: "none" }}
+                      />
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1216,7 +1605,7 @@ export default function App(): React.JSX.Element {
           <div className="page" style={{ padding: "24px 32px" }}>
             <header style={{ marginBottom: "20px" }}>
               <div>
-                <p className="eyebrow">Preferences</p>
+                <p className="eyebrow">System</p>
                 <h1>Preferences</h1>
               </div>
             </header>
@@ -1257,32 +1646,6 @@ export default function App(): React.JSX.Element {
                 </div>
               </div>
 
-              {/* Agent Compatibility */}
-              <div className="settings-card">
-                <div className="settings-card-icon">
-                  <Sparkles size={20} />
-                </div>
-                <div className="settings-card-body">
-                  <h3>Agent Compatibility</h3>
-                  <p>
-                    Automatically generate instruction files to help AI agents understand your transcripts and context.
-                  </p>
-                  <div className="settings-status-badge">
-                    <span className="dot" />
-                    <span>Status: Enabled</span>
-                  </div>
-                  <p style={{ fontSize: "11.5px", color: "var(--text-muted)", marginTop: "4px" }}>
-                    Generates AGENTS.md files for each meeting folder.
-                  </p>
-                  <div className="settings-card-actions">
-                    <button onClick={() => alert("Agent options configured.")}>
-                      <Settings size={13} />
-                      Configure
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               {/* Transcription Runtime */}
               <div className="settings-card">
                 <div className="settings-card-icon">
@@ -1303,27 +1666,109 @@ export default function App(): React.JSX.Element {
                   </div>
                   
                   <div className="settings-form-grid">
-                    <div className="settings-dropdown-wrapper">
+                    <div className="custom-select-container">
                       <label>Device</label>
-                      <select className="settings-select" defaultValue="auto">
-                        <option value="auto">Auto (GPU if available)</option>
-                        <option value="cpu">CPU Only</option>
-                      </select>
+                      <div 
+                        className={`custom-select-trigger ${deviceDropdownOpen ? "open" : ""}`}
+                        onClick={() => {
+                          setDeviceDropdownOpen(!deviceDropdownOpen);
+                          setModelDropdownOpen(false);
+                          setLangDropdownOpen(false);
+                        }}
+                      >
+                        <span>{deviceVal === "auto" ? "Auto (GPU if available)" : "CPU Only"}</span>
+                        <span className="arrow">▾</span>
+                      </div>
+                      {deviceDropdownOpen && (
+                        <div className="custom-select-dropdown">
+                          <div 
+                            className={`custom-select-option ${deviceVal === "auto" ? "selected" : ""}`}
+                            onClick={() => {
+                              setDeviceVal("auto");
+                              setDeviceDropdownOpen(false);
+                            }}
+                          >
+                            Auto (GPU if available)
+                          </div>
+                          <div 
+                            className={`custom-select-option ${deviceVal === "cpu" ? "selected" : ""}`}
+                            onClick={() => {
+                              setDeviceVal("cpu");
+                              setDeviceDropdownOpen(false);
+                            }}
+                          >
+                            CPU Only
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="settings-dropdown-wrapper">
+
+                    <div className="custom-select-container">
                       <label>Whisper Model</label>
-                      <select className="settings-select" defaultValue="medium">
-                        <option value="medium">medium</option>
-                        <option value="small.en">small.en</option>
-                        <option value="base">base</option>
-                      </select>
+                      <div 
+                        className={`custom-select-trigger ${modelDropdownOpen ? "open" : ""}`}
+                        onClick={() => {
+                          setModelDropdownOpen(!modelDropdownOpen);
+                          setDeviceDropdownOpen(false);
+                          setLangDropdownOpen(false);
+                        }}
+                      >
+                        <span>{modelVal}</span>
+                        <span className="arrow">▾</span>
+                      </div>
+                      {modelDropdownOpen && (
+                        <div className="custom-select-dropdown">
+                          {["medium", "small.en", "base"].map((m) => (
+                            <div 
+                              key={m}
+                              className={`custom-select-option ${modelVal === m ? "selected" : ""}`}
+                              onClick={() => {
+                                setModelVal(m);
+                                setModelDropdownOpen(false);
+                              }}
+                            >
+                              {m}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="settings-dropdown-wrapper">
+
+                    <div className="custom-select-container">
                       <label>Language Mode</label>
-                      <select className="settings-select" defaultValue="bilingual">
-                        <option value="bilingual">Bilingual (EN + KM)</option>
-                        <option value="english">English Only</option>
-                      </select>
+                      <div 
+                        className={`custom-select-trigger ${langDropdownOpen ? "open" : ""}`}
+                        onClick={() => {
+                          setLangDropdownOpen(!langDropdownOpen);
+                          setDeviceDropdownOpen(false);
+                          setModelDropdownOpen(false);
+                        }}
+                      >
+                        <span>{langVal === "bilingual" ? "Bilingual (EN + KM)" : "English Only"}</span>
+                        <span className="arrow">▾</span>
+                      </div>
+                      {langDropdownOpen && (
+                        <div className="custom-select-dropdown">
+                          <div 
+                            className={`custom-select-option ${langVal === "bilingual" ? "selected" : ""}`}
+                            onClick={() => {
+                              setLangVal("bilingual");
+                              setLangDropdownOpen(false);
+                            }}
+                          >
+                            Bilingual (EN + KM)
+                          </div>
+                          <div 
+                            className={`custom-select-option ${langVal === "english" ? "selected" : ""}`}
+                            onClick={() => {
+                              setLangVal("english");
+                              setLangDropdownOpen(false);
+                            }}
+                          >
+                            English Only
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -349,7 +349,7 @@ export function createWorkplace(name: string): LibrarySnapshot {
   if (!clean) throw new Error("Workspace name is required.");
   const now = new Date().toISOString();
   const path = join(workspacesPath(), slug(clean));
-  if (existsSync(path)) throw new Error("A workspace with that name already exists.");
+  if (existsSync(path) && existsSync(join(path, ".smartpuck-workspace.json"))) throw new Error("A workspace with that name already exists.");
   mkdirSync(path, { recursive: true });
   const nextSortOrder = readPhysicalWorkplaces()
     .reduce((max, workplace) => Math.max(max, workplace.metadata.sortOrder ?? -1), -1) + 1;
