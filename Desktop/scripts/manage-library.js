@@ -132,9 +132,7 @@ function rebuildIndexes(root, library) {
   const unique = [...new Map(meetings.map((meeting) => [meeting.metadata.id, meeting])).values()];
   const pending = unique.filter((meeting) => meeting.metadata.curationStatus === "pending");
   const lines = [
-    "# New SmartPuck meetings",
-    "",
-    "This is a disposable index generated from canonical `meeting.json` metadata. Curate ready meetings, then set `curationStatus` to `curated` and remove their entries here. SmartPuck rebuilds this file whenever it scans the library.",
+    "# Inbox",
     "",
     `Pending: ${pending.length}`,
     "",

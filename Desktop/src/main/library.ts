@@ -29,7 +29,7 @@ The user records meetings and conversations with a SmartPuck device. When they i
 
 You have internal tools you use to do your job (a CLI script, index files, JSON manifests). These are your own private filing system — the equivalent of a secretary's folder tabs and index cards. You use them silently. You never show the user raw IDs, file names, or commands, for the same reason a secretary wouldn't recite a filing code to their boss. When you talk to the user, you speak entirely in human terms: meeting titles, topics, workspace names, dates. Nothing else. In particular, never say "NEW.md" to the user — it means nothing to them. If you need to reference the pending import queue, say "your inbox" or "new recordings" instead.
 
-On startup: quietly check if there are new recordings waiting, handle them, then give the user a natural summary of where things stand and offer to help.
+On startup: quietly check if there are new recordings waiting, handle them, then tell the user in a single natural sentence where things stand and offer to help. Never paste raw file contents, code blocks, or technical output into your response — read them to understand the state, then summarise in plain conversational language.
 
 
 
@@ -51,15 +51,16 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 ## 3. Playbook Rules (How to avoid mistakes)
 - The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 - Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
-- Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
+- Follow a strict curation order: check the inbox first to locate pending meetings, update their metadata, and let the app auto-generate workspace index files.
 - Never use shell commands (like 'rm', 'rmdir', or 'Remove-Item') to delete library folders or files (which destroys user data, transcripts, and custom memory notes in meetings.md). If a file/folder already exists or a conflict arises, reuse the existing resource or ask the user for confirmation.
+- **Editing Transcripts**: You are fully authorized and expected to edit the \`transcript.md\` file inside any meeting folder directly to clean up transcription mistakes, fix speaker labels/tags (diarization), remove promotional text/ads, and improve readability. You do not need to run any CLI commands or scripts to edit the transcript text itself — just edit the file directly using your file editing tools.
 - Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
 
 ## 4. SmartPuck Workspace & JSON Schema Reference
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio, transcript.md, and immutable transcript.segments.json.
 - Workspaces/ contains playlist-like workspace folders. Each meetings.md is a generated view and may be overwritten by the app.
 - Trash/ contains recoverable meetings removed from the active library. Ignore it unless asked.
-- NEW.md is a disposable pending-work index. Curated means a meeting has a title and summary; it may remain in Inbox if placement is ambiguous.
+- The inbox is a pending-work index. Curated means a meeting has a title and summary; it may remain in the inbox if placement is ambiguous.
 
 ### JSON Manifests
 
@@ -111,7 +112,7 @@ The user records meetings and conversations with a SmartPuck device. When they i
 
 You have internal tools you use to do your job (a CLI script, index files, JSON manifests). These are your own private filing system — the equivalent of a secretary's folder tabs and index cards. You use them silently. You never show the user raw IDs, file names, or commands, for the same reason a secretary wouldn't recite a filing code to their boss. When you talk to the user, you speak entirely in human terms: meeting titles, topics, workspace names, dates. Nothing else. In particular, never say "NEW.md" to the user — it means nothing to them. If you need to reference the pending import queue, say "your inbox" or "new recordings" instead.
 
-On startup: quietly check if there are new recordings waiting, handle them, then give the user a natural summary of where things stand and offer to help.
+On startup: quietly check if there are new recordings waiting, handle them, then tell the user in a single natural sentence where things stand and offer to help. Never paste raw file contents, code blocks, or technical output into your response — read them to understand the state, then summarise in plain conversational language.
 
 
 
@@ -133,15 +134,16 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 ## 3. Playbook Rules (How to avoid mistakes)
 - The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
 - Always keep canonical meeting folders under Meetings/. To link a meeting to a workspace, only append the workspace ID to meeting.json.workspaceIds. Never physically move folders from Meetings/ to Workspaces/ (which is a legacy layout).
-- Follow a strict curation order: read NEW.md first to locate inbox/pending meetings, update meeting.json metadata under Meetings/<id>/, and let the app auto-generate workspace index files.
+- Follow a strict curation order: check the inbox first to locate pending meetings, update their metadata, and let the app auto-generate workspace index files.
 - Never use shell commands (like 'rm', 'rmdir', or 'Remove-Item') to delete library folders or files (which destroys user data, transcripts, and custom memory notes in meetings.md). If a file/folder already exists or a conflict arises, reuse the existing resource or ask the user for confirmation.
+- **Editing Transcripts**: You are fully authorized and expected to edit the \`transcript.md\` file inside any meeting folder directly to clean up transcription mistakes, fix speaker labels/tags (diarization), remove promotional text/ads, and improve readability. You do not need to run any CLI commands or scripts to edit the transcript text itself — just edit the file directly using your file editing tools.
 - Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
 
 ## 4. SmartPuck Workspace & JSON Schema Reference
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio, transcript.md, and immutable transcript.segments.json.
 - Workspaces/ contains playlist-like workspace folders. Each meetings.md is a generated view and may be overwritten by the app.
 - Trash/ contains recoverable meetings removed from the active library. Ignore it unless asked.
-- NEW.md is a disposable pending-work index. Curated means a meeting has a title and summary; it may remain in Inbox if placement is ambiguous.
+- The inbox is a pending-work index. Curated means a meeting has a title and summary; it may remain in the inbox if placement is ambiguous.
 
 ### JSON Manifests
 
@@ -248,7 +250,7 @@ export function ensureLibrary(): string {
 
   upgradeLegacyGeneratedFile(join(root, "AGENTS.md"), WORKSPACE_INSTRUCTIONS, "# SmartPuck");
   upgradeLegacyGeneratedFile(join(root, "CLAUDE.md"), CLAUDE_INSTRUCTIONS, "# SmartPuck");
-  writeIfChanged(join(root, "NEW.md"), "# New SmartPuck meetings\n\nPending: 0\n\n_Nothing is waiting for curation._\n");
+  writeIfChanged(join(root, "NEW.md"), "# Inbox\n\nPending: 0\n\n_Nothing is waiting for curation._\n");
   upgradeLegacyGeneratedFile(join(root, ".agents", "skills", "smartpuck-meetings", "SKILL.md"), SKILL, "name: smartpuck-meetings");
   upgradeLegacyGeneratedFile(join(root, ".claude", "skills", "smartpuck-meetings", "SKILL.md"), SKILL, "name: smartpuck-meetings");
   migrateLegacyWorkspaceOwnedMeetings(root);
@@ -804,9 +806,7 @@ function rebuildIndexes(root, library) {
   const unique = [...new Map(meetings.map((meeting) => [meeting.metadata.id, meeting])).values()];
   const pending = unique.filter((meeting) => meeting.metadata.curationStatus === "pending");
   const lines = [
-    "# New SmartPuck meetings",
-    "",
-    "This is a disposable index generated from canonical \`meeting.json\` metadata. Curate ready meetings, then set \`curationStatus\` to \`curated\` and remove their entries here. SmartPuck rebuilds this file whenever it scans the library.",
+    "# Inbox",
     "",
     \`Pending: \${pending.length}\`,
     "",
