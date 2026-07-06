@@ -74,13 +74,13 @@ MODEL_PROFILES = {
         "note": "Pause-aware bilingual routing to English and Khmer specialists.",
     },
     "english-fast": {
-        "model": "small.en",
+        "model": "small",
         "label": "English fast",
         "language": "en",
         "note": "Small English-only model for cheap laptop defaults.",
     },
     "english": {
-        "model": "small.en",
+        "model": "small",
         "label": "English fast",
         "language": "en",
         "note": "Alias for english-fast.",
@@ -777,8 +777,8 @@ def run_bilingual_transcription(
             }
 
         guide = get_model(MODEL_PROFILES["auto"]["model"], force_cpu=force_cpu)
-        english = get_model(MODEL_PROFILES["english-fast"]["model"], force_cpu=force_cpu)
-        khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
+        english = None
+        khmer = None
 
         classified_chunks = []
         route_counts = {"en": 0, "km": 0, "ambiguous": 0}
@@ -839,6 +839,7 @@ def run_bilingual_transcription(
         if ENABLE_PURE_ENGLISH_EARLY_EXIT and ((en_ratio >= 0.85 and ambiguous_ratio <= 0.10) or english_dominant_longform):
             # Pure English continuous run
             print("[SmartPuck STT] Audio classified as pure English. Running continuous English model without VAD...", flush=True)
+            english = get_model(MODEL_PROFILES["english-fast"]["model"], force_cpu=force_cpu)
             segments_iter, info = english.transcribe(
                 processed_path,
                 language="en",
@@ -889,6 +890,7 @@ def run_bilingual_transcription(
         if km_ratio >= 0.85 and ambiguous_ratio <= 0.10:
             # Pure Khmer chunk-by-chunk run for completeness
             print("[SmartPuck STT] Audio classified as pure Khmer. Running chunk-by-chunk Khmer specialist...", flush=True)
+            khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
             from faster_whisper import BatchedInferencePipeline
             pipeline = BatchedInferencePipeline(model=khmer)
             segments_iter, _ = pipeline.transcribe(
@@ -960,6 +962,11 @@ def run_bilingual_transcription(
                 current_group = [chunk]
         if current_group:
             groups.append(current_group)
+
+        if english is None:
+            english = get_model(MODEL_PROFILES["english-fast"]["model"], force_cpu=force_cpu)
+        if khmer is None:
+            khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
 
         output_segments = []
         completed_groups = 0
