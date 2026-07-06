@@ -139,8 +139,8 @@ volatile uint8_t audioLevel = 0;
 String currentSessionDir = "";
 String currentWavPath = "";
 bool storageAvailable = false;
-uint64_t cachedTotalBytes = 0;
-uint64_t cachedFreeBytes = 0;
+uint32_t cachedTotalKb = 0;
+uint32_t cachedFreeKb = 0;
 String lastRecordingError = "";
 
 // PSRAM Fallback State
@@ -707,10 +707,10 @@ void stopRecording() {
   if (!isRecording) return;
 
   isRecording = false;
-  updateCachedStorageStats();
   delay(50); // Give the audio task a small moment to exit its file write block
 
   if (usePsramFallback) {
+    updateCachedStorageStats();
     Serial.print("Stopped recording to PSRAM. Total size: ");
     Serial.print(audioSize);
     Serial.println(" bytes.");
@@ -728,6 +728,7 @@ void stopRecording() {
     }
     xSemaphoreGive(fileMutex);
   }
+  updateCachedStorageStats();
 }
 
 // ============================================================================
@@ -1131,33 +1132,47 @@ bool removeSessionRecursive(String sessionPath) {
 
 void updateCachedStorageStats() {
   if (!storageAvailable || usePsramFallback) {
-    cachedTotalBytes = 0;
-    cachedFreeBytes = 0;
+    cachedTotalKb = 0;
+    cachedFreeKb = 0;
     return;
   }
-  cachedTotalBytes = SD_DEVICE.totalBytes();
+  
+  bool hasLock = false;
+  if (fileMutex != NULL) {
+    hasLock = (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1000)) == pdTRUE);
+    if (!hasLock) return; // Keep old stats if storage is busy
+  }
+  
+  uint64_t total = SD_DEVICE.totalBytes();
   uint64_t used = SD_DEVICE.usedBytes();
-  if (cachedTotalBytes > used) {
-    cachedFreeBytes = cachedTotalBytes - used;
+  
+  if (fileMutex != NULL && hasLock) {
+    xSemaphoreGive(fileMutex);
+  }
+  
+  cachedTotalKb = (uint32_t)(total / 1024ULL);
+  if (total > used) {
+    cachedFreeKb = (uint32_t)((total - used) / 1024ULL);
   } else {
-    cachedFreeBytes = 0;
+    cachedFreeKb = 0;
   }
 }
 
 uint64_t getTotalStorageBytes() {
   if (!storageAvailable || usePsramFallback) return 0;
   if (isRecording) {
-    return cachedTotalBytes;
+    return (uint64_t)cachedTotalKb * 1024ULL;
   }
-  cachedTotalBytes = SD_DEVICE.totalBytes();
-  return cachedTotalBytes;
+  cachedTotalKb = (uint32_t)(SD_DEVICE.totalBytes() / 1024ULL);
+  return (uint64_t)cachedTotalKb * 1024ULL;
 }
 
 uint64_t getUsedStorageBytes() {
   if (!storageAvailable || usePsramFallback) return 0;
   if (isRecording) {
     uint64_t free = getFreeStorageBytes();
-    if (cachedTotalBytes > free) return cachedTotalBytes - free;
+    uint64_t total = (uint64_t)cachedTotalKb * 1024ULL;
+    if (total > free) return total - free;
     return 0;
   }
   uint64_t used = SD_DEVICE.usedBytes();
@@ -1167,10 +1182,11 @@ uint64_t getUsedStorageBytes() {
 uint64_t getFreeStorageBytes() {
   if (!storageAvailable || usePsramFallback) return 0;
   if (isRecording) {
-    return cachedFreeBytes > audioSize ? cachedFreeBytes - audioSize : 0;
+    uint64_t freeBytes = (uint64_t)cachedFreeKb * 1024ULL;
+    return freeBytes > audioSize ? freeBytes - audioSize : 0;
   }
   updateCachedStorageStats();
-  return cachedFreeBytes;
+  return (uint64_t)cachedFreeKb * 1024ULL;
 }
 
 String formatStorageSummary() {
@@ -1862,6 +1878,11 @@ void handleRoot() {
 void handleDownload() {
   sendCorsHeaders();
 
+  if (isRecording) {
+    server.send(409, "text/plain", "Recording in progress");
+    return;
+  }
+
   if (!server.hasArg("path")) {
     server.send(400, "text/plain", "Bad Request: Missing 'path' parameter");
     return;
@@ -2157,6 +2178,10 @@ String buildSessionsJson() {
 
 void handleSessions() {
   sendCorsHeaders();
+  if (isRecording) {
+    server.send(409, "application/json", "{\"sessions\":[],\"error\":\"Recording in progress\"}");
+    return;
+  }
   if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
     server.send(200, "application/json", buildSessionsJson());
     xSemaphoreGive(fileMutex);
@@ -2167,6 +2192,10 @@ void handleSessions() {
 
 void handleSessionUploaded() {
   sendCorsHeaders();
+  if (isRecording) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"Recording in progress\"}");
+    return;
+  }
   if (!server.hasArg("path")) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"Missing path\"}");
     return;
@@ -2189,6 +2218,10 @@ void handleSessionUploaded() {
 
 void handleRenameSession() {
   sendCorsHeaders();
+  if (isRecording) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"Recording in progress\"}");
+    return;
+  }
   if (!server.hasArg("path") || !server.hasArg("name")) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"Missing path or name\"}");
     return;
@@ -2212,6 +2245,10 @@ void handleRenameSession() {
 
 void handleDeleteSession() {
   sendCorsHeaders();
+  if (isRecording) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"Recording in progress\"}");
+    return;
+  }
   if (!server.hasArg("path")) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"Missing path\"}");
     return;
@@ -2494,7 +2531,14 @@ void handleUsbCommand(String command) {
   if (command == "STATUS") {
     Serial.println("@SPK STATUS " + buildStatusJson());
   } else if (command == "SESSIONS") {
-    Serial.println("@SPK SESSIONS " + buildSessionsJson());
+    if (isRecording) {
+      Serial.println("@SPK ERROR Recording in progress");
+    } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+      Serial.println("@SPK SESSIONS " + buildSessionsJson());
+      xSemaphoreGive(fileMutex);
+    } else {
+      Serial.println("@SPK ERROR Storage is busy");
+    }
   } else if (command == "START") {
     startRecording();
     Serial.println("@SPK STATUS " + buildStatusJson());
@@ -2502,26 +2546,51 @@ void handleUsbCommand(String command) {
     stopRecording();
     Serial.println("@SPK STATUS " + buildStatusJson());
   } else if (command.startsWith("DOWNLOAD ")) {
-    sendUsbFile(command.substring(9));
-  } else if (command.startsWith("UPLOADED ")) {
-    const String sessionPath = command.substring(9);
-    Serial.println(markSessionUploaded(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not mark session uploaded");
-  } else if (command.startsWith("DELETE ")) {
-    const String sessionPath = command.substring(7);
-    if (!sessionHasUploadedMarker(sessionPath)) {
-      Serial.println("@SPK ERROR Session has not been uploaded");
+    if (isRecording) {
+      Serial.println("@SPK ERROR Recording in progress");
     } else {
-      Serial.println(removeSessionRecursive(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not delete session");
+      sendUsbFile(command.substring(9));
+    }
+  } else if (command.startsWith("UPLOADED ")) {
+    if (isRecording) {
+      Serial.println("@SPK ERROR Recording in progress");
+    } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+      const String sessionPath = command.substring(9);
+      Serial.println(markSessionUploaded(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not mark session uploaded");
+      xSemaphoreGive(fileMutex);
+    } else {
+      Serial.println("@SPK ERROR Storage is busy");
+    }
+  } else if (command.startsWith("DELETE ")) {
+    if (isRecording) {
+      Serial.println("@SPK ERROR Recording in progress");
+    } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+      const String sessionPath = command.substring(7);
+      if (!sessionHasUploadedMarker(sessionPath)) {
+        Serial.println("@SPK ERROR Session has not been uploaded");
+      } else {
+        Serial.println(removeSessionRecursive(sessionPath) ? "@SPK OK" : "@SPK ERROR Could not delete session");
+      }
+      xSemaphoreGive(fileMutex);
+    } else {
+      Serial.println("@SPK ERROR Storage is busy");
     }
   } else if (command.startsWith("RENAME ")) {
-    const String payload = command.substring(7);
-    const int separator = payload.indexOf('\t');
-    if (separator < 1) {
-      Serial.println("@SPK ERROR Invalid rename command");
+    if (isRecording) {
+      Serial.println("@SPK ERROR Recording in progress");
+    } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+      const String payload = command.substring(7);
+      const int separator = payload.indexOf('\t');
+      if (separator < 1) {
+        Serial.println("@SPK ERROR Invalid rename command");
+      } else {
+        const String sessionPath = payload.substring(0, separator);
+        const String displayName = payload.substring(separator + 1);
+        Serial.println(updateSessionDisplayName(sessionPath, displayName) ? "@SPK OK" : "@SPK ERROR Could not rename session");
+      }
+      xSemaphoreGive(fileMutex);
     } else {
-      const String sessionPath = payload.substring(0, separator);
-      const String displayName = payload.substring(separator + 1);
-      Serial.println(updateSessionDisplayName(sessionPath, displayName) ? "@SPK OK" : "@SPK ERROR Could not rename session");
+      Serial.println("@SPK ERROR Storage is busy");
     }
   } else {
     Serial.println("@SPK ERROR Unknown command");
