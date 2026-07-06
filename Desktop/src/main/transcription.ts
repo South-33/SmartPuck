@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { app } from "electron";
 import http from "http";
-import { meetingById, snapshot, updateMeetingMetadata } from "./library";
+import { deleteMeeting, meetingById, snapshot, updateMeetingMetadata } from "./library";
 
 const PORT = 8765;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -174,6 +174,14 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
     if (!Array.isArray(result.segments) || typeof result.full_text !== "string") {
       throw new Error("The transcription pipeline returned an invalid result.");
     }
+
+    const hasLetters = /\p{L}/u.test(result.full_text);
+    if (!hasLetters) {
+      console.info(`[SmartPuck STT] Meeting ${meetingId} has no detected words. Moving to Trash.`);
+      deleteMeeting(meetingId);
+      return snapshot();
+    }
+
     const lines = result.segments.map((segment) => {
       const speakerTag = segment.speaker !== undefined ? `[Speaker ${segment.speaker}] ` : "";
       return `[${timestamp(segment.start)}] ${speakerTag}${segment.text.trim()}`;
