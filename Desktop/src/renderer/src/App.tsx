@@ -591,7 +591,7 @@ export default function App(): React.JSX.Element {
     setVolume(nextVol);
   };
 
-  const handleWaveformClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleWaveformClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (!audioRef.current || !audioRef.current.duration) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
@@ -1236,19 +1236,33 @@ export default function App(): React.JSX.Element {
                         {isPlaying ? <Square size={16} fill="#000" /> : <Play size={16} />}
                       </button>
                       <span className="player-time">{currentTimeStr}</span>
-                      <div className="player-waveform-visualizer" onClick={handleWaveformClick} title="Click to seek">
+                      <svg className="player-waveform-visualizer" onClick={handleWaveformClick} preserveAspectRatio="none">
+                        <title>Click to seek</title>
+                        <defs>
+                          <linearGradient id="waveform-active-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--accent-lime)" />
+                            <stop offset="100%" stopColor="#76BC00" />
+                          </linearGradient>
+                        </defs>
                         {Array.from({ length: 45 }).map((_, i) => {
-                          const isActive = i / 45 * 100 < progressPercent;
+                          const isActive = ((i + 0.5) / 45) * 100 < progressPercent;
                           const heightVal = 15 + Math.abs(Math.sin(i * 0.2)) * 75;
+                          const x = (i / 45) * 100;
+                          const width = (1 / 45) * 70; // 70% bar width, 30% gap
                           return (
-                            <div
+                            <rect
                               key={i}
-                              className={`waveform-bar ${isActive ? "active" : ""}`}
-                              style={{ height: `${heightVal}%` }}
+                              x={`${x}%`}
+                              y={`${(100 - heightVal) / 2}%`}
+                              width={`${width}%`}
+                              height={`${heightVal}%`}
+                              rx="1.5"
+                              fill={isActive ? "url(#waveform-active-grad)" : "#252A37"}
+                              style={{ transition: "fill 0.2s ease" }}
                             />
                           );
                         })}
-                      </div>
+                      </svg>
                       <span className="player-time">
                         {selected.metadata.durationSeconds ? `${Math.floor(selected.metadata.durationSeconds / 60)}:${String(Math.floor(selected.metadata.durationSeconds % 60)).padStart(2, "0")}` : "0:00"}
                       </span>
