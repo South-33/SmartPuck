@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, writeFileSync } from "fs";
+import { existsSync, openSync, readSync, closeSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { app } from "electron";
 import http from "http";
@@ -18,6 +18,12 @@ interface PipelineSegment {
   end: number;
   text: string;
   speaker?: number;
+  uncertain?: boolean;
+  alternatives?: Array<{
+    language: string;
+    score: number;
+    text: string;
+  }>;
 }
 
 interface PipelineResult {
@@ -28,6 +34,14 @@ interface PipelineResult {
   full_text: string;
   quality_flags?: string[];
   denoise_applied?: boolean;
+  denoise_engine?: string;
+  fallback_transcripts?: Array<{
+    language: string;
+    model: string;
+    reason: string;
+    full_text: string;
+    segments?: PipelineSegment[];
+  }>;
 }
 
 function scriptPath(): string {
@@ -39,6 +53,13 @@ function scriptPath(): string {
   const script = candidates.find(existsSync);
   if (!script) throw new Error("SmartPuck transcription pipeline is missing.");
   return script;
+}
+
+function pythonExecutable(): string {
+  if (process.env.SMARTPUCK_PYTHON) return process.env.SMARTPUCK_PYTHON;
+  const localVenv = join(process.cwd(), ".venv-stt", "Scripts", "python.exe");
+  if (existsSync(localVenv)) return localVenv;
+  return "python";
 }
 
 async function healthy(): Promise<boolean> {
@@ -64,7 +85,7 @@ async function ensureWorker(): Promise<void> {
   workerStartup = (async () => {
     const script = scriptPath();
     const scriptDir = dirname(script);
-    worker = spawn(process.env.SMARTPUCK_PYTHON || "python", [script], {
+    worker = spawn(pythonExecutable(), [script], {
       cwd: scriptDir,
       env: {
         ...process.env,
@@ -104,6 +125,24 @@ async function ensureWorker(): Promise<void> {
 
 function timestamp(seconds: number): string {
   return new Date(Math.max(0, seconds) * 1000).toISOString().slice(11, 19);
+}
+
+function wavDurationSeconds(path: string): number | undefined {
+  if (!path.toLowerCase().endsWith(".wav")) return undefined;
+  const header = Buffer.alloc(44);
+  const fd = openSync(path, "r");
+  try {
+    if (readSync(fd, header, 0, 44, 0) < 44) return undefined;
+  } finally {
+    closeSync(fd);
+  }
+  if (header.toString("ascii", 0, 4) !== "RIFF" || header.toString("ascii", 8, 12) !== "WAVE") {
+    return undefined;
+  }
+  const byteRate = header.readUInt32LE(28);
+  const dataBytes = header.readUInt32LE(40);
+  if (!byteRate || !dataBytes) return undefined;
+  return dataBytes / byteRate;
 }
 
 function httpPost(urlStr: string, body: any): Promise<any> {
@@ -164,7 +203,7 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
       audio_path: audioPath,
       model_name: "auto",
       language: null,
-      denoise_mode: "off",
+      denoise_mode: "strong",
       normalize: true,
       beam_size: 5,
       diarize: true,
@@ -184,13 +223,35 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
 
     const lines = result.segments.map((segment) => {
       const speakerTag = segment.speaker !== undefined ? `[Speaker ${segment.speaker}] ` : "";
-      return `[${timestamp(segment.start)}] ${speakerTag}${segment.text.trim()}`;
+      const base = `[${timestamp(segment.start)}] ${speakerTag}${segment.text.trim()}`;
+      const alternatives = segment.alternatives
+        ?.filter((candidate) => candidate.text.trim() && candidate.text.trim() !== segment.text.trim())
+        .map((candidate) => `[${candidate.language} score=${candidate.score.toFixed(2)}] ${candidate.text.trim()}`);
+      if (!alternatives?.length) return base;
+      return `${base}\nAlternatives: ${alternatives.join(" | ")}`;
     });
-    const durationSeconds = result.segments.reduce((maximum, segment) => Math.max(maximum, Number(segment.end) || 0), 0);
+    const fallbackEvidence = (result.fallback_transcripts || [])
+      .filter((item) => item.full_text.trim())
+      .map((item) =>
+        `### ${item.language.toUpperCase()} full-pass evidence (${item.model})\n\n` +
+        `_Reason: ${item.reason}._\n\n` +
+        item.full_text.trim(),
+      );
+    const transcriptDurationSeconds = result.segments.reduce((maximum, segment) => Math.max(maximum, Number(segment.end) || 0), 0);
+    const audioDurationSeconds = wavDurationSeconds(audioPath);
+    const durationSeconds = Math.max(
+      audioDurationSeconds || 0,
+      meeting.metadata.durationSeconds || 0,
+      transcriptDurationSeconds || 0,
+    );
     writeFileSync(join(meeting.path, "transcript.segments.json"), JSON.stringify(result.segments, null, 2));
     writeFileSync(
       join(meeting.path, "transcript.md"),
-      `# ${meeting.metadata.title}\n\n## Summary\n\n_Not generated yet._\n\n## Transcript\n\n${lines.join("\n\n")}\n`,
+      `# ${meeting.metadata.title}\n\n## Summary\n\n_Not generated yet._\n\n## Transcript\n\n${lines.join("\n\n")}${
+        fallbackEvidence.length
+          ? `\n\n## ASR Evidence\n\n${fallbackEvidence.join("\n\n")}\n`
+          : "\n"
+      }`,
     );
     updateMeetingMetadata(meetingId, {
       status: "ready",
@@ -200,6 +261,7 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
         ? "recording.processed.wav"
         : undefined,
       denoiseApplied: result.denoise_applied,
+      denoiseEngine: result.denoise_engine || (result.denoise_applied ? "unknown" : "none"),
       durationSeconds: durationSeconds || meeting.metadata.durationSeconds,
       progressPercent: 100,
       error: undefined,

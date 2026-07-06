@@ -2,6 +2,9 @@ fastapi>=0.100.0
 uvicorn>=0.22.0
 faster-whisper>=1.0.3
 python-multipart>=0.0.6
-torch
+torch==2.3.1
+torchaudio==2.3.1
 numpy
 sherpa-onnx
+soundfile
+deepfilternet

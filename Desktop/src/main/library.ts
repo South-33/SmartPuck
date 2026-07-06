@@ -54,6 +54,8 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 - Never use shell commands (like 'rm', 'rmdir', or 'Remove-Item') to delete library folders or files (which destroys user data, transcripts, and custom memory notes in meetings.md). If a file/folder already exists or a conflict arises, reuse the existing resource or ask the user for confirmation.
 - **Editing Transcripts**: You are fully authorized and expected to edit the \`transcript.md\` file inside any meeting folder directly to clean up transcription mistakes, fix speaker labels/tags (diarization), remove promotional text/ads, and improve readability. You do not need to run any CLI commands or scripts to edit the transcript text itself — just edit the file directly using your file editing tools.
 - Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
+- **Low-confidence alternatives**: When a transcript line is followed by \`Alternatives:\`, treat those alternatives as raw ASR evidence, not final transcript text. During cleanup, compare the main line and alternatives against surrounding context, pick or rewrite the most likely spoken words, preserve the correct language/script, and delete the \`Alternatives:\` line from the cleaned transcript. Do not leave multiple guesses in curated output unless the user explicitly asks for forensic uncertainty.
+- **ASR Evidence sections**: \`## ASR Evidence\` contains full-pass fallback transcripts for noisy or low-confidence audio. Use it to repair missing/garbled transcript spans, then remove the evidence section from curated output unless the user asks to keep forensic notes.
 
 ## 4. SmartPuck Workspace & JSON Schema Reference
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio, transcript.md, and immutable transcript.segments.json.
@@ -136,6 +138,8 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 - Never use shell commands (like 'rm', 'rmdir', or 'Remove-Item') to delete library folders or files (which destroys user data, transcripts, and custom memory notes in meetings.md). If a file/folder already exists or a conflict arises, reuse the existing resource or ask the user for confirmation.
 - **Editing Transcripts**: You are fully authorized and expected to edit the \`transcript.md\` file inside any meeting folder directly to clean up transcription mistakes, fix speaker labels/tags (diarization), remove promotional text/ads, and improve readability. You do not need to run any CLI commands or scripts to edit the transcript text itself — just edit the file directly using your file editing tools.
 - Transcripts are UTF-8. If a legacy Windows terminal renders Khmer as garbled characters, read with an UTF-8-aware file tool (for PowerShell, Get-Content -Encoding UTF8); do not "repair" valid transcript bytes based on terminal display.
+- **Low-confidence alternatives**: When a transcript line is followed by \`Alternatives:\`, treat those alternatives as raw ASR evidence, not final transcript text. During cleanup, compare the main line and alternatives against surrounding context, pick or rewrite the most likely spoken words, preserve the correct language/script, and delete the \`Alternatives:\` line from the cleaned transcript. Do not leave multiple guesses in curated output unless the user explicitly asks for forensic uncertainty.
+- **ASR Evidence sections**: \`## ASR Evidence\` contains full-pass fallback transcripts for noisy or low-confidence audio. Use it to repair missing/garbled transcript spans, then remove the evidence section from curated output unless the user asks to keep forensic notes.
 
 ## 4. SmartPuck Workspace & JSON Schema Reference
 - Meetings/ contains every canonical meeting folder exactly once: metadata, original audio, processed audio, transcript.md, and immutable transcript.segments.json.
@@ -323,7 +327,14 @@ function readMeeting(path: string): Meeting | null {
   delete legacyMetadata.workplaceId;
   delete legacyMetadata.linkedWorkplaceIds;
   const transcriptPath = join(path, "transcript.md");
-  return { path, metadata, transcript: existsSync(transcriptPath) ? readFileSync(transcriptPath, "utf8") : "" };
+  const primaryAudioPath = join(path, metadata.audioFile);
+  const processedAudioPath = metadata.processedAudioFile ? join(path, metadata.processedAudioFile) : "";
+  return {
+    path,
+    metadata,
+    transcript: existsSync(transcriptPath) ? readFileSync(transcriptPath, "utf8") : "",
+    audioAvailable: existsSync(primaryAudioPath) || (!!processedAudioPath && existsSync(processedAudioPath)),
+  };
 }
 
 function meetingDirs(path: string): Meeting[] {
@@ -662,7 +673,7 @@ export function saveTranscript(id: string, transcript: string): LibrarySnapshot 
 export function meetingById(id: string): Meeting { return findMeeting(id); }
 export function hasImportedDeviceSession(sourceDevicePath: string): boolean {
   return [...allCanonicalMeetings(), ...meetingDirs(join(ensureLibrary(), "Trash"))]
-    .some((meeting) => meeting.metadata.sourceDevicePath === sourceDevicePath);
+    .some((meeting) => meeting.metadata.sourceDevicePath === sourceDevicePath && meeting.audioAvailable);
 }
 export function updateMeetingMetadata(id: string, update: Partial<MeetingMetadata>): void {
   const meeting = findMeeting(id);

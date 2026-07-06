@@ -1,29 +1,37 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from "electron";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
-import { createReadStream, statSync } from "fs";
-import { extname, join } from "path";
+import { randomUUID } from "crypto";
+import { createReadStream, rmSync, statSync } from "fs";
+import { dirname, extname, join } from "path";
 import { Readable } from "stream";
 import chokidar from "chokidar";
 import {
   addMeetingToWorkplace, createWorkplace, deleteMeeting, deleteWorkplace, ensureLibrary, importAudio, libraryRoot,
   moveMeeting, meetingById, removeMeetingFromWorkplace, renameMeeting, renameWorkplace, reorderWorkplaces, saveTranscript,
-  setLibraryRoot, snapshot,
+  setLibraryRoot, snapshot, updateMeetingMetadata,
 } from "./library";
 import { transcribeMeeting, stopTranscriptionWorker, prestartTranscriptionWorker } from "./transcription";
-import { connectDevice, deleteDeviceSession, getDeviceWifiConfig, importDeviceSession, refreshDevice, removeDeviceWifi, renameDeviceSession, saveDeviceWifi, setDeviceRecording } from "./device";
+import { connectDevice, deleteDeviceSession, getDeviceWifiConfig, importDeviceSession, prepareDeviceSessionAudio, refreshDevice, removeDeviceWifi, renameDeviceSession, saveDeviceWifi, setDeviceRecording } from "./device";
+import type { DeviceSyncProgress } from "../shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let watcher: ReturnType<typeof chokidar.watch> | null = null;
 let automationTimer: NodeJS.Timeout | null = null;
 const pendingTimers = new Set<NodeJS.Timeout>();
+const devicePreviewFiles = new Map<string, string>();
 let automationRunning = false;
 let quitting = false;
-let transcriptionTail: Promise<unknown> = Promise.resolve();
-const transcriptionJobs = new Map<string, Promise<ReturnType<typeof snapshot>>>();
+let transcriptionDrainRunning = false;
+const transcriptionQueue: string[] = [];
+const transcriptionQueued = new Set<string>();
 
 function safeSend(channel: string, ...args: unknown[]): void {
   if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send(channel, ...args);
+}
+
+function emitDeviceSyncProgress(progress: DeviceSyncProgress): void {
+  safeSend("device-sync-progress", progress);
 }
 
 function schedule(delayMs: number, task: () => void): void {
@@ -42,11 +50,16 @@ protocol.registerSchemesAsPrivileged([
 function registerMediaProtocol(): void {
   protocol.handle("smartpuck", (request) => {
     const url = new URL(request.url);
-    if (url.hostname !== "audio") return new Response("Not found", { status: 404 });
+    if (url.hostname !== "audio" && url.hostname !== "device-audio") return new Response("Not found", { status: 404 });
     try {
-      const meeting = meetingById(decodeURIComponent(url.pathname.slice(1)));
-      const audioFile = meeting.metadata.processedAudioFile || meeting.metadata.audioFile;
-      const filePath = join(meeting.path, audioFile);
+      const filePath = url.hostname === "device-audio"
+        ? devicePreviewFiles.get(decodeURIComponent(url.pathname.slice(1)))
+        : (() => {
+            const meeting = meetingById(decodeURIComponent(url.pathname.slice(1)));
+            const audioFile = meeting.metadata.processedAudioFile || meeting.metadata.audioFile;
+            return join(meeting.path, audioFile);
+          })();
+      if (!filePath) return new Response("Device audio not found", { status: 404 });
       const size = statSync(filePath).size;
       const contentType = extname(filePath).toLowerCase() === ".wav" ? "audio/wav" : "audio/mpeg";
       const range = request.headers.get("range");
@@ -72,7 +85,7 @@ function registerMediaProtocol(): void {
       const body = Readable.toWeb(createReadStream(filePath, { start, end })) as BodyInit;
       return new Response(body, { status, headers });
     } catch {
-      return new Response("Meeting audio not found", { status: 404 });
+      return new Response("Audio not found", { status: 404 });
     }
   });
 }
@@ -106,17 +119,41 @@ function allMeetingIds(state: ReturnType<typeof snapshot>): Set<string> {
   return new Set([...state.inbox, ...state.workplaces.flatMap((workplace) => workplace.meetings)].map((meeting) => meeting.metadata.id));
 }
 
-function enqueueTranscription(meetingId: string): Promise<ReturnType<typeof snapshot>> {
-  const existing = transcriptionJobs.get(meetingId);
-  if (existing) return existing;
-  const job = transcriptionTail.then(() => transcribeMeeting(meetingId));
-  transcriptionJobs.set(meetingId, job);
-  transcriptionTail = job.catch(() => undefined);
-  void job.then(
-    () => { transcriptionJobs.delete(meetingId); safeSend("library-changed"); },
-    () => { transcriptionJobs.delete(meetingId); safeSend("library-changed"); },
-  );
-  return job;
+async function drainTranscriptions(): Promise<void> {
+  if (transcriptionDrainRunning) return;
+  transcriptionDrainRunning = true;
+  try {
+    while (!quitting && transcriptionQueue.length > 0) {
+      const meetingId = transcriptionQueue.shift();
+      if (!meetingId) continue;
+      try {
+        await transcribeMeeting(meetingId);
+      } catch {
+        // transcribeMeeting records the user-facing error in meeting metadata.
+      } finally {
+        transcriptionQueued.delete(meetingId);
+        safeSend("library-changed");
+      }
+    }
+  } finally {
+    transcriptionDrainRunning = false;
+    if (!quitting && transcriptionQueue.length > 0) void drainTranscriptions();
+  }
+}
+
+function enqueueTranscription(meetingId: string): ReturnType<typeof snapshot> {
+  if (transcriptionQueued.has(meetingId)) return snapshot();
+  updateMeetingMetadata(meetingId, {
+    status: "queued",
+    progressPercent: 0,
+    progressStage: "Queued",
+    error: undefined,
+  });
+  transcriptionQueued.add(meetingId);
+  transcriptionQueue.push(meetingId);
+  safeSend("library-changed");
+  void drainTranscriptions();
+  return snapshot();
 }
 
 function resumePendingTranscriptions(): void {
@@ -127,15 +164,15 @@ function resumePendingTranscriptions(): void {
     if (seen.has(meeting.metadata.id)) continue;
     seen.add(meeting.metadata.id);
     if (meeting.metadata.status === "queued" || meeting.metadata.status === "transcribing") {
-      void enqueueTranscription(meeting.metadata.id).catch(() => undefined);
+      enqueueTranscription(meeting.metadata.id);
     }
   }
 }
 
 function beginNewTranscriptions(before: Set<string>, result: ReturnType<typeof snapshot>): void {
   const added = [...result.inbox, ...result.workplaces.flatMap((workplace) => workplace.meetings)]
-    .filter((meeting) => !before.has(meeting.metadata.id));
-  for (const meeting of added) void enqueueTranscription(meeting.metadata.id).catch(() => undefined);
+    .filter((meeting) => !before.has(meeting.metadata.id) || meeting.metadata.status === "queued");
+  for (const meeting of added) enqueueTranscription(meeting.metadata.id);
 }
 
 async function syncNewDeviceSessions(workplaceId?: string): Promise<ReturnType<typeof snapshot>> {
@@ -145,7 +182,12 @@ async function syncNewDeviceSessions(workplaceId?: string): Promise<ReturnType<t
   if (!device?.connected) throw new Error(device?.error || "SmartPuck is not connected.");
   let result = initial;
   for (const session of device.sessions.filter((item) => !item.uploaded)) {
-    result = await importDeviceSession(session.path, workplaceId);
+    try {
+      result = await importDeviceSession(session.path, workplaceId, { onProgress: emitDeviceSyncProgress });
+    } catch (error) {
+      emitDeviceSyncProgress({ path: session.path, name: session.name, phase: "error", message: (error as Error).message });
+      throw error;
+    }
   }
   beginNewTranscriptions(before, result);
   return snapshot();
@@ -156,17 +198,10 @@ async function runDeviceAutomation(): Promise<void> {
   automationRunning = true;
   try {
     let device = await refreshDevice();
-    if (device?.connected && device.transport === "wifi") {
-      const wifiUrl = device.baseUrl;
-      try { device = await connectDevice("usb://auto"); }
-      catch { device = await connectDevice(wifiUrl); }
-    }
     if (!device?.connected) {
-      try { device = await connectDevice("usb://auto"); }
-      catch {
-        device = await connectDevice("http://smartpuck.local");
-        if (!device.connected) device = await connectDevice("http://192.168.4.1");
-      }
+      device = await connectDevice("http://smartpuck.local");
+      if (!device.connected) device = await connectDevice("http://192.168.4.1");
+      if (!device.connected) device = await connectDevice("usb://auto");
     }
     safeSend("device-changed", device);
     if (device.connected && !device.recording && device.sessions.some((session) => !session.uploaded)) {
@@ -193,7 +228,7 @@ function registerIpc(): void {
     const before = allMeetingIds(initial);
     const imported = importAudio(paths, workplaceId);
     const added = [...imported.inbox, ...imported.workplaces.flatMap((w) => w.meetings)].filter((m) => !before.has(m.metadata.id));
-    for (const meeting of added) void enqueueTranscription(meeting.metadata.id).catch(() => undefined);
+    for (const meeting of added) enqueueTranscription(meeting.metadata.id);
     return snapshot();
   };
   ipcMain.handle("library:snapshot", () => snapshot());
@@ -239,11 +274,22 @@ function registerIpc(): void {
   ipcMain.handle("device:import", async (_e, path: string, workplaceId?: string) => {
     const initial = snapshot();
     const before = allMeetingIds(initial);
-    const result = await importDeviceSession(path, workplaceId);
-    beginNewTranscriptions(before, result);
-    return snapshot();
+    try {
+      const result = await importDeviceSession(path, workplaceId, { onProgress: emitDeviceSyncProgress });
+      beginNewTranscriptions(before, result);
+      return snapshot();
+    } catch (error) {
+      emitDeviceSyncProgress({ path, phase: "error", message: (error as Error).message });
+      throw error;
+    }
   });
   ipcMain.handle("device:import-new", (_e, workplaceId?: string) => syncNewDeviceSessions(workplaceId));
+  ipcMain.handle("device:preview-audio", async (_e, path: string) => {
+    const filePath = await prepareDeviceSessionAudio(path);
+    const token = randomUUID();
+    devicePreviewFiles.set(token, filePath);
+    return `smartpuck://device-audio/${encodeURIComponent(token)}`;
+  });
   ipcMain.handle("device:rename-session", async (_e, path: string, name: string) => {
     const device = await renameDeviceSession(path, name);
     safeSend("device-changed", device);
@@ -254,7 +300,13 @@ function registerIpc(): void {
     safeSend("device-changed", device);
     return device;
   });
-  ipcMain.handle("device:wifi-config", () => getDeviceWifiConfig());
+  ipcMain.handle("device:wifi-config", async () => {
+    try {
+      return await getDeviceWifiConfig();
+    } catch {
+      return null;
+    }
+  });
   ipcMain.handle("device:save-wifi", async (_e, ssid: string, password: string) => {
     await saveDeviceWifi(ssid, password);
     schedule(2_000, () => void runDeviceAutomation());
@@ -273,6 +325,10 @@ app.on("before-quit", () => {
   if (automationTimer) clearInterval(automationTimer);
   for (const timer of pendingTimers) clearTimeout(timer);
   pendingTimers.clear();
+  for (const filePath of devicePreviewFiles.values()) {
+    rmSync(dirname(filePath), { recursive: true, force: true });
+  }
+  devicePreviewFiles.clear();
   stopTranscriptionWorker();
   void watcher?.close();
 });

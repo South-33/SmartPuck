@@ -357,7 +357,24 @@ def transcript_quality_flags(segments, language: Optional[str], language_probabi
 
 
 df_model_cache = None
-DENOISE_ATTEN_LIMIT_DB = float(os.getenv("SMARTPUCK_DENOISE_ATTEN_DB", "32"))
+DENOISE_ATTEN_LIMIT_DB = float(os.getenv("SMARTPUCK_DENOISE_ATTEN_DB", "12"))
+ENABLE_PURE_ENGLISH_EARLY_EXIT = True
+VOCAL_NORMALIZE_FILTER = (
+    "highpass=f=80,"
+    "lowpass=f=7600,"
+    "loudnorm=I=-24:TP=-2.0:LRA=12"
+)
+
+def run_ffmpeg_denoising(input_wav_48k: str, output_wav_48k: str) -> str:
+    print("[SmartPuck STT] DeepFilterNet unavailable. Using FFmpeg speech denoise fallback.", flush=True)
+    cmd = [
+        "ffmpeg", "-y", "-i", input_wav_48k,
+        "-filter:a", "highpass=f=80,lowpass=f=7600,afftdn=nf=-25:nt=w",
+        "-ar", "48000", "-ac", "1",
+        output_wav_48k,
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    return "ffmpeg-afftdn"
 
 def get_df_model():
     global df_model_cache
@@ -392,15 +409,12 @@ def run_denoising(input_wav_48k: str, output_wav_48k: str):
         import soundfile as sf
         from df.enhance import enhance
     except ImportError:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "DeepFilterNet (df) package is not installed. "
-                "To use denoising, please run: pip install deepfilternet"
-            )
-        )
+        return run_ffmpeg_denoising(input_wav_48k, output_wav_48k)
 
-    model, df_state, device = get_df_model()
+    try:
+        model, df_state, device = get_df_model()
+    except HTTPException:
+        return run_ffmpeg_denoising(input_wav_48k, output_wav_48k)
     data, samplerate = sf.read(input_wav_48k)
     audio_tensor = torch.from_numpy(data).float()
     if audio_tensor.ndim == 1:
@@ -410,35 +424,35 @@ def run_denoising(input_wav_48k: str, output_wav_48k: str):
 
     # Moderate suppression keeps speech natural while reducing fan/static noise.
     print(f"[SmartPuck STT] DeepFilterNet attenuation limit: {DENOISE_ATTEN_LIMIT_DB:g} dB")
-    audio_tensor = audio_tensor.to(device)
+    # DeepFilterNet enhance() expects the input audio_tensor to be on the CPU
     enhanced_tensor = enhance(
         model, df_state, audio_tensor, atten_lim_db=DENOISE_ATTEN_LIMIT_DB
     )
     enhanced_data = enhanced_tensor.squeeze(0).cpu().numpy()
     sf.write(output_wav_48k, enhanced_data, 48000)
+    return "deepfilternet"
 
 
-def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denoised_output_path: Optional[str] = None) -> Tuple[str, list]:
+def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denoised_output_path: Optional[str] = None) -> Tuple[str, list, str]:
     temp_files = []
     current_path = audio_path
     should_denoise = (denoise_mode == "strong")
+    denoise_engine = "none"
 
     try:
         if normalize or should_denoise:
             if should_denoise:
-                # Resample/normalize to 48kHz mono WAV
+                # Resample raw to 48kHz mono WAV (no dynamic normalization pre-denoise)
                 fd, temp_48k = tempfile.mkstemp(suffix="_48k.wav")
                 os.close(fd)
                 temp_files.append(temp_48k)
 
-                filter_str = "anull"
                 cmd = [
                     "ffmpeg", "-y", "-i", current_path,
-                    "-filter:a", filter_str,
                     "-ar", "48000", "-ac", "1",
                     temp_48k
                 ]
-                print(f"[SmartPuck STT] Resampling & normalizing to 48k: {cmd}")
+                print(f"[SmartPuck STT] Resampling raw to 48k: {cmd}")
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
                 # Run DeepFilterNet denoising
@@ -447,7 +461,7 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
                 temp_files.append(denoised_48k)
 
                 print("[SmartPuck STT] Running DeepFilterNet3 speech enhancement...")
-                run_denoising(temp_48k, denoised_48k)
+                denoise_engine = run_denoising(temp_48k, denoised_48k)
 
                 # Resample back to 16kHz for Whisper
                 fd, final_16k = tempfile.mkstemp(suffix="_final_16k.wav")
@@ -456,13 +470,10 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
 
                 cmd_16k = [
                     "ffmpeg", "-y", "-i", denoised_48k,
-                    "-filter:a", (
-                        "acompressor=threshold=-24dB:ratio=3:attack=20:release=250:makeup=2dB,"
-                        "loudnorm=I=-16:TP=-1.5:LRA=7"
-                    ) if normalize else "anull",
-                    "-ar", "16000", "-ac", "1",
-                    final_16k
                 ]
+                if normalize:
+                    cmd_16k.extend(["-filter:a", VOCAL_NORMALIZE_FILTER])
+                cmd_16k.extend(["-ar", "16000", "-ac", "1", final_16k])
                 subprocess.run(cmd_16k, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                 current_path = final_16k
 
@@ -481,10 +492,7 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
 
                 cmd = [
                     "ffmpeg", "-y", "-i", current_path,
-                    "-filter:a", (
-                        "acompressor=threshold=-24dB:ratio=3:attack=20:release=250:makeup=2dB,"
-                        "loudnorm=I=-16:TP=-1.5:LRA=7"
-                    ),
+                    "-filter:a", VOCAL_NORMALIZE_FILTER,
                     "-ar", "16000", "-ac", "1",
                     normalized_16k
                 ]
@@ -497,7 +505,7 @@ def preprocess_audio(audio_path: str, denoise_mode: str, normalize: bool, denois
                     except Exception as copy_err:
                         print(f"[SmartPuck STT] Failed to persist normalized audio: {copy_err}")
 
-        return current_path, temp_files
+        return current_path, temp_files, denoise_engine
     except Exception as e:
         for f in temp_files:
             if os.path.exists(f):
@@ -645,6 +653,80 @@ def run_bilingual_transcription(
     beam_size: int = 5,
 ):
     """Route speech segments dynamically using hybrid contiguous block grouping."""
+    if denoise_mode == "auto":
+        raw_output_path = f"{denoised_output_path}.normalized-candidate" if denoised_output_path else None
+        denoised_output_candidate = f"{denoised_output_path}.denoised-candidate" if denoised_output_path else None
+
+        def select_processed_audio(source_path: Optional[str]):
+            if not denoised_output_path or not source_path:
+                return
+            try:
+                shutil.copy2(source_path, denoised_output_path)
+            except Exception as copy_err:
+                print(f"[SmartPuck STT] Failed to select bilingual processed audio: {copy_err}")
+            finally:
+                for candidate in (raw_output_path, denoised_output_candidate):
+                    if candidate and os.path.exists(candidate):
+                        try:
+                            os.remove(candidate)
+                        except OSError:
+                            pass
+
+        print("[SmartPuck STT] Bilingual denoise mode is 'auto'. Running first-pass normalized transcription...", flush=True)
+        raw_result = run_bilingual_transcription(
+            temp_path,
+            file_name,
+            denoise_mode="off",
+            normalize=normalize,
+            denoised_output_path=raw_output_path,
+            force_cpu=force_cpu,
+            original_audio_path=original_audio_path,
+            beam_size=min(3, beam_size),
+        )
+        raw_avg = average_logprob(raw_result)
+        route_counts = raw_result.get("route_counts") or {}
+        total_routes = sum(int(route_counts.get(key, 0) or 0) for key in ("en", "km", "ambiguous"))
+        ambiguous_routes = int(route_counts.get("ambiguous", 0) or 0)
+        khmer_routes = int(route_counts.get("km", 0) or 0)
+        route_confused = total_routes > 0 and (
+            ambiguous_routes / total_routes >= 0.25 or
+            (raw_result.get("language") == "mixed" and khmer_routes > 0 and raw_avg < -0.25)
+        )
+        print(f"[SmartPuck STT] Bilingual raw transcript avg logprob: {raw_avg:.4f}", flush=True)
+
+        if raw_avg < -0.35 or route_confused:
+            reason = "low confidence" if raw_avg < -0.35 else "language-route confusion"
+            print(f"[SmartPuck STT] Running bilingual denoising pass due to {reason} (avg={raw_avg:.4f}, routes={route_counts})...", flush=True)
+            denoised_result = run_bilingual_transcription(
+                temp_path,
+                file_name,
+                denoise_mode="strong",
+                normalize=normalize,
+                denoised_output_path=denoised_output_candidate,
+                force_cpu=force_cpu,
+                original_audio_path=original_audio_path,
+                beam_size=beam_size,
+            )
+            denoised_avg = average_logprob(denoised_result)
+            print(f"[SmartPuck STT] Bilingual denoised transcript avg logprob: {denoised_avg:.4f}", flush=True)
+            if denoised_avg >= raw_avg - 0.03:
+                denoised_result["denoise_applied"] = True
+                denoised_result["raw_avg_logprob"] = raw_avg
+                denoised_result["denoised_avg_logprob"] = denoised_avg
+                select_processed_audio(denoised_output_candidate)
+                return denoised_result
+
+            raw_result["denoise_applied"] = False
+            raw_result["raw_avg_logprob"] = raw_avg
+            raw_result["denoised_avg_logprob"] = denoised_avg
+            select_processed_audio(raw_output_path)
+            return raw_result
+
+        raw_result["denoise_applied"] = False
+        raw_result["raw_avg_logprob"] = raw_avg
+        select_processed_audio(raw_output_path)
+        return raw_result
+
     from faster_whisper.audio import decode_audio
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
@@ -658,8 +740,8 @@ def run_bilingual_transcription(
     path_to_log = original_audio_path or temp_path
     print(f"[SmartPuck STT] Progress: 0% | Stage: Analyzing Audio for {path_to_log}", flush=True)
     
-    processed_path, temp_files = preprocess_audio(
-        temp_path, preprocessing_mode, False, denoised_output_path
+    processed_path, temp_files, denoise_engine = preprocess_audio(
+        temp_path, preprocessing_mode, normalize, denoised_output_path
     )
     print(f"[SmartPuck STT] Progress: 5% | Stage: Analyzing Audio for {path_to_log}", flush=True)
 
@@ -688,6 +770,8 @@ def run_bilingual_transcription(
                 "full_text": "",
                 "quality_flags": [],
                 "route_counts": {"en": 0, "km": 0},
+                "denoise_applied": denoise_mode == "strong",
+                "denoise_engine": denoise_engine,
             }
 
         guide = get_model(MODEL_PROFILES["auto"]["model"], force_cpu=force_cpu)
@@ -695,7 +779,7 @@ def run_bilingual_transcription(
         khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
 
         classified_chunks = []
-        route_counts = {"en": 0, "km": 0}
+        route_counts = {"en": 0, "km": 0, "ambiguous": 0}
         specialist_beam = min(3, beam_size)
 
         import numpy as np
@@ -718,7 +802,15 @@ def run_bilingual_transcription(
             for chunk, candidates in zip(batch_chunks, language_results):
                 language_token, guide_probability = candidates[0]
                 guide_language = language_token[2:-2]
-                route = "en" if guide_language == "en" and guide_probability >= 0.45 else "km"
+                # The guide model is often uncertain on short, weirdly-spoken
+                # chunks. Confident English/Khmer can go straight to the
+                # specialist; uncertainty gets a small dual-model comparison.
+                if guide_language == "km" and guide_probability >= 0.35:
+                    route = "km"
+                elif guide_language == "en" and guide_probability >= 0.60:
+                    route = "en"
+                else:
+                    route = "ambiguous"
                 route_counts[route] += 1
                 classified_chunks.append({
                     "start": chunk["start"],
@@ -735,19 +827,26 @@ def run_bilingual_transcription(
                 print(f"[SmartPuck STT] Progress: {progress}% | Stage: Classifying Languages for {path_to_log}", flush=True)
 
         en_ratio = route_counts["en"] / len(speech_chunks)
-        km_ratio = 1.0 - en_ratio
+        km_ratio = route_counts["km"] / len(speech_chunks)
+        ambiguous_ratio = route_counts["ambiguous"] / len(speech_chunks)
+        khmer_dominant = route_counts["km"] > max(route_counts["en"] * 2, 8)
+        english_dominant = route_counts["en"] >= 3 and route_counts["km"] == 0
+        english_dominant_longform = route_counts["en"] >= 8 and route_counts["km"] == 0
 
         # Step 2: Pure-Language Early Exits
-        if en_ratio >= 0.85:
+        if ENABLE_PURE_ENGLISH_EARLY_EXIT and ((en_ratio >= 0.85 and ambiguous_ratio <= 0.10) or english_dominant_longform):
             # Pure English continuous run
-            print("[SmartPuck STT] Audio classified as pure English. Running continuous English model...", flush=True)
+            print("[SmartPuck STT] Audio classified as pure English. Running continuous English model without VAD...", flush=True)
             segments_iter, info = english.transcribe(
                 processed_path,
                 language="en",
                 task="transcribe",
-                vad_filter=True,
+                vad_filter=False,
                 beam_size=specialist_beam,
-                condition_on_previous_text=True,
+                condition_on_previous_text=False,
+                compression_ratio_threshold=2.4,
+                log_prob_threshold=-1.0,
+                no_speech_threshold=0.6,
             )
             output_segments = []
             duration = len(audio) / 16000
@@ -781,9 +880,11 @@ def run_bilingual_transcription(
                 "full_text": " ".join(full_text_parts),
                 "quality_flags": transcript_quality_flags(output_segments, "en", 1.0),
                 "route_counts": route_counts,
+                "denoise_applied": denoise_mode == "strong",
+                "denoise_engine": denoise_engine,
             }
 
-        if km_ratio >= 0.85:
+        if km_ratio >= 0.85 and ambiguous_ratio <= 0.10:
             # Pure Khmer chunk-by-chunk run for completeness
             print("[SmartPuck STT] Audio classified as pure Khmer. Running chunk-by-chunk Khmer specialist...", flush=True)
             from faster_whisper import BatchedInferencePipeline
@@ -840,6 +941,8 @@ def run_bilingual_transcription(
                 "full_text": " ".join(full_text_parts),
                 "quality_flags": transcript_quality_flags(output_segments, "km", 1.0),
                 "route_counts": route_counts,
+                "denoise_applied": denoise_mode == "strong",
+                "denoise_engine": denoise_engine,
             }
 
         # Step 3: Group Contiguous Chunks for Mixed Bilingual Audio
@@ -859,6 +962,150 @@ def run_bilingual_transcription(
         output_segments = []
         completed_groups = 0
         from faster_whisper import BatchedInferencePipeline
+
+        def candidate_text_score(lang, segments):
+            if not segments:
+                return -999.0
+            text = " ".join((seg.get("text") or "").strip() for seg in segments).strip()
+            if not text:
+                return -999.0
+            avg = sum(seg.get("avg_logprob", -1.0) for seg in segments) / len(segments)
+            compression = max(float(seg.get("compression_ratio", 0.0) or 0.0) for seg in segments)
+            no_speech = max(float(seg.get("no_speech_prob", 0.0) or 0.0) for seg in segments)
+            score = avg
+            if compression > 2.4:
+                score -= 2.0
+            if no_speech > 0.55:
+                score -= 0.8
+            if lang == "en":
+                if contains_khmer(text):
+                    score -= 3.0
+                if any(("a" <= char.lower() <= "z") for char in text):
+                    score += 0.15
+            else:
+                if contains_khmer(text):
+                    score += 0.15
+                else:
+                    score -= 3.0
+            return score
+
+        def transcribe_clip(model, clip_audio, language):
+            segments_iter, _ = model.transcribe(
+                clip_audio,
+                language=language,
+                task="transcribe",
+                vad_filter=False,
+                beam_size=specialist_beam,
+                condition_on_previous_text=False,
+                compression_ratio_threshold=2.4,
+                log_prob_threshold=-1.0,
+                no_speech_threshold=0.65,
+                temperature=0,
+            )
+            return [
+                {
+                    "start": float(segment.start),
+                    "end": float(segment.end),
+                    "text": segment.text.strip(),
+                    "avg_logprob": round(segment.avg_logprob, 4),
+                    "compression_ratio": float(getattr(segment, "compression_ratio", 0.0) or 0.0),
+                    "no_speech_prob": float(getattr(segment, "no_speech_prob", 0.0) or 0.0),
+                }
+                for segment in segments_iter
+                if segment.text.strip()
+            ]
+
+        def transcribe_ambiguous_chunk(chunk):
+            pad_samples = int(0.12 * 16000)
+            clip_start = max(0, chunk["start"] - pad_samples)
+            clip_end = min(len(audio), chunk["end"] + pad_samples)
+            clip_audio = audio[clip_start:clip_end]
+            candidates = []
+            by_language = {}
+            for lang, model in (("en", english), ("km", khmer)):
+                raw_segments = transcribe_clip(model, clip_audio, lang)
+                offset = clip_start / 16000
+                normalized = []
+                for segment in raw_segments:
+                    normalized.append({
+                        "start": round(segment["start"] + offset, 2),
+                        "end": round(segment["end"] + offset, 2),
+                        "text": segment["text"],
+                        "avg_logprob": segment["avg_logprob"],
+                        "language": lang,
+                        "route_language": chunk["route_language"],
+                        "route_probability": round(chunk["route_probability"], 4),
+                        "compression_ratio": segment["compression_ratio"],
+                        "no_speech_prob": segment["no_speech_prob"],
+                    })
+                score = candidate_text_score(lang, normalized)
+                candidates.append((score, normalized))
+                by_language[lang] = (score, normalized)
+
+            def candidate_text(segments):
+                return " ".join(seg.get("text", "").strip() for seg in segments).strip()
+
+            def with_alternatives(best_lang, best_score, best_segments):
+                if not best_segments:
+                    return []
+                alternatives = []
+                for alt_lang, (alt_score, alt_segments) in by_language.items():
+                    alt_text = candidate_text(alt_segments)
+                    if not alt_text:
+                        continue
+                    close_to_best = abs(best_score - alt_score) <= 0.18
+                    best_is_low_confidence = best_score < -0.85 and abs(best_score - alt_score) <= 0.35
+                    if alt_lang == best_lang or close_to_best or best_is_low_confidence:
+                        alternatives.append({
+                            "language": alt_lang,
+                            "score": round(float(alt_score), 4),
+                            "text": alt_text,
+                        })
+                if len(alternatives) > 1:
+                    best_segments[0]["alternatives"] = alternatives
+                    best_segments[0]["uncertain"] = True
+                return best_segments
+
+            english_score, english_segments = by_language.get("en", (-999.0, []))
+            english_text = " ".join(seg.get("text", "") for seg in english_segments).strip()
+            english_words = [
+                word for word in english_text.replace("-", " ").split()
+                if any(("a" <= char.lower() <= "z") for char in word)
+            ]
+            english_compression = max(
+                (float(seg.get("compression_ratio", 0.0) or 0.0) for seg in english_segments),
+                default=0.0,
+            )
+            english_no_speech = max(
+                (float(seg.get("no_speech_prob", 0.0) or 0.0) for seg in english_segments),
+                default=0.0,
+            )
+            english_hallucination = english_text.strip().lower().strip(".!") in {
+                "bye bye",
+                "bye-bye",
+                "thank you",
+                "you",
+            }
+            khmer_score, khmer_segments = by_language.get("km", (-999.0, []))
+            if khmer_dominant and khmer_score > -1.25:
+                return with_alternatives("km", khmer_score, khmer_segments)
+            if (
+                (not khmer_dominant or english_dominant)
+                and
+                (len(english_words) >= 2 or (english_dominant and english_text))
+                and english_score > (-1.65 if english_dominant else -1.35)
+                and english_compression <= 2.4
+                and english_no_speech <= (0.65 if english_dominant else 0.45)
+                and (english_dominant or not english_hallucination)
+            ):
+                return with_alternatives("en", english_score, english_segments)
+
+            candidates.sort(key=lambda item: item[0], reverse=True)
+            best_score, best_segments = candidates[0]
+            if best_score < -1.25:
+                return []
+            best_lang = best_segments[0].get("language", "unknown") if best_segments else "unknown"
+            return with_alternatives(best_lang, best_score, best_segments)
 
         for idx, g in enumerate(groups):
             lang = g[0]["lang"]
@@ -897,6 +1144,9 @@ def run_bilingual_transcription(
                             "route_language": routing["route_language"],
                             "route_probability": round(routing["route_probability"], 4),
                         })
+            elif lang == "ambiguous":
+                for chunk in g:
+                    output_segments.extend(transcribe_ambiguous_chunk(chunk))
             else:
                 # English contiguous blocks run continuously with 100ms padding
                 pad_samples = int(0.1 * 16000)
@@ -908,9 +1158,13 @@ def run_bilingual_transcription(
                     group_audio,
                     language="en",
                     task="transcribe",
-                    vad_filter=True,
+                    vad_filter=False,
                     beam_size=specialist_beam,
-                    condition_on_previous_text=True,
+                    condition_on_previous_text=False,
+                    compression_ratio_threshold=2.4,
+                    log_prob_threshold=-1.0,
+                    no_speech_threshold=0.65,
+                    temperature=0,
                 )
 
                 offset = clip_start / 16000
@@ -939,8 +1193,51 @@ def run_bilingual_transcription(
         print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
         output_segments.sort(key=lambda s: s["start"])
         full_text_parts = [s["text"] for s in output_segments]
+        duration_seconds = len(audio) / 16000
+        coverage_end = max((float(s.get("end") or 0.0) for s in output_segments), default=0.0)
+        routed_avg = average_logprob({"segments": output_segments})
+        fallback_transcripts = []
+        if duration_seconds > 0 and not khmer_dominant and (coverage_end < duration_seconds * 0.75 or routed_avg < -0.7):
+            print(
+                f"[SmartPuck STT] Routed transcript under-covered audio "
+                f"(last={coverage_end:.1f}s/{duration_seconds:.1f}s, avg={routed_avg:.3f}). "
+                "Running full English evidence pass without VAD...",
+                flush=True,
+            )
+            evidence_iter, evidence_info = english.transcribe(
+                processed_path,
+                language="en",
+                task="transcribe",
+                vad_filter=False,
+                beam_size=specialist_beam,
+                condition_on_previous_text=False,
+                compression_ratio_threshold=2.4,
+                log_prob_threshold=-1.0,
+                no_speech_threshold=0.65,
+                temperature=0,
+            )
+            evidence_segments = []
+            for segment in evidence_iter:
+                text = segment.text.strip()
+                if text:
+                    evidence_segments.append({
+                        "start": round(segment.start, 2),
+                        "end": round(segment.end, 2),
+                        "text": text,
+                        "avg_logprob": round(segment.avg_logprob, 4),
+                        "no_speech_prob": round(float(getattr(segment, "no_speech_prob", 0.0) or 0.0), 4),
+                    })
+            if evidence_segments:
+                fallback_transcripts.append({
+                    "language": "en",
+                    "model": MODEL_PROFILES["english-fast"]["model"],
+                    "reason": "routed transcript under-covered noisy audio",
+                    "language_probability": round(float(evidence_info.language_probability or 1.0), 4),
+                    "segments": evidence_segments,
+                    "full_text": " ".join(segment["text"] for segment in evidence_segments),
+                })
 
-        return {
+        result = {
             "profile": "auto",
             "profile_label": MODEL_PROFILES["auto"]["label"],
             "model": "small guide + small.en + whisper-small-khmer (hybrid)",
@@ -950,7 +1247,12 @@ def run_bilingual_transcription(
             "full_text": " ".join(full_text_parts),
             "quality_flags": transcript_quality_flags(output_segments, "mixed", 1.0),
             "route_counts": route_counts,
+            "denoise_applied": denoise_mode == "strong",
+            "denoise_engine": denoise_engine,
         }
+        if fallback_transcripts:
+            result["fallback_transcripts"] = fallback_transcripts
+        return result
 
     finally:
         for path in temp_files:
@@ -977,7 +1279,7 @@ def run_transcription_inner(
     resolved_model = profile["model"]
     language = language_override or profile.get("language")
 
-    processed_path, temp_files = preprocess_audio(temp_path, denoise_mode, normalize, denoised_output_path)
+    processed_path, temp_files, denoise_engine = preprocess_audio(temp_path, denoise_mode, normalize, denoised_output_path)
 
     try:
         model = get_model(resolved_model, force_cpu=force_cpu)
@@ -1062,6 +1364,8 @@ def run_transcription_inner(
         "segments": output_segments,
         "full_text": " ".join(full_text_parts),
         "quality_flags": transcript_quality_flags(output_segments, info.language, language_probability),
+        "denoise_applied": denoise_mode == "strong",
+        "denoise_engine": denoise_engine,
     }
 
 @app.get("/health")

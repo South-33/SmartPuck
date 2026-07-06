@@ -18,3 +18,7 @@ This is the project's AGENTS.md
 - Python `subprocess.run` calls for verbose tools like `ffmpeg` must use `stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL` instead of `PIPE` to prevent OS buffer deadlocks on long files.
 - Electron transcription request uses native `http.request` with `socket.setTimeout(0)` to disable default Undici/fetch 5-minute body timeouts during compute-heavy CPU diarization.
 - To update the workspace agent's system instructions (prod), you must edit the templates in `Desktop/src/main/library.ts` (`WORKSPACE_INSTRUCTIONS` and `SKILL`), not the repository's `AGENTS.md` or any local workspace index files which are auto-generated and overwritten.
+- Firmware verification uses PlatformIO from `Firmware/`; after firmware changes, run `pio run` and, if the board is connected, flash with `pio run -t upload`.
+- DeepFilterNet3 expects input tensors to be on the CPU (crashes with a TypeError if passed a CUDA tensor directly); keep the input tensor on CPU and the library will handle internal GPU scaling and inference.
+- The STT service automatically runs Whisper in GPU mode (`float16`) and DeepFilterNet on CUDA when a CUDA-enabled PyTorch build is installed in `Desktop/.venv-stt`.
+

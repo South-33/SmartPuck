@@ -24,6 +24,7 @@ const api: SmartPuckApi = {
     connect: (url) => ipcRenderer.invoke("device:connect", url),
     refresh: () => ipcRenderer.invoke("device:refresh"),
     setRecording: (action) => ipcRenderer.invoke("device:record", action),
+    previewAudio: (path) => ipcRenderer.invoke("device:preview-audio", path),
     importSession: (path, workplaceId) => ipcRenderer.invoke("device:import", path, workplaceId),
     importNew: (workplaceId) => ipcRenderer.invoke("device:import-new", workplaceId),
     renameSession: (path, name) => ipcRenderer.invoke("device:rename-session", path, name),
@@ -32,6 +33,7 @@ const api: SmartPuckApi = {
     saveWifi: (ssid, password) => ipcRenderer.invoke("device:save-wifi", ssid, password),
     removeWifi: (ssid) => ipcRenderer.invoke("device:remove-wifi", ssid),
     onChanged: (callback) => { const listener = (_event: Electron.IpcRendererEvent, snapshot: Parameters<typeof callback>[0]): void => callback(snapshot); ipcRenderer.on("device-changed", listener); return () => ipcRenderer.removeListener("device-changed", listener); },
+    onSyncProgress: (callback) => { const listener = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof callback>[0]): void => callback(progress); ipcRenderer.on("device-sync-progress", listener); return () => ipcRenderer.removeListener("device-sync-progress", listener); },
   },
   dialogs: { chooseAudio: () => ipcRenderer.invoke("dialog:audio") },
 };

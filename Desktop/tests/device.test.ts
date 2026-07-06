@@ -15,6 +15,24 @@ let uploadedMarks = 0;
 let device: typeof import("../src/main/device");
 let library: typeof import("../src/main/library");
 
+function tinyWav(): Buffer {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(40, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(16000, 24);
+  header.writeUInt32LE(32000, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(4, 40);
+  return Buffer.concat([header, Buffer.alloc(4)]);
+}
+
 beforeAll(async () => {
   process.env.SMARTPUCK_HOME = root;
   server = createServer((request, response) => {
@@ -35,7 +53,7 @@ beforeAll(async () => {
     }
     if (url.pathname === "/download") {
       response.setHeader("content-length", "48");
-      response.end(Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(44)]));
+      response.end(tinyWav());
       return;
     }
     if (url.pathname === "/session_uploaded") {

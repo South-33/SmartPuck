@@ -34,13 +34,18 @@
   #define SMARTPUCK_DEVICE_TOKEN ""
 #endif
 
-#define SMARTPUCK_FIRMWARE_VERSION "0.2.0"
+#define SMARTPUCK_FIRMWARE_VERSION "0.2.3"
 #define SMARTPUCK_MIN_FREE_BYTES_FOR_RECORDING (64ULL * 1024ULL * 1024ULL)
 #define SMARTPUCK_MAX_SESSIONS_JSON 40
 #define SMARTPUCK_MAX_SAVED_WIFI_NETWORKS 5
 #define SMARTPUCK_BUTTON_ARM_DELAY_MS 2000
+#define SMARTPUCK_BUTTON_HOLD_MS 800
+#define SMARTPUCK_BUTTON_COOLDOWN_MS 1500
+#define SMARTPUCK_MAX_WAV_AUDIO_BYTES 0xFFFFFF00UL
+#define SMARTPUCK_RECORDING_RING_BYTES 262144U
+#define SMARTPUCK_RECORDING_RING_MIN_BYTES 65536U
 #ifndef SMARTPUCK_SD_SPI_FREQUENCY
-  #define SMARTPUCK_SD_SPI_FREQUENCY 20000000U
+  #define SMARTPUCK_SD_SPI_FREQUENCY 4000000U
 #endif
 #ifndef SMARTPUCK_LED_BRIGHTNESS_PERCENT
   #define SMARTPUCK_LED_BRIGHTNESS_PERCENT 40U
@@ -136,12 +141,20 @@ volatile bool isRecording = false;
 volatile bool isStreaming = false;
 volatile uint32_t audioSize = 0;
 volatile uint8_t audioLevel = 0;
+volatile uint32_t droppedAudioBytes = 0;
+volatile uint32_t recordingQueuedBytes = 0;
+volatile uint32_t unflushedAudioBytes = 0;
+volatile bool recordingAutoStopRequested = false;
+volatile bool recordingWriteFailed = false;
+volatile bool recordingWriterActive = false;
+volatile bool recordingWriterFileOpen = false;
 String currentSessionDir = "";
 String currentWavPath = "";
 bool storageAvailable = false;
 uint32_t cachedTotalKb = 0;
 uint32_t cachedFreeKb = 0;
 String lastRecordingError = "";
+String lastRecordingStopReason = "";
 
 // PSRAM Fallback State
 bool usePsramFallback = false;
@@ -150,8 +163,10 @@ const uint32_t PSRAM_BUFFER_MAX = 4000000; // 4MB (approx 125 seconds of 16kHz 1
 
 // FreeRTOS Handles & Thread Safety
 TaskHandle_t audioTaskHandle = NULL;
+TaskHandle_t recordingWriterTaskHandle = NULL;
 SemaphoreHandle_t fileMutex = NULL;
 RingbufHandle_t audioRingBuf = NULL;
+RingbufHandle_t recordingRingBuf = NULL;
 
 // Wi-Fi Connection Information
 bool wifiConnected = false;
@@ -184,12 +199,12 @@ String sanitizePathSegment(String value);
 String readManifestField(String sessionPath, String field);
 bool initI2S();
 void startRecording();
-void stopRecording();
+bool stopRecording(const char* reason = "unknown");
 void repairIncompleteSessions();
 void updateCachedStorageStats();
 bool repairWavHeader(String wavPath);
 void applyHPFBuffer(int16_t* buffer, size_t count);
-void writeWavHeader(File file, uint32_t totalAudioLen);
+void writeWavHeader(File& file, uint32_t totalAudioLen);
 void fillWavHeader(uint8_t* header, uint32_t totalAudioLen);
 void startAP();
 void initWiFi();
@@ -228,6 +243,7 @@ void cleanupUploadedSessionsIfNeeded();
 bool parseRangeHeader(size_t fileSize, size_t& rangeStart, size_t& rangeEnd);
 void sendRangeHeaders(size_t fileSize, size_t rangeStart, size_t rangeEnd, bool partial);
 bool writeClientBytes(WiFiClient& client, const uint8_t* data, size_t bytesToWrite);
+bool writeAudioFileBytes(File& file, uint32_t fileOffset, const uint8_t* data, size_t bytesToWrite);
 void streamFileBytes(File& file, size_t bytesToSend);
 String buildStatusJson();
 String buildSessionsJson();
@@ -238,6 +254,7 @@ String formatStorageSummary();
 void checkButton();
 void updateLED();
 void audioTask(void* pvParameters);
+void recordingWriterTask(void* pvParameters);
 void checkUsbTransport();
 void handleUsbCommand(String command);
 void sendUsbFile(String audioPath);
@@ -267,7 +284,7 @@ void applyHPFBuffer(int16_t* buffer, size_t count) {
 }
 
 // WAV Header Helper (44 bytes)
-void writeWavHeader(File file, uint32_t totalAudioLen) {
+void writeWavHeader(File& file, uint32_t totalAudioLen) {
   uint32_t totalDataLen = totalAudioLen + 36;
   uint32_t sampleRate = SAMPLE_RATE;
   uint32_t byteRate = SAMPLE_RATE * CHANNEL_COUNT * BITS_PER_SAMPLE / 8;
@@ -618,6 +635,7 @@ bool initI2S() {
 void startRecording() {
   if (isRecording) return;
   lastRecordingError = "";
+  lastRecordingStopReason = "";
 
   if (usePsramFallback) {
     if (psramBuffer == NULL) {
@@ -634,6 +652,11 @@ void startRecording() {
   if (!storageAvailable) {
     lastRecordingError = "No writable storage. Insert a working microSD card or use live stream.";
     Serial.println("ERROR: No writable storage available.");
+    return;
+  }
+  if (recordingRingBuf == NULL) {
+    lastRecordingError = "Recording buffer is not available.";
+    Serial.println("ERROR: Recording ring buffer is not available.");
     return;
   }
 
@@ -678,8 +701,8 @@ void startRecording() {
     }
 
     currentWavPath = currentSessionDir + "/audio_000.wav";
-    audioFile = SD_DEVICE.open(currentWavPath, FILE_WRITE);
-    if (!audioFile) {
+    File newAudioFile = SD_DEVICE.open(currentWavPath, FILE_WRITE);
+    if (!newAudioFile) {
       lastRecordingError = "Failed to open audio file for writing.";
       Serial.println("ERROR: Failed to open audio file for writing!");
       xSemaphoreGive(fileMutex);
@@ -688,9 +711,26 @@ void startRecording() {
 
     // Write placeholder WAV header
     byte headerPlaceholder[44] = {0};
-    audioFile.write(headerPlaceholder, 44);
+    newAudioFile.write(headerPlaceholder, 44);
+    newAudioFile.flush();
+    newAudioFile.close();
 
     audioSize = 0;
+    droppedAudioBytes = 0;
+    recordingQueuedBytes = 0;
+    unflushedAudioBytes = 0;
+    recordingAutoStopRequested = false;
+    recordingWriteFailed = false;
+    recordingWriterActive = false;
+    recordingWriterFileOpen = false;
+    if (recordingRingBuf != NULL) {
+      size_t staleBytes = 0;
+      void* stale = xRingbufferReceive(recordingRingBuf, &staleBytes, 0);
+      while (stale != NULL) {
+        vRingbufferReturnItem(recordingRingBuf, stale);
+        stale = xRingbufferReceive(recordingRingBuf, &staleBytes, 0);
+      }
+    }
     updateCachedStorageStats();
     isRecording = true;
     Serial.print("Started recording to: ");
@@ -703,32 +743,70 @@ void startRecording() {
 }
 
 // Stop Recording
-void stopRecording() {
-  if (!isRecording) return;
+bool stopRecording(const char* reason) {
+  if (!isRecording) return true;
 
+  lastRecordingStopReason = String(reason);
   isRecording = false;
-  delay(50); // Give the audio task a small moment to exit its file write block
+  delay(100); // Give the audio task a moment to exit its file write block.
 
   if (usePsramFallback) {
     updateCachedStorageStats();
     Serial.print("Stopped recording to PSRAM. Total size: ");
     Serial.print(audioSize);
     Serial.println(" bytes.");
-    return;
+    return true;
   }
 
-  if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-    if (audioFile) {
-      writeWavHeader(audioFile, audioSize);
-      audioFile.flush();
-      audioFile.close();
+  const uint32_t drainStarted = millis();
+  uint32_t idleSince = 0;
+  while (millis() - drainStarted < 60000) {
+    if (recordingQueuedBytes == 0 && !recordingWriterActive && !recordingWriterFileOpen) {
+      if (idleSince == 0) {
+        idleSince = millis();
+      } else if (millis() - idleSince >= 500) {
+        break;
+      }
+    } else {
+      idleSince = 0;
+    }
+    delay(20);
+  }
+
+  bool finalized = false;
+  if (recordingQueuedBytes > 0 || recordingWriterActive || recordingWriterFileOpen) {
+    lastRecordingError = "Recording stopped, but the SD writer could not flush buffered audio in time.";
+    Serial.println("ERROR: Recording writer did not drain buffered audio before finalize.");
+  } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
+    File wav = SD_DEVICE.open(currentWavPath, "r+");
+    if (wav) {
+      writeWavHeader(wav, audioSize);
+      wav.flush();
+      wav.close();
+      finalized = true;
       Serial.print("Stopped recording to SD. Total WAV size: ");
-      Serial.print(audioSize);
+      Serial.print(audioSize + 44);
       Serial.println(" bytes.");
+      if (recordingWriteFailed) {
+        lastRecordingError = "Storage write failed during recording.";
+      } else if (droppedAudioBytes > 0) {
+        lastRecordingError = "Storage was busy during recording; some audio samples were dropped.";
+        Serial.print("WARNING: Dropped audio bytes while recording: ");
+        Serial.println(droppedAudioBytes);
+      }
+    } else {
+      lastRecordingError = "Recording stopped, but the audio file could not be opened for finalizing.";
     }
     xSemaphoreGive(fileMutex);
+  } else {
+    lastRecordingError = "Recording stopped, but storage was too busy to finalize the WAV header.";
+    Serial.println("ERROR: Could not acquire storage lock to finalize WAV header.");
+  }
+  if (!finalized) {
+    isRecording = true;
   }
   updateCachedStorageStats();
+  return finalized;
 }
 
 // ============================================================================
@@ -783,17 +861,15 @@ void audioTask(void* pvParameters) {
             isRecording = false;
           }
         } else {
-          // Lock mutex and write directly to file
-          if (xSemaphoreTake(fileMutex, 0) == pdTRUE) {
-            if (audioFile) {
-              size_t bytesWritten = audioFile.write((const uint8_t*)processedBuffer, processedBytes);
-              if (bytesWritten == processedBytes) {
-                audioSize += bytesWritten;
-              } else {
-                Serial.println("[Core 1] WARNING: SD write speed bottleneck!");
-              }
-            }
-            xSemaphoreGive(fileMutex);
+          // Keep capture real-time: enqueue PCM and let the writer task absorb
+          // SD card stalls instead of blocking the I2S reader.
+          if (audioSize + recordingQueuedBytes > SMARTPUCK_MAX_WAV_AUDIO_BYTES - processedBytes) {
+            recordingAutoStopRequested = true;
+          } else if (recordingRingBuf != NULL && xRingbufferSend(recordingRingBuf, processedBuffer, processedBytes, 0) == pdTRUE) {
+            recordingQueuedBytes += (uint32_t)processedBytes;
+          } else {
+            droppedAudioBytes += (uint32_t)processedBytes;
+            Serial.println("[Core 1] WARNING: Recording buffer full; dropped audio buffer.");
           }
         }
       }
@@ -805,6 +881,74 @@ void audioTask(void* pvParameters) {
     }
     
     vTaskDelay(pdMS_TO_TICKS(1)); // Allow other CPU tasks to run on Core 1
+  }
+}
+
+void recordingWriterTask(void* pvParameters) {
+  Serial.println("[Recorder] SD writer task started.");
+  File writerFile;
+  String writerPath = "";
+  while (true) {
+    if (recordingRingBuf == NULL) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
+    }
+
+    size_t receivedBytes = 0;
+    void* data = xRingbufferReceiveUpTo(recordingRingBuf, &receivedBytes, pdMS_TO_TICKS(100), 4096);
+    if (data != NULL) {
+      recordingWriterActive = true;
+      if (!usePsramFallback && currentWavPath.length() > 0) {
+        if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+          if (!writerFile || writerPath != currentWavPath) {
+            if (writerFile) {
+              writerFile.flush();
+              writerFile.close();
+            }
+            writerPath = currentWavPath;
+            writerFile = SD_DEVICE.open(writerPath, "r+");
+            recordingWriterFileOpen = (bool)writerFile;
+          }
+          if (writerFile && writeAudioFileBytes(writerFile, 44 + audioSize, (const uint8_t*)data, receivedBytes)) {
+            audioSize += (uint32_t)receivedBytes;
+            unflushedAudioBytes += (uint32_t)receivedBytes;
+            if (unflushedAudioBytes >= 32768) {
+              writerFile.flush();
+              unflushedAudioBytes = 0;
+            }
+          } else {
+            droppedAudioBytes += (uint32_t)receivedBytes;
+            recordingWriteFailed = true;
+            Serial.println("[Recorder] ERROR: SD write stalled for too long.");
+          }
+          xSemaphoreGive(fileMutex);
+        } else {
+          droppedAudioBytes += (uint32_t)receivedBytes;
+          recordingWriteFailed = true;
+          Serial.println("[Recorder] ERROR: Could not acquire file lock for SD write.");
+        }
+      }
+      if (recordingQueuedBytes >= receivedBytes) {
+        recordingQueuedBytes -= (uint32_t)receivedBytes;
+      } else {
+        recordingQueuedBytes = 0;
+      }
+      vRingbufferReturnItem(recordingRingBuf, data);
+      recordingWriterActive = false;
+    } else if (!isRecording && writerFile) {
+      recordingWriterActive = true;
+      if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        writerFile.flush();
+        writerFile.close();
+        writerPath = "";
+        unflushedAudioBytes = 0;
+        recordingWriterFileOpen = false;
+        xSemaphoreGive(fileMutex);
+      }
+      recordingWriterActive = false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
@@ -1296,6 +1440,27 @@ bool writeClientBytes(WiFiClient& client, const uint8_t* data, size_t bytesToWri
     yield();
   }
   return offset == bytesToWrite;
+}
+
+bool writeAudioFileBytes(File& file, uint32_t fileOffset, const uint8_t* data, size_t bytesToWrite) {
+  if (!file.seek(fileOffset)) {
+    return false;
+  }
+  size_t offset = 0;
+  uint32_t stalledAt = millis();
+  while (offset < bytesToWrite) {
+    size_t written = file.write(data + offset, bytesToWrite - offset);
+    if (written > 0) {
+      offset += written;
+      stalledAt = millis();
+      continue;
+    }
+    if (millis() - stalledAt > 5000) {
+      return false;
+    }
+    delay(1);
+  }
+  return true;
 }
 
 void streamFileBytes(File& file, size_t bytesToSend) {
@@ -1819,7 +1984,9 @@ void handleRoot() {
     }
   } else {
     // Scan SD Card session folders (protect with mutex)
-    if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+    if (isRecording) {
+      sessionItemsHtml += "<p style='color: #94a3b8; font-style: italic;'>Recording is in progress. Stop recording to list or download saved sessions.</p>";
+    } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
       File root = SD_DEVICE.open("/sessions");
       if (!root) {
         sessionItemsHtml += "<p style='color: #94a3b8; font-style: italic;'>No recordings directory found. Create a recording to start!</p>";
@@ -1837,6 +2004,7 @@ void handleRoot() {
             sessionItemsHtml += "  <div class='session-title'>📁 " + baseName + "</div>";
             
             String wavPath = "/sessions/" + baseName + "/audio_000.wav";
+            repairWavHeader(wavPath);
             File audioFileCheck = SD_DEVICE.open(wavPath, FILE_READ);
             size_t fileSize = 0;
             if (audioFileCheck) {
@@ -1945,6 +2113,8 @@ void handleDownload() {
       xSemaphoreGive(fileMutex);
       return;
     }
+
+    repairWavHeader(path);
 
     File file = SD_DEVICE.open(path, FILE_READ);
     if (!file) {
@@ -2057,8 +2227,11 @@ void handleStopRecord() {
   sendCorsHeaders();
 
   if (isRecording) {
-    stopRecording();
-    server.send(200, "application/json", "{\"status\":\"stopped\"}");
+    if (stopRecording("http")) {
+      server.send(200, "application/json", "{\"status\":\"stopped\"}");
+    } else {
+      server.send(503, "application/json", "{\"status\":\"failed\",\"error\":\"" + jsonEscape(lastRecordingError) + "\"}");
+    }
   } else {
     server.send(200, "application/json", "{\"status\":\"not_recording\"}");
   }
@@ -2069,6 +2242,10 @@ String buildStatusJson() {
   json += "\"recording\":" + String(isRecording ? "true" : "false") + ",";
   json += "\"streaming\":" + String(isStreaming ? "true" : "false") + ",";
   json += "\"audioSize\":" + String(audioSize) + ",";
+  json += "\"droppedAudioBytes\":" + String(droppedAudioBytes) + ",";
+  json += "\"recordingQueuedBytes\":" + String(recordingQueuedBytes) + ",";
+  json += "\"recordingWriterActive\":" + String(recordingWriterActive ? "true" : "false") + ",";
+  json += "\"recordingWriterFileOpen\":" + String(recordingWriterFileOpen ? "true" : "false") + ",";
   json += "\"audioLevel\":" + String(isRecording ? audioLevel : 0) + ",";
   json += "\"network\":\"" + jsonEscape(activeNetworkInfo) + "\",";
   json += "\"networkMode\":\"" + String(apModeActive ? "ap" : "station") + "\",";
@@ -2082,6 +2259,7 @@ String buildStatusJson() {
   json += "\"batteryPercent\":null,";
   json += "\"batteryCharging\":null,";
   json += "\"firmwareVersion\":\"" SMARTPUCK_FIRMWARE_VERSION "\",";
+  json += "\"lastStopReason\":\"" + jsonEscape(lastRecordingStopReason) + "\",";
   json += "\"lastError\":\"" + jsonEscape(lastRecordingError) + "\"";
   json += "}";
   return json;
@@ -2149,8 +2327,9 @@ String buildSessionsJson() {
     }
     size_t sizeBytes = 0;
     if (isRecording && audioPath == currentWavPath) {
-      sizeBytes = audioSize;
+      sizeBytes = audioSize + 44;
     } else {
+      repairWavHeader(audioPath);
       File wav = SD_DEVICE.open(audioPath, FILE_READ);
       if (wav) {
         sizeBytes = wav.size();
@@ -2352,29 +2531,36 @@ void handleWiFiConfig() {
 
 // Unified button check and debouncing
 void checkButton() {
-  static bool lastButtonState = HIGH;
   static bool buttonArmed = false;
+  static uint32_t pressedSince = 0;
+  static uint32_t lastActionAt = 0;
+  static bool handledPress = false;
   bool currentButtonState = digitalRead(BUTTON_PIN);
 
   if (!buttonArmed) {
-    lastButtonState = currentButtonState;
     if (millis() > SMARTPUCK_BUTTON_ARM_DELAY_MS && currentButtonState == HIGH) {
       buttonArmed = true;
     }
     return;
   }
 
-  if (lastButtonState == HIGH && currentButtonState == LOW) {
-    delay(50); // Debounce
-    if (digitalRead(BUTTON_PIN) == LOW) {
+  if (currentButtonState == LOW) {
+    if (pressedSince == 0) pressedSince = millis();
+    if (!handledPress
+        && millis() - pressedSince >= SMARTPUCK_BUTTON_HOLD_MS
+        && millis() - lastActionAt >= SMARTPUCK_BUTTON_COOLDOWN_MS) {
+      handledPress = true;
+      lastActionAt = millis();
       if (!isRecording) {
         startRecording();
       } else {
-        stopRecording();
+        stopRecording("button");
       }
     }
+  } else {
+    pressedSince = 0;
+    handledPress = false;
   }
-  lastButtonState = currentButtonState;
 }
 
 // Updates LED indicator depending on system state
@@ -2463,10 +2649,38 @@ void setup() {
     Serial.println("ERROR: Failed to create FreeRTOS Ring Buffer!");
   }
 
+  uint32_t recordingRingBytes = SMARTPUCK_RECORDING_RING_BYTES;
+  recordingRingBuf = xRingbufferCreate(recordingRingBytes, RINGBUF_TYPE_BYTEBUF);
+  if (recordingRingBuf == NULL) {
+    Serial.println("WARNING: Large recording buffer allocation failed; trying minimum buffer.");
+    recordingRingBytes = SMARTPUCK_RECORDING_RING_MIN_BYTES;
+    recordingRingBuf = xRingbufferCreate(recordingRingBytes, RINGBUF_TYPE_BYTEBUF);
+  }
+  if (recordingRingBuf == NULL) {
+    Serial.println("ERROR: Failed to create recording ring buffer. SD recording will report dropped audio.");
+  } else {
+    Serial.print("Recording ring buffer ready: ");
+    Serial.print(recordingRingBytes);
+    Serial.println(" bytes.");
+  }
+
   // Create file access mutex
   fileMutex = xSemaphoreCreateMutex();
   if (fileMutex == NULL) {
     Serial.println("ERROR: Failed to create File Mutex!");
+  }
+
+  if (xTaskCreatePinnedToCore(
+    recordingWriterTask,
+    "recordWriter",
+    6144,
+    NULL,
+    configMAX_PRIORITIES - 2,
+    &recordingWriterTaskHandle,
+    1
+  ) != pdPASS) {
+    recordingWriterTaskHandle = NULL;
+    Serial.println("ERROR: Failed to create recording writer task.");
   }
 
   // Create high-priority audio acquisition task on Core 1
@@ -2543,8 +2757,11 @@ void handleUsbCommand(String command) {
     startRecording();
     Serial.println("@SPK STATUS " + buildStatusJson());
   } else if (command == "STOP") {
-    stopRecording();
-    Serial.println("@SPK STATUS " + buildStatusJson());
+    if (stopRecording("usb")) {
+      Serial.println("@SPK STATUS " + buildStatusJson());
+    } else {
+      Serial.println("@SPK ERROR " + lastRecordingError);
+    }
   } else if (command.startsWith("DOWNLOAD ")) {
     if (isRecording) {
       Serial.println("@SPK ERROR Recording in progress");
@@ -2607,6 +2824,7 @@ void sendUsbFile(String audioPath) {
     Serial.println("@SPK ERROR Storage is busy");
     return;
   }
+  repairWavHeader(audioPath);
   File file = SD_DEVICE.open(audioPath, FILE_READ);
   if (!file) {
     xSemaphoreGive(fileMutex);
@@ -2651,6 +2869,12 @@ void loop() {
     server.handleClient();
   }
 
+  if (recordingAutoStopRequested && isRecording) {
+    lastRecordingError = "Recording reached the single-file WAV limit and was stopped safely.";
+    stopRecording("limit");
+    recordingAutoStopRequested = false;
+  }
+
   // 2. Hardware Button Polling
   checkButton();
 
@@ -2690,7 +2914,7 @@ void loop() {
   }
 
   static uint32_t lastConvexHeartbeat = 0;
-  if (!apModeActive && WiFi.status() == WL_CONNECTED && millis() - lastConvexHeartbeat > 60000) {
+  if (!isRecording && !apModeActive && WiFi.status() == WL_CONNECTED && millis() - lastConvexHeartbeat > 60000) {
     lastConvexHeartbeat = millis();
     sendConvexHeartbeat("Heartbeat");
   }

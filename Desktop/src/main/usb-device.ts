@@ -17,6 +17,8 @@ async function enqueueUsbOperation<T>(op: () => Promise<T>): Promise<T> {
 interface UsbStatus {
   recording?: boolean;
   streaming?: boolean;
+  audioSize?: number;
+  recordingQueuedBytes?: number;
   firmwareVersion?: string;
   storageFreeBytes?: number;
   storageTotalBytes?: number;
@@ -131,11 +133,13 @@ export async function getUsbDeviceSnapshot(url: string): Promise<DeviceSnapshot>
   const status = await requestJson<UsbStatus>(url, "STATUS", "STATUS");
   const payload = await requestJson<{ sessions?: UsbSession[] }>(url, "SESSIONS", "SESSIONS");
   const path = await resolveUsbPath(url);
+  const recordedBytes = Math.max(0, Number(status.audioSize) || 0) + Math.max(0, Number(status.recordingQueuedBytes) || 0);
   return {
     baseUrl: `${USB_PREFIX}${path}`,
     transport: "usb",
     connected: true,
     recording: !!status.recording,
+    recordingDurationSeconds: status.recording ? Math.floor(recordedBytes / 32000) : undefined,
     streaming: !!status.streaming,
     firmwareVersion: String(status.firmwareVersion || "unknown"),
     storageFreeBytes: Number(status.storageFreeBytes) || 0,

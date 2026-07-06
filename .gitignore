@@ -19,6 +19,7 @@ Desktop/node_modules/
 Desktop/dist/
 Desktop/out/
 Desktop/release/
+Desktop/.venv-stt/
 Desktop/.sandbox/
 Desktop/.eslintcache
 Desktop/*.tsbuildinfo

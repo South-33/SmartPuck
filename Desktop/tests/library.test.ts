@@ -48,7 +48,7 @@ describe("filesystem-first meeting library", () => {
     library.updateMeetingMetadata(stableId, { curationStatus: "curated", summary: "Launch approved." });
     library.snapshot();
     expect(readFileSync(join(root, "NEW.md"), "utf8")).toContain("Pending: 0");
-    expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toContain("Start with NEW.md");
+    expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toContain("your inbox");
     expect(readFileSync(join(root, ".agents", "skills", "smartpuck-meetings", "SKILL.md"), "utf8")).toContain("name: smartpuck-meetings");
   });
 
@@ -125,7 +125,7 @@ describe("filesystem-first meeting library", () => {
     const agentsPath = join(root, "AGENTS.md");
     writeFileSync(agentsPath, "# SmartPuck meeting library\n\nThis workspace contains workplaces, meetings, original audio, and editable transcripts.\n");
     library.ensureLibrary();
-    expect(readFileSync(agentsPath, "utf8")).toContain("Start with NEW.md");
+    expect(readFileSync(agentsPath, "utf8")).toContain("your inbox");
 
     writeFileSync(agentsPath, "# My meeting library\n\nKeep this custom guidance.\n");
     library.ensureLibrary();

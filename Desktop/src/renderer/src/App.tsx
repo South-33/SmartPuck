@@ -12,6 +12,7 @@ import {
   HelpCircle,
   Import,
   List,
+  LoaderCircle,
   Mic,
   Pencil,
   Play,
@@ -26,9 +27,11 @@ import {
   Volume1,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import type {
   DeviceSnapshot,
+  DeviceSyncProgress,
   DeviceWifiConfig,
   LibrarySnapshot,
   Meeting,
@@ -45,6 +48,11 @@ type WorkspaceDialogState =
   | { type: "create"; name: string }
   | { type: "rename"; workplace: Workplace; name: string }
   | null;
+type MeetingDialogState = { meeting: Meeting; title: string } | null;
+type DeviceSyncProgressState = DeviceSyncProgress & {
+  startedAt: number;
+  updatedAt: number;
+};
 
 function size(value: number): string {
   if (!value) return "0 GB";
@@ -56,6 +64,23 @@ function size(value: number): string {
     i++;
   }
   return `${amount.toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+function formatClock(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function formatEta(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.ceil(totalSeconds));
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  if (seconds < 60) return `${seconds}s left`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes}m left`;
 }
 
 export default function App(): React.JSX.Element {
@@ -73,9 +98,13 @@ export default function App(): React.JSX.Element {
   const [wifiConfig, setWifiConfig] = useState<DeviceWifiConfig | null>(null);
   const [wifiSsid, setWifiSsid] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
+  const [wifiFormOpen, setWifiFormOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [draggingWorkplaceId, setDraggingWorkplaceId] = useState("");
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogState>(null);
+  const [meetingDialog, setMeetingDialog] = useState<MeetingDialogState>(null);
+  const [recordingTimer, setRecordingTimer] = useState<{ baseSeconds: number; startedAt: number } | null>(null);
+  const [clockNow, setClockNow] = useState(Date.now());
   
   // Collapsible & Resizable Panes States
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
@@ -97,6 +126,7 @@ export default function App(): React.JSX.Element {
   const [deviceAudioDurationStr, setDeviceAudioDurationStr] = useState("00:00");
   const [deviceAudioProgress, setDeviceAudioProgress] = useState(0);
   const [deviceAudioSrc, setDeviceAudioSrc] = useState("");
+  const [preparingDeviceAudioPath, setPreparingDeviceAudioPath] = useState<string | null>(null);
   const deviceAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Settings Dropdown States
@@ -109,6 +139,7 @@ export default function App(): React.JSX.Element {
 
   // Smooth Progress State
   const [smoothProgressMap, setSmoothProgressMap] = useState<Record<string, number>>({});
+  const [deviceSyncProgress, setDeviceSyncProgress] = useState<Record<string, DeviceSyncProgressState>>({});
 
   const streamAbort = useRef<AbortController | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
@@ -123,6 +154,53 @@ export default function App(): React.JSX.Element {
     return window.smartpuck.library.onChanged(() => void reload());
   }, []);
   useEffect(() => window.smartpuck.device.onChanged(setDevice), []);
+  useEffect(() => window.smartpuck.device.onSyncProgress((progress) => {
+    const now = Date.now();
+    setDeviceSyncProgress((previous) => {
+      const existing = previous[progress.path];
+      return {
+        ...previous,
+        [progress.path]: {
+          ...existing,
+          ...progress,
+          startedAt: existing?.startedAt || now,
+          updatedAt: now,
+        },
+      };
+    });
+    if (progress.phase === "done" || progress.phase === "queued" || progress.phase === "error") {
+      window.setTimeout(() => {
+        setDeviceSyncProgress((previous) => {
+          const current = previous[progress.path];
+          if (!current || current.updatedAt > now) return previous;
+          const next = { ...previous };
+          delete next[progress.path];
+          return next;
+        });
+      }, progress.phase === "error" ? 12_000 : 4_000);
+    }
+  }), []);
+  useEffect(() => {
+    if (!device?.recording) {
+      setRecordingTimer(null);
+      return;
+    }
+    setRecordingTimer({
+      baseSeconds: device.recordingDurationSeconds || 0,
+      startedAt: Date.now(),
+    });
+  }, [device?.recording, device?.recordingDurationSeconds]);
+  useEffect(() => {
+    if (!recordingTimer) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    setClockNow(Date.now());
+    return () => window.clearInterval(timer);
+  }, [recordingTimer]);
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 9000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
   useEffect(() => {
     if (view !== "device" || !device?.connected || !device.ip) return;
     void window.smartpuck.device.wifiConfig().then(setWifiConfig).catch(() => setWifiConfig(null));
@@ -310,6 +388,19 @@ export default function App(): React.JSX.Element {
     [allMeetings, selectedId],
   );
 
+  const findDeviceMeeting = useCallback(
+    (session: any): Meeting | undefined =>
+      allMeetings.find((m) =>
+        m.metadata.sourceDevicePath === session.path ||
+        (m.audioAvailable && (
+          m.metadata.title.includes(session.name) ||
+          m.metadata.id.includes(session.name) ||
+          session.name.includes(m.metadata.id)
+        ))
+      ),
+    [allMeetings],
+  );
+
   useEffect(() => {
     setDraft(selected?.transcript || "");
     setIsPlaying(false);
@@ -384,16 +475,19 @@ export default function App(): React.JSX.Element {
   };
 
   const rename = (meeting: Meeting): void => {
-    const title = prompt("Meeting title", meeting.metadata.title);
-    if (title)
-      void run("rename", async () =>
-        setLibrary(
-          await window.smartpuck.library.renameMeeting(
-            meeting.metadata.id,
-            title,
-          ),
-        ),
-      );
+    setMeetingDialog({ meeting, title: meeting.metadata.title });
+  };
+
+  const submitMeetingDialog = (): void => {
+    if (!meetingDialog) return;
+    const title = meetingDialog.title.trim();
+    if (!title) return;
+    void run("rename", async () => {
+      const next = await window.smartpuck.library.renameMeeting(meetingDialog.meeting.metadata.id, title);
+      setLibrary(next);
+      setSelectedId(meetingDialog.meeting.metadata.id);
+      setMeetingDialog(null);
+    });
   };
 
   const renameWorkplace = (workplace: Workplace): void => {
@@ -569,27 +663,41 @@ export default function App(): React.JSX.Element {
       if (isDeviceAudioPlaying) {
         deviceAudioRef.current?.pause();
       } else {
-        deviceAudioRef.current?.play().catch(() => {});
+        deviceAudioRef.current?.play().catch((error) => setError((error as Error).message));
       }
     } else {
-      if (deviceAudioRef.current) {
-        deviceAudioRef.current.pause();
+      const match = findDeviceMeeting(session);
+      if (match && !match.audioAvailable) {
+        setError("This recording was imported before, but the local audio file is missing. Re-import it from the device first.");
+        return;
       }
-      const match = allMeetings.find((m) =>
-        m.metadata.title.includes(session.name) ||
-        m.metadata.id.includes(session.name) ||
-        session.name.includes(m.metadata.id)
-      );
-      const src = match 
-        ? `smartpuck://audio/${encodeURIComponent(match.metadata.id)}` 
-        : `${device?.baseUrl || ""}${session.audioPath}`;
-      setActiveDeviceSession(session);
-      setDeviceAudioSrc(src);
-      setDeviceAudioProgress(0);
-      setDeviceAudioTimeStr("00:00");
-      setTimeout(() => {
-        deviceAudioRef.current?.play().catch(() => {});
-      }, 50);
+      if (!match && (!session.uploaded || busy === "sync-new")) {
+        setError("This recording is still syncing to the library. Playback will be available as soon as the import finishes.");
+        return;
+      }
+      void run("device-preview", async () => {
+        if (deviceAudioRef.current) {
+          deviceAudioRef.current.pause();
+        }
+        setPreparingDeviceAudioPath(session.path);
+        try {
+          const src = match
+            ? `smartpuck://audio/${encodeURIComponent(match.metadata.id)}`
+            : await window.smartpuck.device.previewAudio(session.path);
+          setActiveDeviceSession(session);
+          setDeviceAudioSrc(src);
+          setDeviceAudioProgress(0);
+          setDeviceAudioTimeStr("00:00");
+          setDeviceAudioDurationStr(session.durationSeconds
+            ? `${Math.floor(session.durationSeconds / 60)}:${String(Math.floor(session.durationSeconds % 60)).padStart(2, "0")}`
+            : "00:00");
+          setTimeout(() => {
+            deviceAudioRef.current?.play().catch((error) => setError((error as Error).message));
+          }, 50);
+        } finally {
+          setPreparingDeviceAudioPath(null);
+        }
+      });
     }
   };
 
@@ -625,6 +733,7 @@ export default function App(): React.JSX.Element {
   const handleDeleteDeviceSession = (session: any) => {
     if (confirm(`Are you sure you want to delete "${session.name}" from the device?`)) {
       void run("delete-device-session", async () => {
+        if (preparingDeviceAudioPath === session.path) setPreparingDeviceAudioPath(null);
         setDevice(await window.smartpuck.device.deleteSession(session.path));
         if (activeDeviceSession?.path === session.path) {
           if (deviceAudioRef.current) deviceAudioRef.current.pause();
@@ -649,8 +758,23 @@ export default function App(): React.JSX.Element {
     }
   };
 
+  const importOneDeviceSession = (session: any) => {
+    void run(`sync-device-${session.path}`, async () => {
+      setLibrary(
+        await window.smartpuck.device.importSession(
+          session.path,
+          workplaceId === "inbox" ? undefined : workplaceId,
+        ),
+      );
+      setDevice(await window.smartpuck.device.refresh());
+    });
+  };
+
   const wordCount = draft ? draft.trim().split(/\s+/).filter(Boolean).length : 0;
   const charCount = draft ? draft.length : 0;
+  const liveRecordingSeconds = recordingTimer
+    ? recordingTimer.baseSeconds + Math.floor((clockNow - recordingTimer.startedAt) / 1000)
+    : 0;
 
   return (
     <div className="app" style={{ gridTemplateColumns: isRailCollapsed ? "68px 1fr" : "240px 1fr" }}>
@@ -710,7 +834,13 @@ export default function App(): React.JSX.Element {
         </nav>
       </aside>
       <main>
-        {error && <div className="global-error-toast"><AlertCircle size={16} />{error}</div>}
+        {error && (
+          <button className="global-error-toast" onClick={() => setError("")} title="Dismiss error">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+            <X size={14} />
+          </button>
+        )}
         {workspaceDialog && (
           <div className="modal-backdrop" onClick={() => setWorkspaceDialog(null)}>
             <form
@@ -743,6 +873,36 @@ export default function App(): React.JSX.Element {
             </form>
           </div>
         )}
+        {meetingDialog && (
+          <div className="modal-backdrop" onClick={() => setMeetingDialog(null)}>
+            <form
+              className="modal"
+              onClick={(event) => event.stopPropagation()}
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitMeetingDialog();
+              }}
+            >
+              <h2>Rename meeting</h2>
+              <p>Choose the title shown in the library and workspace lists.</p>
+              <input
+                autoFocus
+                style={{ pointerEvents: "auto", position: "relative", zIndex: 110 }}
+                onClick={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                placeholder="Meeting title"
+                value={meetingDialog.title}
+                onChange={(event) => setMeetingDialog({ ...meetingDialog, title: event.target.value })}
+              />
+              <div className="actions">
+                <button type="button" onClick={() => setMeetingDialog(null)}>Cancel</button>
+                <button className="primary" type="submit" disabled={!meetingDialog.title.trim() || busy === "rename"}>
+                  Save title
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
         {contextMenu && (
           <div
             className="context-menu"
@@ -764,7 +924,7 @@ export default function App(): React.JSX.Element {
                   <Pencil /> Rename meeting
                 </button>
                 <button
-                  disabled={busy === "transcribe" || contextMenu.meeting.metadata.status === "transcribing"}
+                  disabled={contextMenu.meeting.metadata.status === "queued" || contextMenu.meeting.metadata.status === "transcribing"}
                   onClick={() => {
                     void run("transcribe", async () =>
                       setLibrary(await window.smartpuck.library.transcribe(contextMenu.meeting.metadata.id))
@@ -772,7 +932,14 @@ export default function App(): React.JSX.Element {
                     setContextMenu(null);
                   }}
                 >
-                  <Sparkles /> Re-transcribe
+                  <Sparkles />
+                  {contextMenu.meeting.metadata.status === "queued"
+                    ? "Queued"
+                    : contextMenu.meeting.metadata.status === "transcribing"
+                      ? "Transcribing..."
+                      : busy === "transcribe"
+                        ? "Queue re-transcribe"
+                        : "Re-transcribe"}
                 </button>
                 <div className="menu-section">
                   <span>Workspaces</span>
@@ -1106,6 +1273,22 @@ export default function App(): React.JSX.Element {
                       />
                     </div>
 
+                    {(selected.metadata.transcriptionModel || selected.metadata.language || selected.metadata.processedAudioFile) && (
+                      <div className="audio-processing-meta">
+                        {selected.metadata.transcriptionModel && (
+                          <span>Model: {selected.metadata.transcriptionModel}</span>
+                        )}
+                        {selected.metadata.language && (
+                          <span>Language: {selected.metadata.language}</span>
+                        )}
+                        {selected.metadata.processedAudioFile && (
+                          <span>
+                            Playback: processed audio{selected.metadata.denoiseApplied ? ` with ${selected.metadata.denoiseEngine || "denoise"}` : " without denoise"}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {selected.metadata.status === "error" && (
                       <div className="transcription-error-card" style={{
                         background: "rgba(255, 77, 77, 0.04)",
@@ -1191,6 +1374,7 @@ export default function App(): React.JSX.Element {
                          <div className="transcript-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                            <span>{charCount.toLocaleString()} characters • {wordCount.toLocaleString()} words</span>
                            <button
+                             className="retranscribe-btn"
                              onClick={() =>
                                void run("transcribe", async () =>
                                  setLibrary(
@@ -1200,29 +1384,18 @@ export default function App(): React.JSX.Element {
                                  ),
                                )
                              }
-                             disabled={busy === "transcribe" || selected.metadata.status === "transcribing"}
-                             style={{
-                               padding: "6px 12px",
-                               fontSize: "12px",
-                               fontWeight: "600",
-                               background: "rgba(255, 255, 255, 0.05)",
-                               border: "1px solid var(--border-color)",
-                               borderRadius: "var(--radius-sm)",
-                               color: "var(--text-secondary)",
-                               cursor: "pointer",
-                               display: "flex",
-                               alignItems: "center",
-                               gap: "6px",
-                               transition: "var(--transition)",
-                               outline: "none"
-                             }}
+                             disabled={selected.metadata.status === "queued" || selected.metadata.status === "transcribing"}
                            >
                              <Sparkles size={13} />
                              {selected.metadata.status === "error"
                                ? "Retry transcription"
-                               : selected.metadata.status === "transcribing"
+                               : selected.metadata.status === "queued"
+                                 ? "Queued"
+                                 : selected.metadata.status === "transcribing"
                                  ? "Transcribing…"
-                                 : "Re-transcribe"}
+                                 : busy === "transcribe"
+                                   ? "Queue re-transcribe"
+                                   : "Re-transcribe"}
                            </button>
                          </div>
                        </div>
@@ -1372,7 +1545,7 @@ export default function App(): React.JSX.Element {
                           style={{ padding: "12px", fontSize: "13px", fontWeight: "600", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
                         >
                           {device.recording ? <Square size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-                          {device.recording ? "Stop Recording" : "Start Recording"}
+                          {device.recording ? `Stop Recording ${formatClock(liveRecordingSeconds)}` : "Start Recording"}
                         </button>
                         <button
                           onClick={liveListening ? stopLiveListening : startLiveListening}
@@ -1398,45 +1571,61 @@ export default function App(): React.JSX.Element {
 
                     {/* Wi-Fi Provisioning */}
                     <section className="panel device-card">
-                      <h3>Wi-Fi</h3>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <input
-                          placeholder="SSID"
-                          value={wifiSsid}
-                          onChange={(event) => setWifiSsid(event.target.value)}
-                          style={{ padding: "8px 10px", fontSize: "12.5px", pointerEvents: "auto", position: "relative", zIndex: 10 }}
-                        />
-                        <input
-                          placeholder="Password"
-                          type="password"
-                          value={wifiPassword}
-                          onChange={(event) => setWifiPassword(event.target.value)}
-                          style={{ padding: "8px 10px", fontSize: "12.5px", pointerEvents: "auto", position: "relative", zIndex: 10 }}
-                        />
+                      <div className="wifi-card-head">
+                        <h3>Wi-Fi</h3>
                         <button
-                          className="primary"
-                          onClick={() =>
-                            void run("save-wifi", async () => {
-                              await window.smartpuck.device.saveWifi(wifiSsid, wifiPassword);
-                              setWifiPassword("");
-                              setWifiSsid("");
-                              setWifiConfig(await window.smartpuck.device.wifiConfig());
-                            })
-                          }
-                          style={{ fontSize: "12px", padding: "8px" }}
+                          className="wifi-add-btn"
+                          onClick={() => setWifiFormOpen((open) => !open)}
+                          title={wifiFormOpen ? "Hide network form" : "Add Wi-Fi network"}
                         >
-                          Save to Puck
+                          {wifiFormOpen ? <X size={14} /> : <Plus size={14} />}
+                          {wifiFormOpen ? "Cancel" : "Add New"}
                         </button>
                       </div>
+                      {wifiFormOpen && (
+                        <div className="wifi-form">
+                          <input
+                            placeholder="Name"
+                            value={wifiSsid}
+                            onChange={(event) => setWifiSsid(event.target.value)}
+                            style={{ padding: "8px 10px", fontSize: "12.5px", pointerEvents: "auto", position: "relative", zIndex: 10 }}
+                          />
+                          <input
+                            placeholder="Password"
+                            type="password"
+                            value={wifiPassword}
+                            onChange={(event) => setWifiPassword(event.target.value)}
+                            style={{ padding: "8px 10px", fontSize: "12.5px", pointerEvents: "auto", position: "relative", zIndex: 10 }}
+                          />
+                          <button
+                            className="primary"
+                            disabled={!wifiSsid.trim() || busy === "save-wifi"}
+                            onClick={() =>
+                              void run("save-wifi", async () => {
+                                await window.smartpuck.device.saveWifi(wifiSsid, wifiPassword);
+                                setWifiPassword("");
+                                setWifiSsid("");
+                                setWifiFormOpen(false);
+                                setWifiConfig(await window.smartpuck.device.wifiConfig());
+                              })
+                            }
+                            style={{ fontSize: "12px", padding: "8px" }}
+                          >
+                            Save to Puck
+                          </button>
+                        </div>
+                      )}
                       <div className="wifi-saved-list">
-                        {wifiConfig?.networks.map((network) => (
+                        {wifiConfig?.networks.length ? wifiConfig.networks.map((network) => (
                           <div className={`wifi-saved-item ${network.active ? "connected" : ""}`} key={network.ssid}>
                             <div className="wifi-saved-item-left">
                               <CircleDot size={12} />
                               <strong>{network.ssid}</strong>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              {network.active && <span className="conn-status">Connected</span>}
+                              <span className={network.active ? "conn-status" : "saved-status"}>
+                                {network.active ? "Connected" : "Saved"}
+                              </span>
                               <button
                                 className="forget-btn"
                                 onClick={() =>
@@ -1450,7 +1639,9 @@ export default function App(): React.JSX.Element {
                               </button>
                             </div>
                           </div>
-                        ))}
+                        )) : (
+                          <div className="wifi-empty">No saved networks</div>
+                        )}
                       </div>
                     </section>
                   </div>
@@ -1475,9 +1666,10 @@ export default function App(): React.JSX.Element {
                           }
                           style={{ fontSize: "12px" }}
                         >
-                          Sync New
+                          {busy === "sync-new" ? "Syncing..." : "Sync New"}
                         </button>
                         <button
+                          disabled={busy === "sync-new"}
                           onClick={() =>
                             void run("refresh", async () =>
                               setDevice(await window.smartpuck.device.refresh())
@@ -1509,11 +1701,65 @@ export default function App(): React.JSX.Element {
                               </td>
                             </tr>
                           ) : (
-                            device.sessions.map((s) => (
-                              <tr key={s.path}>
+                            device.sessions.map((s) => {
+                              const matchedMeeting = findDeviceMeeting(s);
+                              const isPreparing = preparingDeviceAudioPath === s.path;
+                              const syncProgress = deviceSyncProgress[s.path];
+                              const progressTotal = syncProgress?.totalBytes || s.sizeBytes || 0;
+                              const progressReceived = Math.min(syncProgress?.receivedBytes || 0, progressTotal || Number.MAX_SAFE_INTEGER);
+                              const progressPercent = progressTotal ? Math.max(0, Math.min(100, Math.round((progressReceived / progressTotal) * 100))) : undefined;
+                              const progressElapsedSeconds = syncProgress ? Math.max(0.5, (Date.now() - syncProgress.startedAt) / 1000) : 0;
+                              const progressBytesPerSecond = progressReceived > 0 ? progressReceived / progressElapsedSeconds : 0;
+                              const progressEta = progressTotal && progressBytesPerSecond > 0 && progressReceived < progressTotal
+                                ? formatEta((progressTotal - progressReceived) / progressBytesPerSecond)
+                                : "";
+                              const progressDetail = syncProgress?.phase === "downloading" && progressTotal
+                                ? `${size(progressReceived)} / ${size(progressTotal)}${progressEta ? ` • ${progressEta}` : ""}`
+                                : syncProgress?.phase === "starting"
+                                  ? "Starting transfer"
+                                  : syncProgress?.phase === "importing"
+                                    ? "Saving to library"
+                                    : syncProgress?.phase === "queued"
+                                      ? "Queued for transcription"
+                                      : syncProgress?.phase === "error"
+                                        ? syncProgress.message || "Sync failed"
+                                        : "";
+                              const isMissingLocalAudio = !!matchedMeeting && !matchedMeeting.audioAvailable;
+                              const needsReimport = isMissingLocalAudio || (s.uploaded && !matchedMeeting);
+                              const isImportingOne = busy === `sync-device-${s.path}`;
+                              const isSyncing = !!syncProgress && syncProgress.phase !== "error" || isImportingOne || (!matchedMeeting && (busy === "sync-new" || !s.uploaded));
+                              const isQueued = matchedMeeting?.metadata.status === "queued";
+                              const isTranscribing = matchedMeeting?.metadata.status === "transcribing";
+                              const smoothProgress = matchedMeeting
+                                ? smoothProgressMap[matchedMeeting.metadata.id] ?? matchedMeeting.metadata.progressPercent
+                                : undefined;
+                              const statusText = isPreparing
+                                ? "Preparing"
+                                : syncProgress?.phase === "error"
+                                  ? "Sync failed"
+                                : isSyncing
+                                  ? progressPercent !== undefined
+                                    ? `Syncing ${progressPercent}%`
+                                    : "Syncing"
+                                  : isQueued
+                                    ? "Queued"
+                                    : isTranscribing
+                                    ? `Transcribing ${Math.round(smoothProgress ?? matchedMeeting?.metadata.progressPercent ?? 5)}%`
+                                    : needsReimport
+                                      ? "Needs re-import"
+                                    : matchedMeeting
+                                      ? "In library"
+                                      : s.uploaded
+                                        ? "On device"
+                                        : "Pending sync";
+                              const canPlay = !isPreparing && !isSyncing && !isMissingLocalAudio;
+                              return (
+                              <tr key={s.path} className={isSyncing || isPreparing ? "recording-row busy" : undefined}>
                                 <td>
                                   <button
+                                    className="device-row-play"
                                     onClick={() => toggleDeviceAudio(s)}
+                                    disabled={!canPlay}
                                     style={{
                                       padding: "6px",
                                       borderRadius: "50%",
@@ -1523,12 +1769,21 @@ export default function App(): React.JSX.Element {
                                       alignItems: "center",
                                       justifyContent: "center",
                                       color: activeDeviceSession?.path === s.path && isDeviceAudioPlaying ? "var(--accent-lime)" : "var(--text-secondary)",
-                                      cursor: "pointer",
                                       transition: "all 0.15s ease"
                                     }}
-                                    title="Listen to recording"
+                                    title={isSyncing
+                                      ? "Syncing to library"
+                                      : isMissingLocalAudio
+                                        ? "Re-import this recording before playback"
+                                        : isPreparing
+                                          ? "Preparing preview"
+                                          : "Listen to recording"}
                                   >
-                                    {activeDeviceSession?.path === s.path && isDeviceAudioPlaying ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                                    {isPreparing
+                                      ? <LoaderCircle className="spin" size={12} />
+                                      : activeDeviceSession?.path === s.path && isDeviceAudioPlaying
+                                        ? <Square size={10} fill="currentColor" />
+                                        : <Play size={10} fill="currentColor" />}
                                   </button>
                                 </td>
                                 <td
@@ -1536,7 +1791,13 @@ export default function App(): React.JSX.Element {
                                   title="Double-click to rename"
                                   style={{ fontWeight: "500", color: "var(--text-primary)", cursor: "pointer" }}
                                 >
-                                  {s.name}
+                                  <div className="recording-name-cell">
+                                    <span>{s.name}</span>
+                                    <span className={`table-status-tag ${isSyncing || isPreparing ? "pending" : isQueued || isTranscribing ? "transcribing" : needsReimport || syncProgress?.phase === "error" ? "warning" : matchedMeeting ? "synced" : "device-only"}`}>
+                                      {statusText}
+                                    </span>
+                                  </div>
+                                  {progressDetail && <div className={`recording-progress-detail ${syncProgress?.phase === "error" ? "error" : ""}`}>{progressDetail}</div>}
                                 </td>
                                 <td>
                                   {s.durationSeconds
@@ -1546,26 +1807,39 @@ export default function App(): React.JSX.Element {
                                 <td>{size(s.sizeBytes)}</td>
                                 <td>{parseDeviceDate(s.createdAt)}</td>
                                 <td>
-                                  <button
-                                    className="forget-btn"
-                                    onClick={() => handleDeleteDeviceSession(s)}
-                                    style={{
-                                      padding: "6px",
-                                      background: "transparent",
-                                      border: "none",
-                                      color: "var(--text-muted)",
-                                      cursor: "pointer",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center"
-                                    }}
-                                    title="Delete from device"
-                                  >
-                                    <Trash size={12} />
-                                  </button>
+                                  <div className="device-row-actions">
+                                    {needsReimport && (
+                                      <button
+                                        className="device-row-action"
+                                        onClick={() => importOneDeviceSession(s)}
+                                        disabled={isSyncing}
+                                        title="Re-import to library"
+                                      >
+                                        <Import size={12} />
+                                      </button>
+                                    )}
+                                    <button
+                                      className="forget-btn"
+                                      onClick={() => handleDeleteDeviceSession(s)}
+                                      style={{
+                                        padding: "6px",
+                                        background: "transparent",
+                                        border: "none",
+                                        color: "var(--text-muted)",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center"
+                                      }}
+                                      title="Delete from device"
+                                    >
+                                      <Trash size={12} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
-                            ))
+                              );
+                            })
                           )}
                         </tbody>
                       </table>
@@ -1595,7 +1869,7 @@ export default function App(): React.JSX.Element {
                           if (isDeviceAudioPlaying) {
                             deviceAudioRef.current?.pause();
                           } else {
-                            deviceAudioRef.current?.play().catch(() => {});
+                            deviceAudioRef.current?.play().catch((error) => setError((error as Error).message));
                           }
                         }}
                         style={{

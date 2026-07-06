@@ -27,6 +27,7 @@ export interface MeetingMetadata {
   language?: string;
   transcriptionModel?: string;
   denoiseApplied?: boolean;
+  denoiseEngine?: string;
   error?: string;
 }
 
@@ -34,6 +35,7 @@ export interface Meeting {
   path: string;
   metadata: MeetingMetadata;
   transcript: string;
+  audioAvailable: boolean;
 }
 
 export interface WorkplaceMetadata {
@@ -62,6 +64,7 @@ export interface DeviceSnapshot {
   transport: "usb" | "wifi";
   connected: boolean;
   recording: boolean;
+  recordingDurationSeconds?: number;
   streaming: boolean;
   firmwareVersion: string;
   storageFreeBytes: number;
@@ -93,6 +96,15 @@ export interface DeviceWifiConfig {
   networks: Array<{ ssid: string; active: boolean }>;
 }
 
+export interface DeviceSyncProgress {
+  path: string;
+  name?: string;
+  phase: "starting" | "downloading" | "importing" | "queued" | "done" | "error";
+  receivedBytes?: number;
+  totalBytes?: number;
+  message?: string;
+}
+
 export interface SmartPuckApi {
   library: {
     snapshot(): Promise<LibrarySnapshot>;
@@ -116,14 +128,16 @@ export interface SmartPuckApi {
     connect(baseUrl: string): Promise<DeviceSnapshot>;
     refresh(): Promise<DeviceSnapshot | null>;
     setRecording(action: "start" | "stop"): Promise<DeviceSnapshot>;
+    previewAudio(path: string): Promise<string>;
     importSession(path: string, workplaceId?: string): Promise<LibrarySnapshot>;
     importNew(workplaceId?: string): Promise<LibrarySnapshot>;
     renameSession(path: string, name: string): Promise<DeviceSnapshot>;
     deleteSession(path: string): Promise<DeviceSnapshot>;
-    wifiConfig(): Promise<DeviceWifiConfig>;
+    wifiConfig(): Promise<DeviceWifiConfig | null>;
     saveWifi(ssid: string, password: string): Promise<void>;
     removeWifi(ssid: string): Promise<void>;
     onChanged(callback: (snapshot: DeviceSnapshot | null) => void): () => void;
+    onSyncProgress(callback: (progress: DeviceSyncProgress) => void): () => void;
   };
   dialogs: { chooseAudio(): Promise<string[]> };
 }
