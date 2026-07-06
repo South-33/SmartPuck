@@ -6,6 +6,14 @@ const USB_PREFIX = "usb://";
 const ESPRESSIF_VENDOR_ID = "303a";
 const BAUD_RATE = 921_600;
 
+let usbQueuePromise = Promise.resolve();
+
+async function enqueueUsbOperation<T>(op: () => Promise<T>): Promise<T> {
+  const next = usbQueuePromise.then(op);
+  usbQueuePromise = next.catch(() => {}).then(() => {});
+  return next;
+}
+
 interface UsbStatus {
   recording?: boolean;
   streaming?: boolean;
@@ -45,71 +53,75 @@ async function resolveUsbPath(value: string): Promise<string> {
   return port.path;
 }
 
-async function requestJson<T>(url: string, command: string, responseType: string): Promise<T> {
-  const path = await resolveUsbPath(url);
-  return new Promise((resolve, reject) => {
-    const port = new SerialPort({ path, baudRate: BAUD_RATE, autoOpen: false });
-    let pending = "";
-    let settled = false;
-    const finish = (error?: Error, value?: T): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      const complete = (): void => error ? reject(error) : resolve(value as T);
-      if (port.isOpen) port.close(complete); else complete();
-    };
-    const timeout = setTimeout(() => finish(new Error("SmartPuck USB connection timed out.")), 5_000);
-    port.on("data", (chunk: Buffer) => {
-      pending += chunk.toString("utf8");
-      let newline = pending.indexOf("\n");
-      while (newline >= 0) {
-        const line = pending.slice(0, newline).trim();
-        pending = pending.slice(newline + 1);
-        const prefix = `@SPK ${responseType} `;
-        if (line.startsWith(prefix)) {
-          try { finish(undefined, JSON.parse(line.slice(prefix.length)) as T); }
-          catch { finish(new Error("SmartPuck USB returned invalid JSON.")); }
-          return;
+function requestJson<T>(url: string, command: string, responseType: string): Promise<T> {
+  return enqueueUsbOperation(async () => {
+    const path = await resolveUsbPath(url);
+    return new Promise((resolve, reject) => {
+      const port = new SerialPort({ path, baudRate: BAUD_RATE, autoOpen: false });
+      let pending = "";
+      let settled = false;
+      const finish = (error?: Error, value?: T): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        const complete = (): void => error ? reject(error) : resolve(value as T);
+        if (port.isOpen) port.close(complete); else complete();
+      };
+      const timeout = setTimeout(() => finish(new Error("SmartPuck USB connection timed out.")), 5_000);
+      port.on("data", (chunk: Buffer) => {
+        pending += chunk.toString("utf8");
+        let newline = pending.indexOf("\n");
+        while (newline >= 0) {
+          const line = pending.slice(0, newline).trim();
+          pending = pending.slice(newline + 1);
+          const prefix = `@SPK ${responseType} `;
+          if (line.startsWith(prefix)) {
+            try { finish(undefined, JSON.parse(line.slice(prefix.length)) as T); }
+            catch { finish(new Error("SmartPuck USB returned invalid JSON.")); }
+            return;
+          }
+          if (line.startsWith("@SPK ERROR ")) return finish(new Error(line.slice(11)));
+          newline = pending.indexOf("\n");
         }
-        if (line.startsWith("@SPK ERROR ")) return finish(new Error(line.slice(11)));
-        newline = pending.indexOf("\n");
-      }
-    });
-    port.on("error", (error) => finish(error));
-    port.open((error) => {
-      if (error) return finish(new Error(`Could not open SmartPuck USB (${path}): ${error.message}`));
-      port.write(`@SPK ${command}\n`, (writeError) => {
-        if (writeError) finish(new Error(`Could not send SmartPuck USB command: ${writeError.message}`));
+      });
+      port.on("error", (error) => finish(error));
+      port.open((error) => {
+        if (error) return finish(new Error(`Could not open SmartPuck USB (${path}): ${error.message}`));
+        port.write(`@SPK ${command}\n`, (writeError) => {
+          if (writeError) finish(new Error(`Could not send SmartPuck USB command: ${writeError.message}`));
+        });
       });
     });
   });
 }
 
-async function requestOk(url: string, command: string): Promise<void> {
-  const path = await resolveUsbPath(url);
-  return new Promise((resolve, reject) => {
-    const port = new SerialPort({ path, baudRate: BAUD_RATE, autoOpen: false });
-    let pending = "";
-    let settled = false;
-    const finish = (error?: Error): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      const complete = (): void => error ? reject(error) : resolve();
-      if (port.isOpen) port.close(complete); else complete();
-    };
-    const timeout = setTimeout(() => finish(new Error("SmartPuck USB connection timed out.")), 5_000);
-    port.on("data", (chunk: Buffer) => {
-      pending += chunk.toString("utf8");
-      if (pending.includes("@SPK OK")) return finish();
-      const match = /@SPK ERROR ([^\r\n]+)/.exec(pending);
-      if (match) finish(new Error(match[1]));
-    });
-    port.on("error", (error) => finish(error));
-    port.open((error) => {
-      if (error) return finish(new Error(`Could not open SmartPuck USB (${path}): ${error.message}`));
-      port.write(`@SPK ${command}\n`, (writeError) => {
-        if (writeError) finish(new Error(`Could not send SmartPuck USB command: ${writeError.message}`));
+function requestOk(url: string, command: string): Promise<void> {
+  return enqueueUsbOperation(async () => {
+    const path = await resolveUsbPath(url);
+    return new Promise((resolve, reject) => {
+      const port = new SerialPort({ path, baudRate: BAUD_RATE, autoOpen: false });
+      let pending = "";
+      let settled = false;
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        const complete = (): void => error ? reject(error) : resolve();
+        if (port.isOpen) port.close(complete); else complete();
+      };
+      const timeout = setTimeout(() => finish(new Error("SmartPuck USB connection timed out.")), 5_000);
+      port.on("data", (chunk: Buffer) => {
+        pending += chunk.toString("utf8");
+        if (pending.includes("@SPK OK")) return finish();
+        const match = /@SPK ERROR ([^\r\n]+)/.exec(pending);
+        if (match) finish(new Error(match[1]));
+      });
+      port.on("error", (error) => finish(error));
+      port.open((error) => {
+        if (error) return finish(new Error(`Could not open SmartPuck USB (${path}): ${error.message}`));
+        port.write(`@SPK ${command}\n`, (writeError) => {
+          if (writeError) finish(new Error(`Could not send SmartPuck USB command: ${writeError.message}`));
+        });
       });
     });
   });
@@ -152,47 +164,49 @@ export async function setUsbRecording(url: string, action: "start" | "stop"): Pr
 }
 
 export async function downloadUsbAudio(url: string, audioPath: string, destination: string): Promise<void> {
-  const path = await resolveUsbPath(url);
-  const bytes = await new Promise<Buffer>((resolve, reject) => {
-    const port = new SerialPort({ path, baudRate: BAUD_RATE, autoOpen: false });
-    let header = Buffer.alloc(0);
-    let expected: number | null = null;
-    const chunks: Buffer[] = [];
-    let received = 0;
-    let settled = false;
-    const finish = (error?: Error, value?: Buffer): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      const complete = (): void => error ? reject(error) : resolve(value as Buffer);
-      if (port.isOpen) port.close(complete); else complete();
-    };
-    const timeout = setTimeout(() => finish(new Error("SmartPuck USB transfer timed out.")), 120_000);
-    port.on("data", (chunk: Buffer) => {
-      let data = chunk;
-      if (expected === null) {
-        header = Buffer.concat([header, data]);
-        let newline = header.indexOf(0x0a);
-        while (newline >= 0) {
-          const line = header.subarray(0, newline).toString("utf8").trim();
-          header = header.subarray(newline + 1);
-          const match = /^@SPK FILE (\d+)$/.exec(line);
-          if (match) { expected = Number(match[1]); data = header; break; }
-          if (line.startsWith("@SPK ERROR ")) return finish(new Error(line.slice(11)));
-          newline = header.indexOf(0x0a);
+  const bytes = await enqueueUsbOperation(async () => {
+    const path = await resolveUsbPath(url);
+    return new Promise<Buffer>((resolve, reject) => {
+      const port = new SerialPort({ path, baudRate: BAUD_RATE, autoOpen: false });
+      let header = Buffer.alloc(0);
+      let expected: number | null = null;
+      const chunks: Buffer[] = [];
+      let received = 0;
+      let settled = false;
+      const finish = (error?: Error, value?: Buffer): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        const complete = (): void => error ? reject(error) : resolve(value as Buffer);
+        if (port.isOpen) port.close(complete); else complete();
+      };
+      const timeout = setTimeout(() => finish(new Error("SmartPuck USB transfer timed out.")), 120_000);
+      port.on("data", (chunk: Buffer) => {
+        let data = chunk;
+        if (expected === null) {
+          header = Buffer.concat([header, data]);
+          let newline = header.indexOf(0x0a);
+          while (newline >= 0) {
+            const line = header.subarray(0, newline).toString("utf8").trim();
+            header = header.subarray(newline + 1);
+            const match = /^@SPK FILE (\d+)$/.exec(line);
+            if (match) { expected = Number(match[1]); data = header; break; }
+            if (line.startsWith("@SPK ERROR ")) return finish(new Error(line.slice(11)));
+            newline = header.indexOf(0x0a);
+          }
+          if (expected === null) return;
         }
-        if (expected === null) return;
-      }
-      const remaining = expected - received;
-      const part = data.subarray(0, Math.max(0, remaining));
-      if (part.length) { chunks.push(part); received += part.length; }
-      if (received === expected) finish(undefined, Buffer.concat(chunks, expected));
-    });
-    port.on("error", (error) => finish(error));
-    port.open((error) => {
-      if (error) return finish(new Error(`Could not open SmartPuck USB (${path}): ${error.message}`));
-      port.write(`@SPK DOWNLOAD ${audioPath}\n`, (writeError) => {
-        if (writeError) finish(new Error(`Could not start SmartPuck USB transfer: ${writeError.message}`));
+        const remaining = expected - received;
+        const part = data.subarray(0, Math.max(0, remaining));
+        if (part.length) { chunks.push(part); received += part.length; }
+        if (received === expected) finish(undefined, Buffer.concat(chunks, expected));
+      });
+      port.on("error", (error) => finish(error));
+      port.open((error) => {
+        if (error) return finish(new Error(`Could not open SmartPuck USB (${path}): ${error.message}`));
+        port.write(`@SPK DOWNLOAD ${audioPath}\n`, (writeError) => {
+          if (writeError) finish(new Error(`Could not start SmartPuck USB transfer: ${writeError.message}`));
+        });
       });
     });
   });
