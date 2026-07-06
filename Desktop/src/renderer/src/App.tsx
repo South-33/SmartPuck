@@ -518,9 +518,24 @@ export default function App(): React.JSX.Element {
 
   const deleteMeeting = (meeting: Meeting): void => {
     if (!confirm(`Move "${meeting.metadata.title}" to Trash?`)) return;
+    
+    // Release audio player lock if the selected meeting is the one being deleted
+    if (meeting.metadata.id === selectedId) {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+          audioRef.current.src = "";
+          audioRef.current.load();
+        } catch (e) {
+          console.error("Failed to release audio source lock:", e);
+        }
+      }
+      setIsPlaying(false);
+      setSelectedId("");
+    }
+
     void run("delete-meeting", async () => {
       setLibrary(await window.smartpuck.library.deleteMeeting(meeting.metadata.id));
-      setSelectedId("");
     });
   };
 

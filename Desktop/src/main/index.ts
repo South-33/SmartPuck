@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, protocol, shell, net } from "electron";
+import { pathToFileURL } from "url";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { randomUUID } from "crypto";
-import { createReadStream, rmSync, statSync } from "fs";
-import { dirname, extname, join } from "path";
-import { Readable } from "stream";
+import { rmSync } from "fs";
+import { dirname, join } from "path";
 import chokidar from "chokidar";
 import {
   addMeetingToWorkplace, createWorkplace, deleteMeeting, deleteWorkplace, ensureLibrary, importAudio, libraryRoot,
@@ -60,30 +60,7 @@ function registerMediaProtocol(): void {
             return join(meeting.path, audioFile);
           })();
       if (!filePath) return new Response("Device audio not found", { status: 404 });
-      const size = statSync(filePath).size;
-      const contentType = extname(filePath).toLowerCase() === ".wav" ? "audio/wav" : "audio/mpeg";
-      const range = request.headers.get("range");
-      let start = 0;
-      let end = size - 1;
-      let status = 200;
-      if (range) {
-        const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-        if (!match) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
-        start = match[1] ? Number(match[1]) : 0;
-        end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
-        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) {
-          return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
-        }
-        status = 206;
-      }
-      const headers: Record<string, string> = {
-        "accept-ranges": "bytes",
-        "content-length": String(end - start + 1),
-        "content-type": contentType,
-      };
-      if (status === 206) headers["content-range"] = `bytes ${start}-${end}/${size}`;
-      const body = Readable.toWeb(createReadStream(filePath, { start, end })) as BodyInit;
-      return new Response(body, { status, headers });
+      return net.fetch(pathToFileURL(filePath).toString());
     } catch {
       return new Response("Audio not found", { status: 404 });
     }
