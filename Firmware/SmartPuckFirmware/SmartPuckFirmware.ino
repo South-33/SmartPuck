@@ -2179,7 +2179,7 @@ String buildSessionsJson() {
 void handleSessions() {
   sendCorsHeaders();
   if (isRecording) {
-    server.send(409, "application/json", "{\"sessions\":[],\"error\":\"Recording in progress\"}");
+    server.send(200, "application/json", "{\"sessions\":[]}");
     return;
   }
   if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(1500)) == pdTRUE) {
@@ -2532,7 +2532,7 @@ void handleUsbCommand(String command) {
     Serial.println("@SPK STATUS " + buildStatusJson());
   } else if (command == "SESSIONS") {
     if (isRecording) {
-      Serial.println("@SPK ERROR Recording in progress");
+      Serial.println("@SPK SESSIONS {\"sessions\":[]}");
     } else if (xSemaphoreTake(fileMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
       Serial.println("@SPK SESSIONS " + buildSessionsJson());
       xSemaphoreGive(fileMutex);
