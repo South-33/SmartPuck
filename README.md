@@ -39,7 +39,12 @@ pnpm install
 pnpm dev
 ```
 
-The local speech worker dependencies are listed in `Desktop/resources/requirements.txt`. The app can use a custom Python executable through `SMARTPUCK_PYTHON`.
+The local speech worker dependencies are installed in `Desktop/.venv-stt`. The app can use a custom Python executable through `SMARTPUCK_PYTHON`.
+
+### VRAM & Hardware Optimization on Windows
+To guarantee fast transcription speeds on Windows laptops running other GPU-heavy background applications (Chrome, Discord, games), the STT service:
+- Runs **Whisper ASR** on the GPU (`float16`) for blazing fast transcription (~18 seconds for a 9-minute file).
+- Offloads **DeepFilterNet** denoising to the CPU. This saves ~1.5 GB of VRAM, completely avoiding slow WDDM memory paging to system RAM and reducing total processing time by over 2x.
 
 ## Hardware
 
