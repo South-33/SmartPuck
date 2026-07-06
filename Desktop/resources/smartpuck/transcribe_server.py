@@ -1,6 +1,8 @@
 import os
 import sys
 
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 # Configure local Hugging Face cache directory inside the project to avoid polluting C drive
 if not os.environ.get("HF_HOME"):
     os.environ["HF_HOME"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
