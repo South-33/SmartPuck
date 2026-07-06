@@ -139,6 +139,8 @@ volatile uint8_t audioLevel = 0;
 String currentSessionDir = "";
 String currentWavPath = "";
 bool storageAvailable = false;
+uint64_t cachedTotalBytes = 0;
+uint64_t cachedFreeBytes = 0;
 String lastRecordingError = "";
 
 // PSRAM Fallback State
@@ -184,6 +186,7 @@ bool initI2S();
 void startRecording();
 void stopRecording();
 void repairIncompleteSessions();
+void updateCachedStorageStats();
 bool repairWavHeader(String wavPath);
 void applyHPFBuffer(int16_t* buffer, size_t count);
 void writeWavHeader(File file, uint32_t totalAudioLen);
@@ -450,6 +453,7 @@ bool repairWavHeader(String wavPath) {
   // update mode or every healthy recording is reduced to a 44-byte header.
   wav = SD_DEVICE.open(wavPath, "r+");
   if (!wav) {
+    Serial.println("[Storage] ERROR: Could not open WAV in r+ mode for repair: " + wavPath);
     return false;
   }
   writeWavHeader(wav, fileSize - 44);
@@ -687,6 +691,7 @@ void startRecording() {
     audioFile.write(headerPlaceholder, 44);
 
     audioSize = 0;
+    updateCachedStorageStats();
     isRecording = true;
     Serial.print("Started recording to: ");
     Serial.println(currentWavPath);
@@ -702,6 +707,7 @@ void stopRecording() {
   if (!isRecording) return;
 
   isRecording = false;
+  updateCachedStorageStats();
   delay(50); // Give the audio task a small moment to exit its file write block
 
   if (usePsramFallback) {
@@ -1123,29 +1129,48 @@ bool removeSessionRecursive(String sessionPath) {
   return SD_DEVICE.rmdir(sessionPath);
 }
 
+void updateCachedStorageStats() {
+  if (!storageAvailable || usePsramFallback) {
+    cachedTotalBytes = 0;
+    cachedFreeBytes = 0;
+    return;
+  }
+  cachedTotalBytes = SD_DEVICE.totalBytes();
+  uint64_t used = SD_DEVICE.usedBytes();
+  if (cachedTotalBytes > used) {
+    cachedFreeBytes = cachedTotalBytes - used;
+  } else {
+    cachedFreeBytes = 0;
+  }
+}
+
 uint64_t getTotalStorageBytes() {
   if (!storageAvailable || usePsramFallback) return 0;
-#ifdef BOARD_LOLIN_S3_PRO
-  return SD_DEVICE.totalBytes();
-#else
-  return SD_DEVICE.totalBytes();
-#endif
+  if (isRecording) {
+    return cachedTotalBytes;
+  }
+  cachedTotalBytes = SD_DEVICE.totalBytes();
+  return cachedTotalBytes;
 }
 
 uint64_t getUsedStorageBytes() {
   if (!storageAvailable || usePsramFallback) return 0;
-#ifdef BOARD_LOLIN_S3_PRO
-  return SD_DEVICE.usedBytes();
-#else
-  return SD_DEVICE.usedBytes();
-#endif
+  if (isRecording) {
+    uint64_t free = getFreeStorageBytes();
+    if (cachedTotalBytes > free) return cachedTotalBytes - free;
+    return 0;
+  }
+  uint64_t used = SD_DEVICE.usedBytes();
+  return used;
 }
 
 uint64_t getFreeStorageBytes() {
-  uint64_t total = getTotalStorageBytes();
-  uint64_t used = getUsedStorageBytes();
-  if (total <= used) return 0;
-  return total - used;
+  if (!storageAvailable || usePsramFallback) return 0;
+  if (isRecording) {
+    return cachedFreeBytes > audioSize ? cachedFreeBytes - audioSize : 0;
+  }
+  updateCachedStorageStats();
+  return cachedFreeBytes;
 }
 
 String formatStorageSummary() {
@@ -2102,10 +2127,14 @@ String buildSessionsJson() {
       network = activeNetworkInfo;
     }
     size_t sizeBytes = 0;
-    File wav = SD_DEVICE.open(audioPath, FILE_READ);
-    if (wav) {
-      sizeBytes = wav.size();
-      wav.close();
+    if (isRecording && audioPath == currentWavPath) {
+      sizeBytes = audioSize;
+    } else {
+      File wav = SD_DEVICE.open(audioPath, FILE_READ);
+      if (wav) {
+        sizeBytes = wav.size();
+        wav.close();
+      }
     }
 
     if (i > 0) json += ",";
@@ -2376,6 +2405,7 @@ void setup() {
       Serial.println("WARNING: No writable recording storage. Live audio streaming and status API will still run.");
     }
   } else {
+    updateCachedStorageStats();
     repairIncompleteSessions();
   }
 
