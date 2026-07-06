@@ -1,6 +1,10 @@
 import os
 import sys
 
+# Limit OpenMP threads to 1 to prevent thread pool collision & CPU thrashing
+# when both PyTorch (DeepFilterNet) and CTranslate2 (Whisper) are loaded together.
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # Configure local Hugging Face cache directory inside the project to avoid polluting C drive
