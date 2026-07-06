@@ -1,11 +1,16 @@
 import os
 import sys
+import threading
 
 # Limit OpenMP threads to 1 to prevent thread pool collision & CPU thrashing
 # when both PyTorch (DeepFilterNet) and CTranslate2 (Whisper) are loaded together.
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+model_cache_lock = threading.Lock()
+diarization_cache = {}
+diarization_lock = threading.Lock()
 
 # Configure local Hugging Face cache directory inside the project to avoid polluting C drive
 if not os.environ.get("HF_HOME"):
@@ -153,39 +158,41 @@ cuda_disabled = False
 def get_model(resolved_model: str, force_cpu: bool = False):
     global cuda_disabled
 
-    # Detect if CUDA (GPU) is available in ctranslate2
-    device = "cpu"
-    if not force_cpu and not cuda_disabled:
-        try:
-            import ctranslate2
-            if ctranslate2.get_cuda_device_count() > 0:
-                device = "cuda"
-        except Exception:
-            pass
-
-    cache_key = (resolved_model, device)
-    if cache_key in model_cache:
-        return model_cache[cache_key]
-
-    compute_type = "float16" if device == "cuda" else "int8"
-    print(f"[SmartPuck STT] Loading model '{resolved_model}' on device '{device}' with compute_type '{compute_type}'...")
-
-    try:
-        model = WhisperModel(resolved_model, device=device, compute_type=compute_type)
-        model_cache[cache_key] = model
-        return model
-    except Exception as e:
-        print(f"[SmartPuck STT] Failed to load model '{resolved_model}' on GPU: {e}")
-        if device == "cuda":
-            print("[SmartPuck STT] Retrying load on CPU fallback...")
+    with model_cache_lock:
+        # Detect if CUDA (GPU) is available in ctranslate2
+        device = "cpu"
+        if not force_cpu and not cuda_disabled:
             try:
-                model = WhisperModel(resolved_model, device="cpu", compute_type="int8")
-                model_cache[(resolved_model, "cpu")] = model
-                return model
-            except Exception as cpu_err:
-                raise HTTPException(status_code=500, detail=f"CPU fallback failed: {cpu_err}")
-        else:
-            raise HTTPException(status_code=500, detail=f"Model load failed: {e}")
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() > 0:
+                    device = "cuda"
+            except Exception:
+                pass
+
+        cache_key = (resolved_model, device)
+        if cache_key in model_cache:
+            return model_cache[cache_key]
+
+        compute_type = "float16" if device == "cuda" else "int8"
+        print(f"[SmartPuck STT] Loading model '{resolved_model}' on device '{device}' with compute_type '{compute_type}'...")
+
+        try:
+            model = WhisperModel(resolved_model, device=device, compute_type=compute_type)
+            model_cache[cache_key] = model
+            return model
+        except Exception as e:
+            print(f"[SmartPuck STT] Failed to load model '{resolved_model}' on GPU: {e}")
+            if device == "cuda":
+                print("[SmartPuck STT] Retrying load on CPU fallback...")
+                cuda_disabled = True
+                try:
+                    model = WhisperModel(resolved_model, device="cpu", compute_type="int8")
+                    model_cache[(resolved_model, "cpu")] = model
+                    return model
+                except Exception as cpu_err:
+                    raise HTTPException(status_code=500, detail=f"CPU fallback failed: {cpu_err}")
+            else:
+                raise HTTPException(status_code=500, detail=f"Model load failed: {e}")
 
 
 def ensure_diarization_models(model_dir: str):
@@ -204,7 +211,9 @@ def ensure_diarization_models(model_dir: str):
     if not os.path.exists(seg_model_path):
         if not os.path.exists(seg_tar_path):
             print(f"[SmartPuck STT] Downloading speaker segmentation model from {seg_url}...", flush=True)
-            urllib.request.urlretrieve(seg_url, seg_tar_path)
+            tmp_seg_tar = seg_tar_path + ".tmp"
+            urllib.request.urlretrieve(seg_url, tmp_seg_tar)
+            os.rename(tmp_seg_tar, seg_tar_path)
         print(f"[SmartPuck STT] Extracting speaker segmentation model...", flush=True)
         with tarfile.open(seg_tar_path, "r:bz2") as tar:
             tar.extractall(path=model_dir)
@@ -216,7 +225,9 @@ def ensure_diarization_models(model_dir: str):
     # Download embedding model
     if not os.path.exists(embed_model_path):
         print(f"[SmartPuck STT] Downloading speaker embedding model from {embed_url}...", flush=True)
-        urllib.request.urlretrieve(embed_url, embed_model_path)
+        tmp_embed = embed_model_path + ".tmp"
+        urllib.request.urlretrieve(embed_url, tmp_embed)
+        os.rename(tmp_embed, embed_model_path)
         
     return seg_model_path, embed_model_path
 
@@ -237,27 +248,39 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
         # Download models if needed
         seg_model_path, embed_model_path = ensure_diarization_models(model_dir)
         
-        # Slices to temporary 16kHz WAV
-        temp_wav = os.path.join(tempfile.gettempdir(), f"temp_diar_{int(time.time())}.wav")
-        if os.path.exists(temp_wav):
-            try: os.remove(temp_wav)
-            except OSError: pass
-            
-        cmd = [
-            "ffmpeg", "-y", "-i", audio_path,
-            "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
-            temp_wav
-        ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        
-        with wave.open(temp_wav, "rb") as w:
-            params = w.getparams()
-            frames = w.readframes(params.nframes)
-            samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-            
-        try: os.remove(temp_wav)
-        except OSError: pass
-        
+        samples = None
+        temp_wav = None
+        try:
+            # Check if input is already a 16kHz mono PCM WAV to bypass redundant FFmpeg downsampling
+            is_16k_wav = False
+            if audio_path.endswith(".wav"):
+                try:
+                    with wave.open(audio_path, "rb") as w:
+                        if w.getnchannels() == 1 and w.getframerate() == 16000:
+                            is_16k_wav = True
+                except Exception:
+                    pass
+
+            target_path = audio_path
+            if not is_16k_wav:
+                temp_wav = os.path.join(tempfile.gettempdir(), f"temp_diar_{int(time.time())}.wav")
+                cmd = [
+                    "ffmpeg", "-y", "-i", audio_path,
+                    "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+                    temp_wav
+                ]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                target_path = temp_wav
+
+            with wave.open(target_path, "rb") as w:
+                params = w.getparams()
+                frames = w.readframes(params.nframes)
+                samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        finally:
+            if temp_wav and os.path.exists(temp_wav):
+                try: os.remove(temp_wav)
+                except OSError: pass
+
         # Set up config
         pyannote_config = sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg_model_path)
         seg_config = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
@@ -281,7 +304,14 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
             clustering=clustering_config
         )
         
-        sd = sherpa_onnx.OfflineSpeakerDiarization(config)
+        # Cache the OfflineSpeakerDiarization instance to avoid compiling ONNX models on every request
+        cache_key = (seg_model_path, embed_model_path, provider)
+        with diarization_lock:
+            if cache_key in diarization_cache:
+                sd = diarization_cache[cache_key]
+            else:
+                sd = sherpa_onnx.OfflineSpeakerDiarization(config)
+                diarization_cache[cache_key] = sd
         
         import threading
         duration = len(samples) / 16000.0
@@ -384,8 +414,9 @@ def run_ffmpeg_denoising(input_wav_48k: str, output_wav_48k: str) -> str:
 
 def get_df_model():
     global df_model_cache
-    if df_model_cache is not None:
-        return df_model_cache
+    with model_cache_lock:
+        if df_model_cache is not None:
+            return df_model_cache
     print("[SmartPuck STT] Initializing DeepFilterNet model...")
     try:
         from df.enhance import init_df
@@ -431,9 +462,10 @@ def run_denoising(input_wav_48k: str, output_wav_48k: str):
     # Moderate suppression keeps speech natural while reducing fan/static noise.
     print(f"[SmartPuck STT] DeepFilterNet attenuation limit: {DENOISE_ATTEN_LIMIT_DB:g} dB")
     # DeepFilterNet enhance() expects the input audio_tensor to be on the CPU
-    enhanced_tensor = enhance(
-        model, df_state, audio_tensor, atten_lim_db=DENOISE_ATTEN_LIMIT_DB
-    )
+    with torch.inference_mode():
+        enhanced_tensor = enhance(
+            model, df_state, audio_tensor, atten_lim_db=DENOISE_ATTEN_LIMIT_DB
+        )
     enhanced_data = enhanced_tensor.squeeze(0).cpu().numpy()
     sf.write(output_wav_48k, enhanced_data, 48000)
     return "deepfilternet"
@@ -623,7 +655,6 @@ def run_transcription(
             print("[SmartPuck STT] Raw transcript confidence is good. Skipping denoise.")
             raw_result["denoise_applied"] = False
             raw_result["raw_avg_logprob"] = raw_avg
-            select_processed_audio(raw_output_path)
             # If the raw_result was computed with beam_size=1 and they requested beam_size > 1,
             # we should compute it with the requested beam_size to be accurate.
             if beam_size > 1:
@@ -637,6 +668,9 @@ def run_transcription(
                 )
                 raw_result["denoise_applied"] = False
                 raw_result["raw_avg_logprob"] = raw_avg
+                select_processed_audio(raw_output_path)
+            else:
+                select_processed_audio(raw_output_path)
             return raw_result
 
     return run_transcription_inner(
@@ -796,6 +830,7 @@ def run_bilingual_transcription(
             features = []
             for chunk in batch_chunks:
                 chunk_audio = audio[chunk["start"] : chunk["end"]]
+                chunk_audio = chunk_audio[:guide.feature_extractor.n_samples]
                 padded_audio = np.pad(
                     chunk_audio,
                     (0, guide.feature_extractor.n_samples - len(chunk_audio)),
@@ -1342,10 +1377,19 @@ def run_transcription_inner(
 
         if not force_cpu and cuda_available:
             print(f"[SmartPuck STT] GPU/CUDA execution failed ({e}). Disabling CUDA globally and retrying with CPU fallback...")
-            cuda_disabled = True
-            cuda_keys = [k for k in model_cache.keys() if k[1] == "cuda"]
-            for k in cuda_keys:
-                del model_cache[k]
+            with model_cache_lock:
+                cuda_disabled = True
+                cuda_keys = [k for k in list(model_cache.keys()) if k[1] == "cuda"]
+                for k in cuda_keys:
+                    model_cache.pop(k, None)
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
             for f in temp_files:
                 if os.path.exists(f):
                     try: os.remove(f)
@@ -1571,7 +1615,7 @@ def transcribe_local(request: LocalTranscriptionRequest):
             
         # Run speaker diarization and align results if requested
         if request.diarize:
-            diar_segments = run_speaker_diarization(audio_path, provider="cpu")
+            diar_segments = run_speaker_diarization(denoised_dest, provider="cpu")
             print(f"[SmartPuck STT] Progress: 97% | Stage: Diarizing Speakers for {audio_path}", flush=True)
             if diar_segments:
                 for seg in result.get("segments", []):
