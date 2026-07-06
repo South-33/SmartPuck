@@ -417,7 +417,7 @@ def get_df_model():
     with model_cache_lock:
         if df_model_cache is not None:
             return df_model_cache
-    print("[SmartPuck STT] Initializing DeepFilterNet model...")
+    print("[SmartPuck STT] Initializing DeepFilterNet model on CPU...")
     try:
         from df.enhance import init_df
         import torch
@@ -429,15 +429,13 @@ def get_df_model():
                 "To use denoising, please run: pip install deepfilternet"
             )
         )
+    # Force CPU device for DeepFilterNet to save GPU VRAM and prevent Windows VRAM paging
+    os.environ["DEVICE"] = "cpu"
     model, df_state, _ = init_df()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == "cuda":
-        print(f"[SmartPuck STT] Moving DeepFilterNet model to GPU ({torch.cuda.get_device_name(0)})...")
-        model = model.to(device).eval()
-    else:
-        print("[SmartPuck STT] DeepFilterNet model loaded on CPU.")
+    device = torch.device("cpu")
+    model = model.to(device).eval()
     df_model_cache = (model, df_state, device)
-    print("[SmartPuck STT] DeepFilterNet model loaded successfully.")
+    print("[SmartPuck STT] DeepFilterNet model loaded successfully on CPU.")
     return df_model_cache
 
 def run_denoising(input_wav_48k: str, output_wav_48k: str):
