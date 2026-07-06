@@ -649,7 +649,17 @@ export function deleteMeeting(id: string): LibrarySnapshot {
   mkdirSync(trash, { recursive: true });
   let target = join(trash, basename(meeting.path));
   if (existsSync(target)) target = join(trash, `${basename(meeting.path)}-${Date.now()}`);
-  renameSync(meeting.path, target);
+  try {
+    renameSync(meeting.path, target);
+  } catch (error: any) {
+    console.error("Failed to move meeting folder to trash:", error);
+    throw new Error(
+      `Could not move meeting folder to Trash.\n\n` +
+      `This usually happens on Windows when a file inside the folder is open in another program ` +
+      `(like VS Code, Windows Explorer, or a media player).\n\n` +
+      `Please close any other programs using this meeting's files and try again.`
+    );
+  }
   return snapshot();
 }
 
