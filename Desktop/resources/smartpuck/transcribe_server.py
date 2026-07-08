@@ -1267,11 +1267,13 @@ def run_bilingual_transcription(
             ]
 
             print("[SmartPuck STT] Running full English reference pass with VAD clips...", flush=True)
-            evidence_iter, evidence_info = english.transcribe(
+            pipeline_en = BatchedInferencePipeline(model=english)
+            evidence_iter, evidence_info = pipeline_en.transcribe(
                 processed_path,
                 language="en",
                 task="transcribe",
                 clip_timestamps=clip_times,
+                batch_size=8,
                 beam_size=specialist_beam,
                 condition_on_previous_text=False,
                 temperature=0,
@@ -1299,11 +1301,13 @@ def run_bilingual_transcription(
 
             print("[SmartPuck STT] Running full Khmer reference pass with VAD clips...", flush=True)
             khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
-            evidence_iter_km, evidence_info_km = khmer.transcribe(
+            pipeline_km = BatchedInferencePipeline(model=khmer)
+            evidence_iter_km, evidence_info_km = pipeline_km.transcribe(
                 processed_path,
                 language="km",
                 task="transcribe",
                 clip_timestamps=clip_times,
+                batch_size=8,
                 beam_size=specialist_beam,
                 condition_on_previous_text=False,
                 temperature=0,
