@@ -358,7 +358,18 @@ def should_reroute_to_khmer(profile_key: str, detected_language: Optional[str], 
 
 def average_logprob(result: dict) -> float:
     segments = result.get("segments", [])
-    return sum(s.get("avg_logprob", -1.0) for s in segments) / len(segments) if segments else -1.0
+    if not segments:
+        return -1.0
+    total = 0.0
+    for s in segments:
+        val = s.get("avg_logprob", -1.0)
+        # Apply a +0.45 calibration boost to Khmer segments because the fine-tuned
+        # specialist model naturally yields lower log probabilities than the generalist
+        # English base model even on correct transcriptions.
+        if s.get("language") == "km" or s.get("route_language") == "km":
+            val += 0.45
+        total += val
+    return total / len(segments)
 
 
 def contains_khmer(text: str) -> bool:
@@ -1016,6 +1027,11 @@ def run_bilingual_transcription(
             if not text:
                 return -999.0
             avg = sum(seg.get("avg_logprob", -1.0) for seg in segments) / len(segments)
+            # Add +0.45 calibration boost to Khmer model's logprob calculation
+            # because fine-tuned models are naturally less confident (dispersion bias)
+            # than generalist models, even when their transcription is 100% correct.
+            if lang == "km":
+                avg += 0.45
             compression = max(float(seg.get("compression_ratio", 0.0) or 0.0) for seg in segments)
             no_speech = max(float(seg.get("no_speech_prob", 0.0) or 0.0) for seg in segments)
             score = avg
