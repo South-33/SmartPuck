@@ -231,12 +231,17 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
       return `${base}\nAlternatives: ${alternatives.join(" | ")}`;
     });
     const fallbackEvidence = (result.fallback_transcripts || [])
-      .filter((item) => item.full_text.trim())
-      .map((item) =>
-        `### ${item.language.toUpperCase()} full-pass evidence (${item.model})\n\n` +
-        `_Reason: ${item.reason}._\n\n` +
-        item.full_text.trim(),
-      );
+      .filter((item) => item.segments && item.segments.length > 0)
+      .map((item) => {
+        const evidenceLines = item.segments!.map((seg: any) =>
+          `[${timestamp(seg.start)}] ${seg.text.trim()}`
+        );
+        return (
+          `### ${item.language.toUpperCase()} full-pass evidence (${item.model})\n\n` +
+          `_Reason: ${item.reason}._\n\n` +
+          evidenceLines.join("\n\n")
+        );
+      });
     const transcriptDurationSeconds = result.segments.reduce((maximum, segment) => Math.max(maximum, Number(segment.end) || 0), 0);
     const audioDurationSeconds = wavDurationSeconds(audioPath);
     const durationSeconds = Math.max(
