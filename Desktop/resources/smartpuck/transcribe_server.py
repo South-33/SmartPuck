@@ -1259,18 +1259,21 @@ def run_bilingual_transcription(
         coverage_end = max((float(s.get("end") or 0.0) for s in output_segments), default=0.0)
         routed_avg = average_logprob({"segments": output_segments})
         fallback_transcripts = []
-        if duration_seconds > 0:
-            print("[SmartPuck STT] Running full English reference pass...", flush=True)
+        if duration_seconds > 0 and classified_chunks:
+            # Generate VAD clip timestamps
+            clip_times = [
+                {"start": chunk["start"] / 16000, "end": chunk["end"] / 16000}
+                for chunk in classified_chunks
+            ]
+
+            print("[SmartPuck STT] Running full English reference pass with VAD clips...", flush=True)
             evidence_iter, evidence_info = english.transcribe(
                 processed_path,
                 language="en",
                 task="transcribe",
-                vad_filter=False,
+                clip_timestamps=clip_times,
                 beam_size=specialist_beam,
                 condition_on_previous_text=False,
-                compression_ratio_threshold=2.4,
-                log_prob_threshold=-1.0,
-                no_speech_threshold=0.65,
                 temperature=0,
             )
             evidence_segments = []
@@ -1294,18 +1297,15 @@ def run_bilingual_transcription(
                     "full_text": " ".join(segment["text"] for segment in evidence_segments),
                 })
 
-            print("[SmartPuck STT] Running full Khmer reference pass...", flush=True)
+            print("[SmartPuck STT] Running full Khmer reference pass with VAD clips...", flush=True)
             khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
             evidence_iter_km, evidence_info_km = khmer.transcribe(
                 processed_path,
                 language="km",
                 task="transcribe",
-                vad_filter=True, # Enable VAD to reset state and prevent repetition looping on English/silence
+                clip_timestamps=clip_times,
                 beam_size=specialist_beam,
                 condition_on_previous_text=False,
-                compression_ratio_threshold=2.4,
-                log_prob_threshold=-1.0,
-                no_speech_threshold=0.65,
                 temperature=0,
             )
             evidence_segments_km = []
