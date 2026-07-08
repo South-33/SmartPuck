@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import { execFileSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -130,5 +131,30 @@ describe("filesystem-first meeting library", () => {
     writeFileSync(agentsPath, "# My meeting library\n\nKeep this custom guidance.\n");
     library.ensureLibrary();
     expect(readFileSync(agentsPath, "utf8")).toBe("# My meeting library\n\nKeep this custom guidance.\n");
+  });
+
+  it("generates a structural CLI that safely renames, trashes, and restores meetings", () => {
+    const audio = join(root, "cli-structural.wav");
+    writeFileSync(audio, Buffer.from("RIFF cli structural audio"));
+
+    let state = library.importAudio([audio]);
+    const meeting = state.inbox.find((item) => item.metadata.sourceFileName === "cli-structural.wav")!;
+    const cli = join(root, ".agents", "manage-library.js");
+    const env = { ...process.env, SMARTPUCK_HOME: root };
+
+    execFileSync(process.execPath, [cli, "rename-meeting", meeting.metadata.id, "CLI Renamed Meeting"], { env });
+    state = library.snapshot();
+    const renamed = state.inbox.find((item) => item.metadata.id === meeting.metadata.id)!;
+    expect(renamed.metadata.title).toBe("CLI Renamed Meeting");
+    expect(renamed.path).toContain("cli-renamed-meeting");
+    expect(readFileSync(join(renamed.path, "transcript.md"), "utf8")).toMatch(/^# CLI Renamed Meeting/);
+
+    execFileSync(process.execPath, [cli, "trash", meeting.metadata.id], { env });
+    expect(existsSync(join(root, "Meetings", "cli-renamed-meeting-" + meeting.metadata.id.slice(0, 8)))).toBe(false);
+    expect(existsSync(join(root, "Trash", "cli-renamed-meeting-" + meeting.metadata.id.slice(0, 8)))).toBe(true);
+
+    execFileSync(process.execPath, [cli, "restore", meeting.metadata.id], { env });
+    state = library.snapshot();
+    expect(state.inbox.find((item) => item.metadata.id === meeting.metadata.id)?.metadata.title).toBe("CLI Renamed Meeting");
   });
 });

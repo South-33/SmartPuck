@@ -39,16 +39,20 @@ If the user says something like "start", "hello", or opens a fresh conversation:
 ## 2. Library Tool Reference
 The library root contains one structural tool: \`node .agents/manage-library.js\`. Use it when you need to change library metadata or relationships safely; otherwise use normal file reading/editing.
 
-Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, moves recoverable items to Trash, and rebuilds generated indexes. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
+Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, keeps generated indexes in sync, moves recoverable items to/from Trash, and performs renames that must keep metadata, folder names, and transcript headings aligned. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
+
+Decision rule: use the CLI when an action changes library structure or canonical metadata; use normal file tools when the action only reads, searches, summarizes, or edits Markdown content.
 
 | Action | Command Example | When to use it |
 | :--- | :--- | :--- |
 | **Curate & Link** | \`node .agents/manage-library.js curate <meeting-id> --title "My Title" --summary "Brief summary" --workspaces "IELTS Study"\` | Finalize title, summary, and workspace categories for a pending meeting. |
 | **Create Workspace** | \`node .agents/manage-library.js create-workspace "Khmer Language"\` | Categorize meetings under a new workspace. |
 | **Link Meeting** | \`node .agents/manage-library.js link <meeting-id> "Khmer Language"\` | Link an already-curated meeting to an additional workspace. |
+| **Rename Meeting** | \`node .agents/manage-library.js rename-meeting <meeting-id> "Better Title"\` | Rename a meeting while keeping metadata, folder name, and transcript heading aligned. |
 | **Safely Delete Workspace**| \`node .agents/manage-library.js delete-workspace "Khmer Language"\` | Safely remove a workspace. *Never use raw shell delete/remove commands.* |
 | **Rename Workspace** | \`node .agents/manage-library.js rename-workspace "Khmer Language" "Khmer Study"\` | Rename a workspace folder and manifest in sync. |
 | **Trash Meeting** | \`node .agents/manage-library.js trash <meeting-id>\` | Move a meeting folder safely to Trash and rebuild indexes. |
+| **Restore Meeting** | \`node .agents/manage-library.js restore <meeting-id>\` | Restore a trashed meeting back to the canonical Meetings folder. |
 | **Rebuild Indexes** | \`node .agents/manage-library.js rebuild\` | Force rebuild NEW.md and workspace meetings.md files. |
 
 Do not use the CLI for transcript text edits. Open the relevant \`transcript.md\` and edit it directly.
@@ -132,16 +136,20 @@ If the user says something like "start", "hello", or opens a fresh conversation:
 ## 2. Library Tool Reference
 The library root contains one structural tool: \`node .agents/manage-library.js\`. Use it when you need to change library metadata or relationships safely; otherwise use normal file reading/editing.
 
-Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, moves recoverable items to Trash, and rebuilds generated indexes. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
+Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, keeps generated indexes in sync, moves recoverable items to/from Trash, and performs renames that must keep metadata, folder names, and transcript headings aligned. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
+
+Decision rule: use the CLI when an action changes library structure or canonical metadata; use normal file tools when the action only reads, searches, summarizes, or edits Markdown content.
 
 | Action | Command Example | When to use it |
 | :--- | :--- | :--- |
 | **Curate & Link** | \`node .agents/manage-library.js curate <meeting-id> --title "My Title" --summary "Brief summary" --workspaces "IELTS Study"\` | Finalize title, summary, and workspace categories for a pending meeting. |
 | **Create Workspace** | \`node .agents/manage-library.js create-workspace "Khmer Language"\` | Categorize meetings under a new workspace. |
 | **Link Meeting** | \`node .agents/manage-library.js link <meeting-id> "Khmer Language"\` | Link an already-curated meeting to an additional workspace. |
+| **Rename Meeting** | \`node .agents/manage-library.js rename-meeting <meeting-id> "Better Title"\` | Rename a meeting while keeping metadata, folder name, and transcript heading aligned. |
 | **Safely Delete Workspace**| \`node .agents/manage-library.js delete-workspace "Khmer Language"\` | Safely remove a workspace. *Never use raw shell delete/remove commands.* |
 | **Rename Workspace** | \`node .agents/manage-library.js rename-workspace "Khmer Language" "Khmer Study"\` | Rename a workspace folder and manifest in sync. |
 | **Trash Meeting** | \`node .agents/manage-library.js trash <meeting-id>\` | Move a meeting folder safely to Trash and rebuild indexes. |
+| **Restore Meeting** | \`node .agents/manage-library.js restore <meeting-id>\` | Restore a trashed meeting back to the canonical Meetings folder. |
 | **Rebuild Indexes** | \`node .agents/manage-library.js rebuild\` | Force rebuild NEW.md and workspace meetings.md files. |
 
 Do not use the CLI for transcript text edits. Open the relevant \`transcript.md\` and edit it directly.
@@ -990,19 +998,64 @@ function unlinkMeeting(root, meetingQuery, workspaceQuery) {
   rebuildIndexes(root, updatedLibrary);
 }
 
-function curateMeeting(root, meetingQuery, title, summary, workspacesStr) {
-  const library = loadLibrary(root);
-  const meeting = library.meetings.find(
+function findMeeting(library, meetingQuery) {
+  return library.meetings.find(
     (m) =>
       m.metadata.id === meetingQuery ||
       m.metadata.id.startsWith(meetingQuery) ||
       path.basename(m.path).endsWith(meetingQuery)
   );
+}
+
+function alignMeetingTitle(root, meeting, title) {
+  const clean = title.trim();
+  if (!clean) throw new Error("Meeting title is required.");
+  meeting.metadata.title = clean;
+
+  const transcriptPath = path.join(meeting.path, "transcript.md");
+  if (fs.existsSync(transcriptPath)) {
+    const transcript = fs.readFileSync(transcriptPath, "utf8");
+    const aligned = /^# .*(\\r?\\n|$)/.test(transcript)
+      ? transcript.replace(/^# .*(\\r?\\n|$)/, (_match, newline) => \`# \${clean}\${newline}\`)
+      : \`# \${clean}\\n\\n\${transcript}\`;
+    fs.writeFileSync(transcriptPath, aligned, "utf8");
+  }
+
+  const targetPath = path.join(root, MEETINGS_DIR, \`\${slug(clean)}-\${meeting.metadata.id.slice(0, 8)}\`);
+  if (targetPath !== meeting.path && !fs.existsSync(targetPath)) {
+    fs.renameSync(meeting.path, targetPath);
+    meeting.path = targetPath;
+  }
+}
+
+function renameMeeting(root, meetingQuery, title) {
+  const library = loadLibrary(root);
+  const meeting = findMeeting(library, meetingQuery);
+  if (!meeting) {
+    throw new Error(\`Meeting not found for query: \${meetingQuery}\`);
+  }
+
+  alignMeetingTitle(root, meeting, title);
+  meeting.metadata.updatedAt = new Date().toISOString();
+  fs.writeFileSync(
+    path.join(meeting.path, "meeting.json"),
+    JSON.stringify(meeting.metadata, null, 2),
+    "utf8"
+  );
+  console.log(\`Renamed meeting to "\${meeting.metadata.title}" successfully.\`);
+
+  const updatedLibrary = loadLibrary(root);
+  rebuildIndexes(root, updatedLibrary);
+}
+
+function curateMeeting(root, meetingQuery, title, summary, workspacesStr) {
+  const library = loadLibrary(root);
+  const meeting = findMeeting(library, meetingQuery);
   if (!meeting) {
     throw new Error(\`Meeting not found for query: \${meetingQuery}\`);
   }
   
-  if (title) meeting.metadata.title = title;
+  if (title) alignMeetingTitle(root, meeting, title);
   if (summary) meeting.metadata.summary = summary;
   
   if (workspacesStr) {
@@ -1135,6 +1188,48 @@ function trashMeeting(root, meetingQuery) {
   rebuildIndexes(root, updatedLibrary);
 }
 
+function restoreMeeting(root, meetingQuery) {
+  const trashBase = path.join(root, "Trash");
+  if (!fs.existsSync(trashBase)) {
+    throw new Error("Trash is empty.");
+  }
+
+  const matches = [];
+  const entries = fs.readdirSync(trashBase, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const meetingPath = path.join(trashBase, entry.name);
+    const metadataPath = path.join(meetingPath, "meeting.json");
+    if (!fs.existsSync(metadataPath)) continue;
+    try {
+      const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+      if (
+        metadata.id === meetingQuery ||
+        String(metadata.id || "").startsWith(meetingQuery) ||
+        entry.name.endsWith(meetingQuery) ||
+        String(metadata.title || "").toLowerCase() === meetingQuery.toLowerCase()
+      ) {
+        matches.push({ path: meetingPath, metadata });
+      }
+    } catch {}
+  }
+  if (matches.length === 0) throw new Error(\`Trashed meeting not found for query: \${meetingQuery}\`);
+  if (matches.length > 1) throw new Error(\`Multiple trashed meetings match query: \${meetingQuery}\`);
+
+  const meeting = matches[0];
+  const meetingsDir = path.join(root, MEETINGS_DIR);
+  if (!fs.existsSync(meetingsDir)) fs.mkdirSync(meetingsDir, { recursive: true });
+  const targetPath = path.join(meetingsDir, path.basename(meeting.path));
+  if (fs.existsSync(targetPath)) {
+    throw new Error("A meeting with that folder already exists in Meetings.");
+  }
+  fs.renameSync(meeting.path, targetPath);
+  console.log(\`Restored meeting "\${meeting.metadata.title}" from Trash.\`);
+
+  const updatedLibrary = loadLibrary(root);
+  rebuildIndexes(root, updatedLibrary);
+}
+
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -1154,6 +1249,10 @@ function main() {
       case "unlink":
         if (!args[1] || !args[2]) throw new Error("Usage: node manage-library.js unlink <meeting-id> <workspace-name-or-id>");
         unlinkMeeting(root, args[1], args[2]);
+        break;
+      case "rename-meeting":
+        if (!args[1] || !args[2]) throw new Error("Usage: node manage-library.js rename-meeting <meeting-id> <new-title>");
+        renameMeeting(root, args[1], args[2]);
         break;
       case "curate":
         if (!args[1]) throw new Error("Usage: node manage-library.js curate <meeting-id> --title \\"...\\" --summary \\"...\\" [--workspaces \\"...\\"]");
@@ -1192,6 +1291,10 @@ function main() {
         if (!args[1]) throw new Error("Usage: node manage-library.js trash <meeting-id>");
         trashMeeting(root, args[1]);
         break;
+      case "restore":
+        if (!args[1]) throw new Error("Usage: node manage-library.js restore <meeting-id>");
+        restoreMeeting(root, args[1]);
+        break;
       case "rebuild":
         const lib = loadLibrary(root);
         rebuildIndexes(root, lib);
@@ -1203,7 +1306,8 @@ SmartPuck Library CLI Manager
 
 Purpose:
   Structural library updates only. Use this tool to curate, link, unlink,
-  create/rename/delete workspaces, trash meetings, and rebuild generated indexes.
+  rename meetings, create/rename/delete workspaces, trash/restore meetings,
+  and rebuild generated indexes.
   Edit transcript.md and workspace notes directly; this CLI is not a transcript
   editor, search tool, summarizer, or transcription runner.
 
@@ -1213,8 +1317,10 @@ Usage:
   node manage-library.js rename-workspace <old-name-or-id> <new-name>
   node manage-library.js link <meeting-id-or-suffix> <workspace-name-or-id>
   node manage-library.js unlink <meeting-id-or-suffix> <workspace-name-or-id>
+  node manage-library.js rename-meeting <meeting-id-or-suffix> <new-title>
   node manage-library.js curate <meeting-id-or-suffix> --title "..." --summary "..." [--workspaces "..."]
   node manage-library.js trash <meeting-id-or-suffix>
+  node manage-library.js restore <meeting-id-or-suffix>
   node manage-library.js rebuild
 \`);
         break;

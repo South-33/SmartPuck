@@ -206,7 +206,7 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
       denoise_mode: "auto",
       normalize: true,
       beam_size: 5,
-      diarize: "auto",
+      diarize: true,
     }) as PipelineResult;
     
     activeAudioJobs.delete(audioPath);

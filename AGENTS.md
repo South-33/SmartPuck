@@ -17,7 +17,7 @@ This is the project's AGENTS.md
 - The focused Electron app owns library/device orchestration and launches the proven bilingual Python transcription service; do not reintroduce Hermes gateway, provider, OAuth, or embedded chat features.
 - Python `subprocess.run` calls for verbose tools like `ffmpeg` must use `stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL` instead of `PIPE` to prevent OS buffer deadlocks on long files.
 - Electron transcription request uses native `http.request` with `socket.setTimeout(0)` to disable default Undici/fetch 5-minute body timeouts during compute-heavy CPU diarization.
-- Desktop transcription defaults to `denoise_mode: auto` and `diarize: auto` -> keep DeepFilterNet adaptive and skip speaker diarization on long recordings unless explicitly forced later.
+- Desktop transcription defaults to `denoise_mode: auto` and `diarize: true` -> keep DeepFilterNet adaptive while always producing speaker context when diarization returns sane speaker counts.
 - Diarization uses sherpa-onnx CPU threads via `SMARTPUCK_DIARIZATION_THREADS` (default max 6) -> expect minutes on long recordings; tune cautiously because speaker-count quality can degrade.
 - To update the workspace agent's system instructions (prod), you must edit the templates in `Desktop/src/main/library.ts` (`WORKSPACE_INSTRUCTIONS` and `SKILL`), not the repository's `AGENTS.md` or any local workspace index files which are auto-generated and overwritten.
 - Firmware verification uses PlatformIO from `Firmware/`; after firmware changes, run `pio run` and, if the board is connected, flash with `pio run -t upload`.
