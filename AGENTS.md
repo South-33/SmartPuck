@@ -17,7 +17,7 @@ This is the project's AGENTS.md
 - The focused Electron app owns library/device orchestration and launches the proven bilingual Python transcription service; do not reintroduce Hermes gateway, provider, OAuth, or embedded chat features.
 - Python `subprocess.run` calls for verbose tools like `ffmpeg` must use `stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL` instead of `PIPE` to prevent OS buffer deadlocks on long files.
 - Electron transcription request uses native `http.request` with `socket.setTimeout(0)` to disable default Undici/fetch 5-minute body timeouts during compute-heavy CPU diarization.
-- Desktop transcription defaults to `denoise_mode: auto` and no speaker diarization -> keep DeepFilterNet and diarization opt-in/adaptive for long recordings.
+- Desktop transcription defaults to `denoise_mode: auto` and `diarize: auto` -> keep DeepFilterNet adaptive and skip speaker diarization on long recordings unless explicitly forced later.
 - To update the workspace agent's system instructions (prod), you must edit the templates in `Desktop/src/main/library.ts` (`WORKSPACE_INSTRUCTIONS` and `SKILL`), not the repository's `AGENTS.md` or any local workspace index files which are auto-generated and overwritten.
 - Firmware verification uses PlatformIO from `Firmware/`; after firmware changes, run `pio run` and, if the board is connected, flash with `pio run -t upload`.
 - DeepFilterNet must run on the CPU (set os.environ["DEVICE"] = "cpu") to free VRAM and prevent WDDM graphics paging on Windows, keeping GPU VRAM clear for Whisper execution.
