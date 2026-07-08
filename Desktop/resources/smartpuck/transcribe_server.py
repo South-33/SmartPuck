@@ -1300,7 +1300,7 @@ def run_bilingual_transcription(
                 processed_path,
                 language="km",
                 task="transcribe",
-                vad_filter=False,
+                vad_filter=True, # Enable VAD to reset state and prevent repetition looping on English/silence
                 beam_size=specialist_beam,
                 condition_on_previous_text=False,
                 compression_ratio_threshold=2.4,
