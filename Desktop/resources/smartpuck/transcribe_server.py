@@ -327,12 +327,12 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu", max_duration
         seg_config = sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=pyannote_config,
             provider=provider,
-            num_threads=4
+            num_threads=DIARIZATION_THREADS
         )
         embed_config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
             model=embed_model_path,
             provider=provider,
-            num_threads=4
+            num_threads=DIARIZATION_THREADS
         )
         clustering_config = sherpa_onnx.FastClusteringConfig(
             num_clusters=-1,  # Auto clustering
@@ -346,7 +346,7 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu", max_duration
         )
         
         # Cache the OfflineSpeakerDiarization instance to avoid compiling ONNX models on every request
-        cache_key = (seg_model_path, embed_model_path, provider)
+        cache_key = (seg_model_path, embed_model_path, provider, DIARIZATION_THREADS, DIARIZATION_CLUSTER_THRESHOLD)
         with diarization_lock:
             if cache_key in diarization_cache:
                 sd = diarization_cache[cache_key]
@@ -365,6 +365,11 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu", max_duration
             return None
         estimated_diar_time = max(2.0, duration / 30.0)
         stop_event = threading.Event()
+        print(
+            f"[SmartPuck STT] Running speaker diarization on {provider} with "
+            f"{DIARIZATION_THREADS} thread(s), threshold={DIARIZATION_CLUSTER_THRESHOLD:g}.",
+            flush=True,
+        )
         
         def diar_progress_loop():
             start_time = time.time()
@@ -464,6 +469,7 @@ DIARIZATION_CLUSTER_THRESHOLD = float(os.getenv("SMARTPUCK_DIARIZATION_CLUSTER_T
 MAX_AUTO_DIARIZATION_SECONDS = float(os.getenv("SMARTPUCK_MAX_AUTO_DIARIZATION_SECONDS", "600"))
 MAX_DIARIZATION_SPEAKERS = int(os.getenv("SMARTPUCK_MAX_DIARIZATION_SPEAKERS", "8"))
 MAX_REFERENCE_EVIDENCE_SECONDS = float(os.getenv("SMARTPUCK_MAX_REFERENCE_EVIDENCE_SECONDS", "900"))
+DIARIZATION_THREADS = max(1, int(os.getenv("SMARTPUCK_DIARIZATION_THREADS", str(min(6, os.cpu_count() or 4)))))
 ENABLE_PURE_ENGLISH_EARLY_EXIT = True
 VOCAL_NORMALIZE_FILTER = (
     "highpass=f=80,"

@@ -18,7 +18,7 @@ There is intentionally no embedded AI chat, model provider, OAuth flow, MCP serv
 ## Transcription performance defaults
 
 - Desktop transcription requests `denoise_mode: auto`; clean audio skips DeepFilterNet and only pays the denoise cost when confidence/routing says it is useful.
-- Speaker diarization is automatic only for shorter recordings; long recordings skip it by default because it is CPU-heavy and can produce noisy speaker counts. Transcript speaker cleanup can still be a normal Markdown edit.
+- Speaker diarization is automatic only for shorter recordings; long recordings skip it by default because it is CPU-heavy and can produce noisy speaker counts. The ONNX diarizer uses up to `SMARTPUCK_DIARIZATION_THREADS` threads, defaulting to a conservative CPU-aware value. Transcript speaker cleanup can still be a normal Markdown edit.
 - Mixed-language reference evidence passes are capped for long recordings to avoid doubling work on meeting-length audio.
 
 ## Generated agent tooling
