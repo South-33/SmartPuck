@@ -12,7 +12,7 @@ This is the project's AGENTS.md
 - Firmware `/download` must rely on `server.setContentLength()` only -> an extra `Content-Length` header makes Node reject the response; the Desktop app keeps a raw-stream fallback for already-flashed firmware.
 - Firmware WAV header recovery must open existing audio with `"r+"`, never `FILE_WRITE`; ESP32 `FILE_WRITE` truncates a valid recording to its 44-byte header on reboot.
 - Firmware advertises its HTTP service as `smartpuck.local` with mDNS -> the Desktop app tries that hostname before saved/AP addresses so DHCP changes do not break automatic sync.
-- Bilingual auto-transcription batches encoder-only language ID for pause-bounded islands -> English uses `small.en`, non-English/uncertain uses the Khmer specialist in GPU batches -> do not compare cross-model confidence or normalize mixed speech by default.
+- Bilingual auto-transcription applies a +0.45 calibration boost to the fine-tuned Khmer specialist model's log probabilities during routing and fallback checks to offset its natural dispersion bias relative to the English base model.
 - Fine-tuned low-resource models like `whisper-small-khmer` drop over 50% of the speech when transcribed continuously; chunk-by-chunk VAD decoding is strictly required to guarantee completeness.
 - The focused Electron app owns library/device orchestration and launches the proven bilingual Python transcription service; do not reintroduce Hermes gateway, provider, OAuth, or embedded chat features.
 - Python `subprocess.run` calls for verbose tools like `ffmpeg` must use `stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL` instead of `PIPE` to prevent OS buffer deadlocks on long files.
