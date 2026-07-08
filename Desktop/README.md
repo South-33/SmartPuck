@@ -23,7 +23,7 @@ There is intentionally no embedded AI chat, model provider, OAuth flow, MCP serv
 
 ## Generated agent tooling
 
-SmartPuck generates one workspace CLI at `.agents/manage-library.js`. It is only for structural library changes: curation metadata, workspace create/rename/delete, linking/unlinking, trashing meetings, and rebuilding generated indexes. Agents should edit `transcript.md` and workspace memory notes directly instead of using a tool for normal Markdown cleanup.
+SmartPuck generates one workspace CLI at `.agents/manage-library.js`. It is only for structural library changes: curation metadata, meeting rename, workspace create/rename/delete, linking/unlinking, trash/restore, and rebuilding generated indexes. Agents should edit `transcript.md` and workspace memory notes directly instead of using a tool for normal Markdown cleanup, search, or summary work.
 
 ## Development
 

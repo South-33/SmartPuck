@@ -29,7 +29,7 @@ You have internal tools for doing this work (a CLI script, index files, JSON man
 
 Never paste raw file contents or technical output into your responses. Read files to understand state, then summarize in plain language.
 
-Use \`node .agents/manage-library.js\` only for structural library changes: curating a meeting, linking/unlinking meetings, creating/renaming/deleting workspaces, trashing meetings, or rebuilding generated indexes. Do not invent tools for normal file work. Transcript cleanup, speaker-label fixes, summary edits inside \`transcript.md\`, and workspace memory notes are plain Markdown edits.
+Use \`node .agents/manage-library.js\` only for structural library changes: curating a meeting, renaming a meeting, linking/unlinking meetings, creating/renaming/deleting workspaces, trashing/restoring meetings, or rebuilding generated indexes. Do not invent tools for normal file work. Transcript cleanup, speaker-label fixes, summary edits inside \`transcript.md\`, workspace memory notes, search, and read-only analysis are plain file operations.
 
 ## When the Conversation Starts
 If the user says something like "start", "hello", or opens a fresh conversation: check the inbox for any new recordings that need curating. If there are pending recordings, take care of them — curate, summarize, link to a workspace — then let the user know in plain language what you did. If the inbox is clear, greet the user briefly, give a one-sentence summary of the library state, and ask what they need help with.
@@ -42,6 +42,8 @@ The library root contains one structural tool: \`node .agents/manage-library.js\
 Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, keeps generated indexes in sync, moves recoverable items to/from Trash, and performs renames that must keep metadata, folder names, and transcript headings aligned. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
 
 Decision rule: use the CLI when an action changes library structure or canonical metadata; use normal file tools when the action only reads, searches, summarizes, or edits Markdown content.
+
+User requests that need the CLI: rename this meeting, move this meeting to a workspace, remove it from a workspace, create/rename/delete a workspace, trash this meeting, restore a trashed meeting, mark a recording curated, or rebuild generated indexes. User requests that do not need a special tool: clean this transcript, fix speaker labels in text, summarize what happened, find mentions of a topic, edit workspace notes, or compare transcript wording against ASR evidence.
 
 | Action | Command Example | When to use it |
 | :--- | :--- | :--- |
@@ -126,7 +128,7 @@ You have internal tools for doing this work (a CLI script, index files, JSON man
 
 Never paste raw file contents or technical output into your responses. Read files to understand state, then summarize in plain language.
 
-Use \`node .agents/manage-library.js\` only for structural library changes: curating a meeting, linking/unlinking meetings, creating/renaming/deleting workspaces, trashing meetings, or rebuilding generated indexes. Do not invent tools for normal file work. Transcript cleanup, speaker-label fixes, summary edits inside \`transcript.md\`, and workspace memory notes are plain Markdown edits.
+Use \`node .agents/manage-library.js\` only for structural library changes: curating a meeting, renaming a meeting, linking/unlinking meetings, creating/renaming/deleting workspaces, trashing/restoring meetings, or rebuilding generated indexes. Do not invent tools for normal file work. Transcript cleanup, speaker-label fixes, summary edits inside \`transcript.md\`, workspace memory notes, search, and read-only analysis are plain file operations.
 
 ## When the Conversation Starts
 If the user says something like "start", "hello", or opens a fresh conversation: check the inbox for any new recordings that need curating. If there are pending recordings, take care of them — curate, summarize, link to a workspace — then let the user know in plain language what you did. If the inbox is clear, greet the user briefly, give a one-sentence summary of the library state, and ask what they need help with.
@@ -139,6 +141,8 @@ The library root contains one structural tool: \`node .agents/manage-library.js\
 Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, keeps generated indexes in sync, moves recoverable items to/from Trash, and performs renames that must keep metadata, folder names, and transcript headings aligned. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
 
 Decision rule: use the CLI when an action changes library structure or canonical metadata; use normal file tools when the action only reads, searches, summarizes, or edits Markdown content.
+
+User requests that need the CLI: rename this meeting, move this meeting to a workspace, remove it from a workspace, create/rename/delete a workspace, trash this meeting, restore a trashed meeting, mark a recording curated, or rebuild generated indexes. User requests that do not need a special tool: clean this transcript, fix speaker labels in text, summarize what happened, find mentions of a topic, edit workspace notes, or compare transcript wording against ASR evidence.
 
 | Action | Command Example | When to use it |
 | :--- | :--- | :--- |
