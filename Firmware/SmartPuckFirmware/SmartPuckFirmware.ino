@@ -2809,6 +2809,25 @@ void handleUsbCommand(String command) {
     } else {
       Serial.println("@SPK ERROR Storage is busy");
     }
+  } else if (command.startsWith("WIFI ")) {
+    if (isRecording) {
+      Serial.println("@SPK ERROR Recording in progress");
+    } else {
+      const String payload = command.substring(5);
+      const int separator = payload.indexOf('\t');
+      if (separator < 1) {
+        Serial.println("@SPK ERROR Invalid wifi command");
+      } else {
+        const String ssid = payload.substring(0, separator);
+        const String password = payload.substring(separator + 1);
+        if (saveWiFiCredentials(ssid, password)) {
+          Serial.println("@SPK OK");
+          restartAtMs = millis() + 900;
+        } else {
+          Serial.println("@SPK ERROR Could not save WiFi credentials");
+        }
+      }
+    }
   } else {
     Serial.println("@SPK ERROR Unknown command");
   }

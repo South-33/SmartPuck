@@ -229,3 +229,10 @@ export function renameUsbSession(url: string, sessionPath: string, name: string)
 export function deleteUsbSession(url: string, sessionPath: string): Promise<void> {
   return requestOk(url, `DELETE ${sessionPath}`);
 }
+
+export function saveUsbWifi(url: string, ssid: string, password: string): Promise<void> {
+  if (ssid.includes("\t") || /[\r\n]/.test(ssid) || password.includes("\t") || /[\r\n]/.test(password)) {
+    throw new Error("Wi-Fi credentials contain unsupported characters.");
+  }
+  return requestOk(url, `WIFI ${ssid}\t${password}`);
+}

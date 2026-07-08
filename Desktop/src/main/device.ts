@@ -14,6 +14,7 @@ import {
   markUsbSessionUploaded,
   renameUsbSession,
   setUsbRecording,
+  saveUsbWifi,
 } from "./usb-device";
 
 let currentBaseUrl = "";
@@ -298,6 +299,10 @@ export async function getDeviceWifiConfig(): Promise<DeviceWifiConfig> {
 export async function saveDeviceWifi(ssid: string, password: string): Promise<void> {
   const clean = ssid.trim();
   if (!clean) throw new Error("Wi-Fi name is required.");
+  if (isUsbDeviceUrl(currentBaseUrl)) {
+    await saveUsbWifi(currentBaseUrl, clean, password);
+    return;
+  }
   const response = await fetch(`${networkBaseUrl()}/wifi?ssid=${encodeURIComponent(clean)}&password=${encodeURIComponent(password)}`, { method: "POST", signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`Could not save SmartPuck Wi-Fi (${response.status}).`);
 }
