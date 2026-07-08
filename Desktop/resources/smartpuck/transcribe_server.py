@@ -1259,13 +1259,8 @@ def run_bilingual_transcription(
         coverage_end = max((float(s.get("end") or 0.0) for s in output_segments), default=0.0)
         routed_avg = average_logprob({"segments": output_segments})
         fallback_transcripts = []
-        if duration_seconds > 0 and not khmer_dominant and (coverage_end < duration_seconds * 0.75 or routed_avg < -0.7):
-            print(
-                f"[SmartPuck STT] Routed transcript under-covered audio "
-                f"(last={coverage_end:.1f}s/{duration_seconds:.1f}s, avg={routed_avg:.3f}). "
-                "Running full English evidence pass without VAD...",
-                flush=True,
-            )
+        if duration_seconds > 0:
+            print("[SmartPuck STT] Running full English reference pass...", flush=True)
             evidence_iter, evidence_info = english.transcribe(
                 processed_path,
                 language="en",
@@ -1293,10 +1288,45 @@ def run_bilingual_transcription(
                 fallback_transcripts.append({
                     "language": "en",
                     "model": MODEL_PROFILES["english-fast"]["model"],
-                    "reason": "routed transcript under-covered noisy audio",
+                    "reason": "full-pass English reference",
                     "language_probability": round(float(evidence_info.language_probability or 1.0), 4),
                     "segments": evidence_segments,
                     "full_text": " ".join(segment["text"] for segment in evidence_segments),
+                })
+
+            print("[SmartPuck STT] Running full Khmer reference pass...", flush=True)
+            khmer = get_model(MODEL_PROFILES["khmer-better"]["model"], force_cpu=force_cpu)
+            evidence_iter_km, evidence_info_km = khmer.transcribe(
+                processed_path,
+                language="km",
+                task="transcribe",
+                vad_filter=False,
+                beam_size=specialist_beam,
+                condition_on_previous_text=False,
+                compression_ratio_threshold=2.4,
+                log_prob_threshold=-1.0,
+                no_speech_threshold=0.65,
+                temperature=0,
+            )
+            evidence_segments_km = []
+            for segment in evidence_iter_km:
+                text = segment.text.strip()
+                if text:
+                    evidence_segments_km.append({
+                        "start": round(segment.start, 2),
+                        "end": round(segment.end, 2),
+                        "text": text,
+                        "avg_logprob": round(segment.avg_logprob, 4),
+                        "no_speech_prob": round(float(getattr(segment, "no_speech_prob", 0.0) or 0.0), 4),
+                    })
+            if evidence_segments_km:
+                fallback_transcripts.append({
+                    "language": "km",
+                    "model": MODEL_PROFILES["khmer-better"]["model"],
+                    "reason": "full-pass Khmer reference",
+                    "language_probability": round(float(evidence_info_km.language_probability or 1.0), 4),
+                    "segments": evidence_segments_km,
+                    "full_text": " ".join(segment["text"] for segment in evidence_segments_km),
                 })
 
         result = {
