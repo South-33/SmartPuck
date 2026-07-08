@@ -203,10 +203,10 @@ export async function transcribeMeeting(meetingId: string): Promise<ReturnType<t
       audio_path: audioPath,
       model_name: "auto",
       language: null,
-      denoise_mode: "strong",
+      denoise_mode: "auto",
       normalize: true,
       beam_size: 5,
-      diarize: true,
+      diarize: false,
     }) as PipelineResult;
     
     activeAudioJobs.delete(audioPath);

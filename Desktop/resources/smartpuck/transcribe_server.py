@@ -26,7 +26,7 @@ import tarfile
 import wave
 import time
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 # Auto-resolve Windows DLL search paths for pip-installed nvidia-cu12 packages
 if sys.platform == "win32":
@@ -73,7 +73,7 @@ class LocalTranscriptionRequest(BaseModel):
     denoise_mode: str = "auto"  # "off", "auto", "strong"
     normalize: bool = True
     beam_size: int = Field(default=5, ge=1, le=10)
-    diarize: bool = False
+    diarize: Union[bool, str] = False
 
 MODEL_PROFILES = {
     "auto": {
@@ -232,7 +232,48 @@ def ensure_diarization_models(model_dir: str):
     return seg_model_path, embed_model_path
 
 
-def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[list]:
+def audio_duration_seconds(audio_path: str) -> Optional[float]:
+    try:
+        if audio_path.lower().endswith(".wav"):
+            with wave.open(audio_path, "rb") as w:
+                framerate = w.getframerate()
+                if framerate > 0:
+                    return w.getnframes() / float(framerate)
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                audio_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=True,
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+def should_run_diarization(value: Union[bool, str], audio_path: str) -> Tuple[bool, Optional[float], str]:
+    if isinstance(value, bool):
+        return value, None, "explicit" if value else "disabled"
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True, None, "explicit"
+    if normalized in {"0", "false", "no", "off", "none"}:
+        return False, None, "disabled"
+    duration = audio_duration_seconds(audio_path)
+    if duration is not None and duration > MAX_AUTO_DIARIZATION_SECONDS:
+        return False, duration, f"auto-skip-long>{MAX_AUTO_DIARIZATION_SECONDS:g}s"
+    return True, duration, "auto"
+
+
+def run_speaker_diarization(audio_path: str, provider: str = "cpu", max_duration_seconds: Optional[float] = None) -> Optional[list]:
     """Extract speaker segments from audio using sherpa-onnx diarization."""
     try:
         import sherpa_onnx
@@ -295,7 +336,7 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
         )
         clustering_config = sherpa_onnx.FastClusteringConfig(
             num_clusters=-1,  # Auto clustering
-            threshold=0.70
+            threshold=DIARIZATION_CLUSTER_THRESHOLD
         )
         
         config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
@@ -315,6 +356,13 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
         
         import threading
         duration = len(samples) / 16000.0
+        if max_duration_seconds is not None and duration > max_duration_seconds:
+            print(
+                f"[SmartPuck STT] Skipping speaker diarization for {duration / 60:.1f} min audio "
+                f"(auto cap {max_duration_seconds / 60:.1f} min).",
+                flush=True,
+            )
+            return None
         estimated_diar_time = max(2.0, duration / 30.0)
         stop_event = threading.Event()
         
@@ -338,6 +386,13 @@ def run_speaker_diarization(audio_path: str, provider: str = "cpu") -> Optional[
             progress_thread.join(timeout=1.0)
             
         print(f"[SmartPuck STT] Speaker diarization finished in {time.time() - t_start:.2f}s (detected {result.num_speakers} speakers).", flush=True)
+        if result.num_speakers > MAX_DIARIZATION_SPEAKERS:
+            print(
+                f"[SmartPuck STT] Ignoring speaker diarization result with {result.num_speakers} speakers "
+                f"(sanity cap {MAX_DIARIZATION_SPEAKERS}).",
+                flush=True,
+            )
+            return None
         
         raw_segments = result.sort_by_start_time()
         return [
@@ -405,6 +460,10 @@ def transcript_quality_flags(segments, language: Optional[str], language_probabi
 
 df_model_cache = None
 DENOISE_ATTEN_LIMIT_DB = float(os.getenv("SMARTPUCK_DENOISE_ATTEN_DB", "12"))
+DIARIZATION_CLUSTER_THRESHOLD = float(os.getenv("SMARTPUCK_DIARIZATION_CLUSTER_THRESHOLD", "0.82"))
+MAX_AUTO_DIARIZATION_SECONDS = float(os.getenv("SMARTPUCK_MAX_AUTO_DIARIZATION_SECONDS", "600"))
+MAX_DIARIZATION_SPEAKERS = int(os.getenv("SMARTPUCK_MAX_DIARIZATION_SPEAKERS", "8"))
+MAX_REFERENCE_EVIDENCE_SECONDS = float(os.getenv("SMARTPUCK_MAX_REFERENCE_EVIDENCE_SECONDS", "900"))
 ENABLE_PURE_ENGLISH_EARLY_EXIT = True
 VOCAL_NORMALIZE_FILTER = (
     "highpass=f=80,"
@@ -917,7 +976,7 @@ def run_bilingual_transcription(
                     progress = min(89, 20 + int(70 * segment.end / duration))
                     print(f"[SmartPuck STT] Progress: {progress}% | Stage: Transcribing (English) for {path_to_log}", flush=True)
             path_to_log = original_audio_path or temp_path
-            print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
+            print(f"[SmartPuck STT] Progress: 90% | Stage: Finalizing Transcript for {path_to_log}", flush=True)
 
             output_segments.sort(key=lambda s: s["start"])
             full_text_parts = [s["text"] for s in output_segments]
@@ -979,7 +1038,7 @@ def run_bilingual_transcription(
                     progress = min(89, 20 + int(70 * segment.end / duration))
                     print(f"[SmartPuck STT] Progress: {progress}% | Stage: Transcribing (Khmer) for {path_to_log}", flush=True)
             path_to_log = original_audio_path or temp_path
-            print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
+            print(f"[SmartPuck STT] Progress: 90% | Stage: Finalizing Transcript for {path_to_log}", flush=True)
 
             output_segments.sort(key=lambda s: s["start"])
             full_text_parts = [s["text"] for s in output_segments]
@@ -1252,14 +1311,20 @@ def run_bilingual_transcription(
             path_to_log = original_audio_path or temp_path
             print(f"[SmartPuck STT] Progress: {progress}% | Stage: Transcribing (Bilingual) for {path_to_log}", flush=True)
 
-        print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
+        print(f"[SmartPuck STT] Progress: 90% | Stage: Finalizing Transcript for {path_to_log}", flush=True)
         output_segments.sort(key=lambda s: s["start"])
         full_text_parts = [s["text"] for s in output_segments]
         duration_seconds = len(audio) / 16000
         coverage_end = max((float(s.get("end") or 0.0) for s in output_segments), default=0.0)
         routed_avg = average_logprob({"segments": output_segments})
         fallback_transcripts = []
-        if duration_seconds > 0 and classified_chunks:
+        if duration_seconds > MAX_REFERENCE_EVIDENCE_SECONDS:
+            print(
+                f"[SmartPuck STT] Skipping full reference evidence passes for {duration_seconds / 60:.1f} min audio "
+                f"(cap {MAX_REFERENCE_EVIDENCE_SECONDS / 60:.1f} min).",
+                flush=True,
+            )
+        elif duration_seconds > 0 and classified_chunks:
             # Generate VAD clip timestamps
             clip_times = [
                 {"start": chunk["start"] / 16000, "end": chunk["end"] / 16000}
@@ -1458,7 +1523,7 @@ def run_transcription_inner(
                 except: pass
 
     path_to_log = original_audio_path or temp_path
-    print(f"[SmartPuck STT] Progress: 90% | Stage: Diarizing Speakers for {path_to_log}", flush=True)
+    print(f"[SmartPuck STT] Progress: 90% | Stage: Finalizing Transcript for {path_to_log}", flush=True)
     language_probability = round(float(info.language_probability or 0), 4)
     return {
         "profile": profile_key,
@@ -1661,9 +1726,13 @@ def transcribe_local(request: LocalTranscriptionRequest):
                 check=True,
             )
             
-        # Run speaker diarization and align results if requested
-        if request.diarize:
-            diar_segments = run_speaker_diarization(denoised_dest, provider="cpu")
+        # Run speaker diarization only when explicitly requested. It is CPU-heavy
+        # on long recordings, so default desktop transcription leaves speaker
+        # cleanup to transcript editing instead of blocking completion.
+        run_diarization, diar_duration, diar_reason = should_run_diarization(request.diarize, denoised_dest)
+        if run_diarization:
+            auto_cap = MAX_AUTO_DIARIZATION_SECONDS if diar_reason == "auto" else None
+            diar_segments = run_speaker_diarization(denoised_dest, provider="cpu", max_duration_seconds=auto_cap)
             print(f"[SmartPuck STT] Progress: 97% | Stage: Diarizing Speakers for {audio_path}", flush=True)
             if diar_segments:
                 for seg in result.get("segments", []):
@@ -1678,6 +1747,9 @@ def transcribe_local(request: LocalTranscriptionRequest):
                         speaker = nearest["speaker"]
                     if speaker is not None:
                         seg["speaker"] = speaker
+        else:
+            detail = f" ({diar_duration / 60:.1f} min)" if diar_duration else ""
+            print(f"[SmartPuck STT] Skipping speaker diarization: {diar_reason}{detail}.", flush=True)
                         
         return result
     except HTTPException:

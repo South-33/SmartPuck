@@ -5,7 +5,7 @@ import { createConnection } from "net";
 import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
 import type { DeviceSnapshot, DeviceSyncProgress, DeviceWifiConfig } from "../shared/types";
-import { hasImportedDeviceSession, importAudio, snapshot, updateMeetingMetadata } from "./library";
+import { hasImportedDeviceSession, importAudio, renameMeeting, snapshot, updateMeetingMetadata } from "./library";
 import {
   downloadUsbAudio,
   deleteUsbSession,
@@ -33,6 +33,31 @@ function parseDeviceTimestamp(value?: string): Date | null {
     : value;
   const timestamp = Date.parse(normalized);
   return Number.isNaN(timestamp) ? null : new Date(timestamp);
+}
+
+function cleanNetworkName(value?: string): string {
+  return (value || "")
+    .replace(/^Wi-?Fi:\s*/i, "")
+    .trim();
+}
+
+function titleForDeviceSession(session: DeviceSnapshot["sessions"][number]): string {
+  const recorded = parseDeviceTimestamp(session.createdAt);
+  const network = cleanNetworkName(session.network);
+  if (recorded) {
+    const when = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(recorded);
+    return network ? `${when} - ${network}` : when;
+  }
+  if (/^boot_\d+/i.test(session.name) || /^session_boot_\d+/i.test(basename(session.path))) {
+    return network ? `SmartPuck Recording - ${network}` : "SmartPuck Recording";
+  }
+  return session.name || basename(session.path) || "SmartPuck Recording";
 }
 
 function base(raw: string): string { return raw.trim().replace(/\/+$/, ""); }
@@ -425,6 +450,10 @@ export async function importDeviceSession(
     const imported = [...result.inbox, ...result.workplaces.flatMap((workplace) => workplace.meetings)]
       .find((meeting) => meeting.metadata.sourceDevicePath === session.path);
     if (imported) {
+      const desiredTitle = titleForDeviceSession(session);
+      if (desiredTitle && imported.metadata.title !== desiredTitle) {
+        renameMeeting(imported.metadata.id, desiredTitle);
+      }
       updateMeetingMetadata(imported.metadata.id, {
         durationSeconds: session.durationSeconds || undefined,
         sourceDevice: {
@@ -442,7 +471,7 @@ export async function importDeviceSession(
       if (!marked.ok) throw new Error("Recording imported, but the SmartPuck could not mark it as synced.");
     }
     options.onProgress?.({ path: session.path, name: session.name, phase: "queued", receivedBytes: session.sizeBytes, totalBytes: session.sizeBytes });
-    return result;
+    return snapshot();
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

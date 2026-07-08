@@ -228,7 +228,7 @@ function registerIpc(): void {
   ipcMain.handle("library:save-transcript", (_e, id: string, text: string) => saveTranscript(id, text));
   ipcMain.handle("library:transcribe", (_e, id: string) => enqueueTranscription(id));
   ipcMain.handle("dialog:audio", async () => {
-    const result = await dialog.showOpenDialog({ properties: ["openFile", "multiSelections"], filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "pcm"] }] });
+    const result = await dialog.showOpenDialog({ properties: ["openFile", "multiSelections"], filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "oga", "opus", "webm", "pcm"] }] });
     return result.canceled ? [] : result.filePaths;
   });
   ipcMain.handle("device:connect", async (_e, url: string) => {

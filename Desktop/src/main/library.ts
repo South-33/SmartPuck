@@ -29,13 +29,17 @@ You have internal tools for doing this work (a CLI script, index files, JSON man
 
 Never paste raw file contents or technical output into your responses. Read files to understand state, then summarize in plain language.
 
+Use \`node .agents/manage-library.js\` only for structural library changes: curating a meeting, linking/unlinking meetings, creating/renaming/deleting workspaces, trashing meetings, or rebuilding generated indexes. Do not invent tools for normal file work. Transcript cleanup, speaker-label fixes, summary edits inside \`transcript.md\`, and workspace memory notes are plain Markdown edits.
+
 ## When the Conversation Starts
 If the user says something like "start", "hello", or opens a fresh conversation: check the inbox for any new recordings that need curating. If there are pending recordings, take care of them — curate, summarize, link to a workspace — then let the user know in plain language what you did. If the inbox is clear, greet the user briefly, give a one-sentence summary of the library state, and ask what they need help with.
 
 
 
-## 2. Command Reference Cheat Sheet
-The library root contains \`node .agents/manage-library.js\`. Use this script for **all** structural modifications. Never edit JSON files or move directories manually.
+## 2. Library Tool Reference
+The library root contains one structural tool: \`node .agents/manage-library.js\`. Use it when you need to change library metadata or relationships safely; otherwise use normal file reading/editing.
+
+Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, moves recoverable items to Trash, and rebuilds generated indexes. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
 
 | Action | Command Example | When to use it |
 | :--- | :--- | :--- |
@@ -46,6 +50,8 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 | **Rename Workspace** | \`node .agents/manage-library.js rename-workspace "Khmer Language" "Khmer Study"\` | Rename a workspace folder and manifest in sync. |
 | **Trash Meeting** | \`node .agents/manage-library.js trash <meeting-id>\` | Move a meeting folder safely to Trash and rebuild indexes. |
 | **Rebuild Indexes** | \`node .agents/manage-library.js rebuild\` | Force rebuild NEW.md and workspace meetings.md files. |
+
+Do not use the CLI for transcript text edits. Open the relevant \`transcript.md\` and edit it directly.
 
 ## 3. Playbook Rules (How to avoid mistakes)
 - The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
@@ -116,13 +122,17 @@ You have internal tools for doing this work (a CLI script, index files, JSON man
 
 Never paste raw file contents or technical output into your responses. Read files to understand state, then summarize in plain language.
 
+Use \`node .agents/manage-library.js\` only for structural library changes: curating a meeting, linking/unlinking meetings, creating/renaming/deleting workspaces, trashing meetings, or rebuilding generated indexes. Do not invent tools for normal file work. Transcript cleanup, speaker-label fixes, summary edits inside \`transcript.md\`, and workspace memory notes are plain Markdown edits.
+
 ## When the Conversation Starts
 If the user says something like "start", "hello", or opens a fresh conversation: check the inbox for any new recordings that need curating. If there are pending recordings, take care of them — curate, summarize, link to a workspace — then let the user know in plain language what you did. If the inbox is clear, greet the user briefly, give a one-sentence summary of the library state, and ask what they need help with.
 
 
 
-## 2. Command Reference Cheat Sheet
-The library root contains \`node .agents/manage-library.js\`. Use this script for **all** structural modifications. Never edit JSON files or move directories manually.
+## 2. Library Tool Reference
+The library root contains one structural tool: \`node .agents/manage-library.js\`. Use it when you need to change library metadata or relationships safely; otherwise use normal file reading/editing.
+
+Tool summary: \`manage-library.js\` updates canonical meeting/workspace JSON, moves recoverable items to Trash, and rebuilds generated indexes. It is not a transcript editor, search tool, summarizer, or audio/transcription runner.
 
 | Action | Command Example | When to use it |
 | :--- | :--- | :--- |
@@ -133,6 +143,8 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 | **Rename Workspace** | \`node .agents/manage-library.js rename-workspace "Khmer Language" "Khmer Study"\` | Rename a workspace folder and manifest in sync. |
 | **Trash Meeting** | \`node .agents/manage-library.js trash <meeting-id>\` | Move a meeting folder safely to Trash and rebuild indexes. |
 | **Rebuild Indexes** | \`node .agents/manage-library.js rebuild\` | Force rebuild NEW.md and workspace meetings.md files. |
+
+Do not use the CLI for transcript text edits. Open the relevant \`transcript.md\` and edit it directly.
 
 ## 3. Playbook Rules (How to avoid mistakes)
 - The SmartPuck library root is the directory containing the Meetings/ and Workspaces/ folders (usually two levels up from the active workspace directory). Go directly to the library root; never list or crawl directory levels above the library root (which is out of scope and slow).
@@ -191,6 +203,7 @@ The library root contains \`node .agents/manage-library.js\`. Use this script fo
 let rootOverride = "";
 const MEETINGS_DIR = "Meetings";
 const WORKSPACES_DIR = "Workspaces";
+const SUPPORTED_AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".m4a", ".flac", ".ogg", ".oga", ".opus", ".webm", ".pcm"]);
 
 function slug(value: string): string {
   return value
@@ -577,11 +590,15 @@ export function importAudio(paths: string[], workplaceId?: string, sourceDeviceP
   const target = workplacePath(workplaceId);
   for (const source of paths) {
     if (!existsSync(source) || !statSync(source).isFile()) continue;
+    const extension = extname(source).toLowerCase();
+    if (!SUPPORTED_AUDIO_EXTENSIONS.has(extension)) {
+      throw new Error(`Unsupported audio file type "${extension || "(none)"}". Use WAV, MP3, M4A, FLAC, OGG/Opus, WebM, or PCM.`);
+    }
     const id = randomUUID();
-    const title = basename(source, extname(source));
+    const title = basename(source, extension);
     const meetingPath = join(meetingStorePath(), `${slug(title)}-${id.slice(0, 8)}`);
     mkdirSync(meetingPath, { recursive: true });
-    const audioFile = `audio${extname(source).toLowerCase() || ".wav"}`;
+    const audioFile = `audio${extension || ".wav"}`;
     copyFileSync(source, join(meetingPath, audioFile));
     const now = new Date().toISOString();
     const sourceStat = statSync(source);
@@ -1183,6 +1200,12 @@ function main() {
       default:
         console.log(\`
 SmartPuck Library CLI Manager
+
+Purpose:
+  Structural library updates only. Use this tool to curate, link, unlink,
+  create/rename/delete workspaces, trash meetings, and rebuild generated indexes.
+  Edit transcript.md and workspace notes directly; this CLI is not a transcript
+  editor, search tool, summarizer, or transcription runner.
 
 Usage:
   node manage-library.js create-workspace <workspace-name>
